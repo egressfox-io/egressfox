@@ -37,7 +37,7 @@ responding to a policy change or confirmed outage.
 | --- | --- |
 | Source | A configured origin of endpoint descriptions, including its credential references and refresh policy |
 | Endpoint | A normalized external connection configuration; not a display name or a Kubernetes EndpointSlice |
-| Endpoint identity | Stable identity of connection semantics within a documented identity version and scope |
+| Endpoint identity | Versioned logical endpoint ID plus a confidential connection revision; current health is revision-specific |
 | Provenance | Sources and source-local records contributing an endpoint, with per-source presence times |
 | Destination | A named target or class of traffic whose reachability matters; not automatically a probe URL |
 | Probe profile | Versioned check definition, destination, timeout, and success criteria |
@@ -57,10 +57,11 @@ Probe outcomes and summary semantics belong in [observations and selection](desi
 
 ## Component boundaries and future code placement
 
-There is one Go module. Only `tools/checkdocs` exists as executable Go code today.
-The following paths are placement guidance, **not directories to pre-create**.
-Introduce packages with their first real consumer; combine closely related code
-until a tested dependency boundary warrants splitting it.
+There is one Go module. `internal/endpoint` implements the M1 domain and
+`tools/checkdocs` is repository tooling; there is no product executable yet. The
+remaining paths are placement guidance, **not directories to pre-create**. Introduce
+packages with their first real consumer; combine closely related code until a tested
+dependency boundary warrants splitting it.
 
 | Responsibility | Intended location when implemented | Dependency constraint |
 | --- | --- | --- |

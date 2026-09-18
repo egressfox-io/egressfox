@@ -19,9 +19,11 @@ No scoring formula, weight, timeout default, or threshold is accepted yet.
 
 ## Probe evidence
 
-Record endpoint connection revision, profile/target revision, execution vantage,
-probe kind, start/completion time, duration, and a bounded outcome/reason. The
-summary key must prevent mixing different paths, credentials, targets, or methods.
+Record the full endpoint connection identity (logical ID plus confidential revision),
+profile/target revision, execution vantage, probe kind, start/completion time,
+duration, and a bounded outcome/reason. The summary key must prevent mixing different
+paths, credentials, targets, or methods. M4 must define protected persistence for
+the confidential revision before storing it; diagnostics use only the logical ID.
 DNS, direct TCP, TLS, HTTP, and through-endpoint checks answer different questions.
 A successful TCP dial to the proxy is not proof it can reach a destination.
 

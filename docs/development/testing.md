@@ -1,7 +1,8 @@
 # Testing and reproducible evaluation
 
-Status: testing strategy. Only the documentation checker has tests at bootstrap.
-Commands available now are listed in [workflow](workflow.md). Do not claim
+Status: testing strategy. M1 implements endpoint identity, validation, provenance,
+deduplication, redaction, permutation, and canonicalization fuzz tests. Commands
+available now are listed in [workflow](workflow.md). Do not claim
 controller, renderer, or traffic tests run until their milestones implement them.
 
 ## Layers and gates

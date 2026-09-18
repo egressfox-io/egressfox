@@ -1,6 +1,6 @@
 # Endpoints and sources
 
-Status: accepted M1 identity contract; source acquisition remains design direction.
+Status: implemented M1 identity contract; source acquisition remains design direction.
 This document owns normalization and acquisition semantics. The durable identity
 boundary is recorded in [ADR 0006](../decisions/0006-versioned-endpoint-identity.md).
 
@@ -86,24 +86,32 @@ Version 1 applies these canonicalization rules:
 - IPv4 and IPv6 use Go `net/netip` canonical text. Brackets around an IPv6 host are
   accepted and removed. IPv6 zones are rejected. IPv4-mapped IPv6 stays IPv6 and is
   not silently collapsed to IPv4.
-- VLESS UUID hex is case-insensitive and stored in lower-case hyphenated form.
-  Trojan passwords and WebSocket paths are byte-for-byte significant after UTF-8
-  validation; they are not trimmed or case-folded. A WebSocket path must be explicit
-  and begin with `/`.
+- VLESS UUID hex is case-insensitive and stored in lower-case hyphenated form; the
+  nil UUID is rejected. Trojan passwords are 1–4096 bytes of valid UTF-8. Passwords
+  are byte-for-byte significant and are not trimmed or case-folded.
+- WebSocket paths are 1–2048 bytes of valid UTF-8, contain no control characters,
+  begin with `/`, and otherwise remain byte-for-byte significant. M1 does not infer
+  an engine-specific default path.
 - An omitted TLS server name becomes the canonical endpoint host. Explicit DNS
   server names use the same DNS case/root-dot normalization; IP text is canonicalized.
   TLS-disabled configuration cannot carry TLS options.
-- Source IDs and source-local record IDs are safe application identifiers. Aliases
-  are bounded, valid UTF-8 display data; they are never formatted by domain summary
-  methods and never affect identity.
+- Source IDs and source-local record IDs are 1–128 ASCII letters, digits, dots,
+  underscores, or hyphens. They are safe application identifiers, not raw source
+  URLs. Each alias is 1–256 bytes of valid UTF-8 without control/format characters;
+  aliases are never formatted by domain summary methods and never affect identity.
 
-Canonical encodings begin with distinct `egressfox.endpoint/v1` and
-`egressfox.connection/v1` domains. Fields are written in the order above as
-length-prefixed UTF-8 or fixed-width scalar values, so concatenation is unambiguous.
-The logical SHA-256 digest is lower-case unpadded Base32 with prefix `ef1_`.
-The connection digest is kept private. A canonicalization change that can alter
-equivalence requires a new version and migration; implementations must not reinterpret
-stored version 1 IDs under new rules.
+Canonical encodings use a four-byte big-endian length before every UTF-8 string,
+two-byte big-endian ports, one byte for enums, and `0`/`1` bytes for booleans. The
+field order is domain string, protocol, host kind, host, port, transport, WebSocket
+path, TLS enabled, TLS server name, and insecure-verification flag. Version 1 enum
+codes are VLESS `1`, Trojan `2`; DNS `1`, IPv4 `2`, IPv6 `3`; TCP `1`, WebSocket `2`.
+
+The logical domain is `egressfox.endpoint/v1`. Its SHA-256 digest is lower-case
+unpadded Base32 with prefix `ef1_`. The private connection encoding uses domain
+`egressfox.connection/v1`, followed by the same fields and then credential protocol
+and canonical credential string; its SHA-256 digest is kept private. A
+canonicalization change that can alter equivalence requires a new version and
+migration. Implementations must not reinterpret stored version 1 IDs under new rules.
 
 ### Identity acceptance properties
 

@@ -8,16 +8,15 @@ product is finished.
 
 ## Current state
 
-M0 (repository foundation) is complete as of 2026-09-18. M1 is in progress;
-M2–M6 have not started.
+M0 (repository foundation) is complete as of 2026-09-18. M1 (endpoint identity
+and inventory primitives) is complete as of 2026-09-19. M2–M6 have not started.
 There is no EgressFox executable, parser, probe, database adapter, renderer,
-publisher, operator, CRD, or installation chart. Only repository tooling is
-executable today. The bootstrap stops at M0.
+publisher, operator, CRD, or installation chart. The Kubernetes-independent
+`internal/endpoint` domain and repository tooling are implemented.
 
-**Current task: M1 — normalized endpoint identity and provenance-preserving deduplication.**
-Use the [active execution plan](../plans/0002-endpoint-identity.md). Every later stage
-depends on distinguishing endpoints reliably; implementing a network parser or
-controller first would harden an unreviewed identity model.
+**Next milestone: M2 — safe source-to-inventory path.** Resolve Q2 before fixing an
+input contract, then create the focused execution plan. M1 now gives parsers a
+validated target model and gives later probes/renderers a revision-safe identity.
 
 ## P0 milestones
 

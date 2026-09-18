@@ -25,7 +25,7 @@ make vuln
 | --- | --- |
 | `make fmt` | Format tracked and non-ignored new Go files with gofmt |
 | `make lint` | Non-mutating formatting check and `go vet ./...` |
-| `make test` | `go test -race -count=1 ./...`; currently tests repository tooling only |
+| `make test` | `go test -race -count=1 ./...`; covers repository tooling and the M1 endpoint domain |
 | `make build` | `go build -o bin/ ./...`; builds the documentation tool, not an EgressFox application |
 | `make docs` | Offline repository-local Markdown file/heading-link checks |
 | `make check` | Lint, tests, build, docs, and unstaged/staged whitespace checks |

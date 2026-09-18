@@ -1,8 +1,8 @@
 # Threat model
 
-Status: design requirements, **not implemented runtime protections**. Bootstrap
-provides reviewed repository tooling, read-only CI permissions, pinned Actions,
-and a vulnerability-check command. There is no runtime to secure or supported
+Status: design requirements with M1 domain redaction boundaries implemented.
+Repository tooling provides read-only CI permissions, pinned Actions, and a
+vulnerability-check command. There is no network runtime to secure or supported
 production release. Reporting guidance is in [SECURITY.md](../../SECURITY.md).
 
 ## Assets, actors, and trust boundaries

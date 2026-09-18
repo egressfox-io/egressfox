@@ -1,6 +1,6 @@
 # M1: Endpoint identity and provenance-preserving deduplication
 
-Status: in progress. Prepared: 2026-09-18. Started: 2026-09-18.
+Status: complete. Prepared: 2026-09-18. Started: 2026-09-18. Completed: 2026-09-19.
 Branch/baseline: `feat/endpoint-model` from `0f77c1e`.
 
 ## Objective and scope
@@ -41,7 +41,7 @@ this exercise; it is not dictated by the plan.
 - [x] Prove equivalence and distinction, source/display rename invariance, input-order
   invariance, credential/TLS/transport change behavior, unknown-field rejection,
   and safe diagnostics using synthetic fixtures and table/property tests.
-- [ ] Update documentation and support limits; run the repository checks and inspect
+- [x] Update documentation and support limits; run the repository checks and inspect
   the full diff. Commit coherent checkpoints and leave a clean task branch.
 
 ## Validation plan
@@ -75,8 +75,41 @@ All input permutations produce the same result and re-deduplication is idempoten
 Adversarial formatter tests cover valid and invalid format verbs so secrets and
 untrusted aliases remain behind explicit accessors.
 
+The architecture review confirmed that source adapters can construct discoveries
+without Kubernetes, provenance remains independently removable by source, probes
+can carry the opaque full identity without credential access, and renderers can use
+typed configuration without the domain importing either engine. Alias/source
+changes preserve identity; credential changes preserve logical continuity while
+invalidating the connection revision.
+
+## Validation results
+
+All results are from `feat/endpoint-model` on 2026-09-19 using Go 1.27.1:
+
+- `make fmt` — passed.
+- `go test -race -count=1 ./internal/endpoint` — passed.
+- `go test ./internal/endpoint -run '^$' -fuzz '^FuzzAddressCanonicalRoundTrip$' -fuzztime=5s`
+  — passed after approximately 2.5 million executions. The first run found the
+  root-dotted IPv4 ambiguity fixed in `c6abbb5`.
+- `go test ./internal/endpoint -run 'Diagnostics|CompleteURIs|Conflict' -count=100`
+  — passed.
+- `make check` — passed: formatting, vet, race tests, build, documentation, and
+  whitespace checks.
+- `make vuln` — passed with `No vulnerabilities found.` The first sandboxed call
+  could not resolve `proxy.golang.org`; the network-authorized rerun completed.
+- `git diff --check` — passed throughout the checkpoints.
+
+Checkpoint commits before the completion documentation are `1f77673` (identity
+decision), `077bca8` (canonical connection identity), `ec3591a` (provenance and
+deduplication), and `c6abbb5` (fuzz-discovered IPv4 normalization fix).
+
 ## Handoff
 
-The task branch and identity decision are established. Implementation, tests,
-completion documentation, and validation remain. Subsequent source work is M2,
-not part of this plan.
+M1 is complete on `feat/endpoint-model`. The package supports the documented VLESS
+and Trojan subset, version 1 logical IDs, confidential credential-sensitive
+revisions, provenance relationships, and deterministic deduplication. Q1 is closed.
+
+Q2 deliberately remains for M2: choose the first input formats/adapters and source
+refresh admission semantics. M4 must define protected persistence for confidential
+connection revisions before storing them. No source acquisition, probe, history,
+selection, rendering, publication, or Kubernetes implementation was added here.

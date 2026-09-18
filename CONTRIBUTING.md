@@ -1,8 +1,9 @@
 # Contributing
 
-EgressFox is at foundation stage. Start with the [documentation map](docs/README.md)
-and the [next milestone](docs/roadmap/README.md). Planned capabilities are not
-implemented features. The existing [Apache-2.0 license](LICENSE) is unchanged.
+EgressFox is in early implementation with M1 endpoint identity complete. Start with
+the [documentation map](docs/README.md) and the
+[next milestone](docs/roadmap/README.md). Planned capabilities are not implemented
+features. The existing [Apache-2.0 license](LICENSE) is unchanged.
 
 For a small fix, make the change and its relevant checks directly on a task branch.
 For a substantial change, read the owning design, resolve its blocking questions,
