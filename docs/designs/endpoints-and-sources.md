@@ -1,6 +1,6 @@
 # Endpoints and sources
 
-Status: implemented M1 identity contract; source acquisition remains design direction.
+Status: implemented M1 identity contract; M2 source pipeline contract accepted.
 This document owns normalization and acquisition semantics. The durable identity
 boundary is recorded in [ADR 0006](../decisions/0006-versioned-endpoint-identity.md).
 
@@ -186,6 +186,46 @@ their listeners, DNS configuration, routing, executable hooks, file paths, or ru
 API settings into desired output. Native escape hatches are trusted user intent in
 a separate renderer boundary; subscriptions cannot inject them.
 
+### M2 source and format slice
+
+[ADR 0007](../decisions/0007-safe-source-snapshots.md) owns the durable source
+snapshot decision. M2 implements two acquisition paths: caller-supplied bounded
+bytes and HTTP/HTTPS. Both produce the same payload boundary before format handling;
+a future file or Secret adapter can use it without changing parsers. The stable
+source identity is a caller-assigned safe `SourceID`. Locations, query strings and
+headers are secret-bearing configuration and never become identity or provenance.
+
+HTTP uses HTTPS by default. Plain HTTP and private/non-public destinations require
+separate explicit options. Resolution policy applies to actual dial addresses,
+including IP literals and IPv4-mapped IPv6, and to every redirect. Redirects are
+bounded and same-origin. M2 neither requests nor decodes compressed content. Retry,
+cache validators, persistent content cache and cross-origin credential forwarding
+are unsupported. These controls reduce source-fetch SSRF exposure; they do not
+authorize endpoints returned by the source.
+
+M2 recognizes plain line-oriented URI lists and a single standard or raw-standard
+Base64 envelope around a URI list. URL-safe Base64 and recursive envelopes are not
+accepted. Explicit format selection is preferred. Auto-detection first recognizes
+known proxy URI schemes and otherwise chooses Base64 only after strict decoding to
+a recognizable URI list. Blank lines and lines beginning with `#` are ignored. The
+default limits are 4 MiB input, 4 MiB decoded input, 10,000 records, and 16 KiB per
+record.
+
+The URI subset maps exactly to M1. VLESS requires UUID authentication, an explicit
+port, `encryption=none`, empty flow, TCP or WebSocket with an explicit path, and
+`security=none|tls`. Trojan requires password authentication, an explicit port,
+TLS, and TCP or WebSocket with an explicit path. Both may carry SNI and an explicit
+certificate verification flag. URI fragments become source-local alias metadata
+only after M1 validation. Duplicate query keys are malformed. Unknown query keys
+and recognized connection features outside M1 are unsupported because ignoring
+them could change connectivity. Other known proxy schemes are unsupported records;
+arbitrary non-URI text is malformed.
+
+Diagnostics classify records as malformed, unsupported or invalid and expose only
+source ID, stable ordinal, bounded reason code and category. Counts form the M2
+source-metrics boundary. Raw lines, URIs, fragments, locations, headers, credentials,
+query values and parser error text are never retained in diagnostics.
+
 ## Refresh semantics
 
 Each attempt has a timeout, cancellation, byte and redirect limits, and sanitized
@@ -200,7 +240,7 @@ configured source by safe ID, not its URL or query string.
 | Explicit valid empty snapshot | A deliberate inventory change, subject to configured empty-source safety policy |
 | HTTP 304 with matching usable cache (P1) | Reuse that revision; not an empty response |
 | Timeout, authentication failure, oversized or malformed response | Failed attempt; do not erase previous inventory |
-| Mixed valid and invalid records | Default proposed behavior is reject the snapshot; any partial acceptance needs opt-in semantics and bounded rejection diagnostics |
+| Mixed valid and rejected records | Reject transactionally by default; explicit partial policy may commit accepted records with bounded diagnostics |
 | Source removed from desired configuration | Explicit removal; not equivalent to a transient refresh error |
 
 P0 requires transactional refresh and failure reporting. Durable HTTP content
@@ -209,6 +249,16 @@ attempt does not promise a complete source-cache implementation. Staleness/expir
 must be visible. Selection must not keep an endpoint indefinitely simply because
 its source failed to refresh. Last-known-good *source content* and last-known-good
 *published configuration* are separate objects and policies.
+
+An M2 committed snapshot is the complete current contribution of one source. A
+successful replacement removes relationships absent from that source while an
+endpoint contributed by another committed source remains. A failed attempt changes
+nothing. A non-empty input with no accepted records always fails. Explicit valid
+empty input is distinct from failure and commits only under an allow-empty policy;
+source removal is a separate deliberate operation. Since sharing links have no
+stable provider record key, their safe source-local record ID is the M1 logical
+endpoint ID. The confidential full identity still distinguishes credential
+revisions, so rotation retains record continuity without reusing current health.
 
 ## Security and test obligations
 
@@ -227,7 +277,6 @@ Tests must not contact real subscription providers.
 
 No proxy implementation, lossless editor for arbitrary engine configuration,
 cross-tenant inventory sharing, or universal schema is proposed. Q1 is resolved by
-[ADR 0006](../decisions/0006-versioned-endpoint-identity.md). Q2 in the
-[decision queue](../decisions/open-questions.md) covers source admission, partial
-acceptance, and the first input format. M1's semantic slice does not choose that
-format or begin acquisition.
+[ADR 0006](../decisions/0006-versioned-endpoint-identity.md), and Q2 by
+[ADR 0007](../decisions/0007-safe-source-snapshots.md). Structured engine formats,
+additional protocols and persistent source caching remain later work.

@@ -8,7 +8,6 @@ the agent/contributor undertaking the gated milestone owns bringing evidence.
 
 | ID | Question and decision evidence needed | Gate | Design owner |
 | --- | --- | --- | --- |
-| Q2 | First supported protocols/formats/source adapters; empty-source, partial-parse, stale inventory and disappearance policy. Specify strict admission and fixtures. | M2; protocol effects revisited at M3 | [Sources](../designs/endpoints-and-sources.md) |
 | Q3 | Through-endpoint probe engine topology, vantage, endpoint attribution, remote DNS/network restrictions, target incident detection, budget defaults. Benchmark isolated prototypes and failure/load cases without adding proxy protocols. | M4 before probe execution | [Observations](../designs/observations-and-selection.md) |
 | Q4 | SQLite driver/CGO, schema/migrations, retention, observation ordering, transaction/durability mode, clock discontinuity, restart/backup policy. Measure expected observation throughput and test recovery. | M4 before persistence contract | [History](../designs/observations-and-selection.md) |
 | Q5 | Adaptive score definition, eligibility/freshness/confidence, hysteresis/residence/recovery/cooldown rules, emergency failure criteria and tuning. Compare against baselines on reproducible traces; no arbitrary production constants. | M5 | [Selection](../designs/observations-and-selection.md) |
@@ -29,3 +28,4 @@ revise priorities. It must not be implemented by casually increasing replicas.
 | ID | Resolution |
 | --- | --- |
 | Q1 | [ADR 0006](0006-versioned-endpoint-identity.md) defines identity version 1, credential rotation, private revision handling, and the initial semantic slice. Detailed canonicalization is in the [endpoint design](../designs/endpoints-and-sources.md). |
+| Q2 | [ADR 0007](0007-safe-source-snapshots.md) defines bounded inline/HTTP acquisition, URI-list/Base64 formats, strict transactional snapshots, explicit partial/empty policy, stable source identity and disappearance semantics. |
