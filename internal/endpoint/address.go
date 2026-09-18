@@ -90,6 +90,13 @@ func normalizeHost(raw, field string) (string, hostKind, error) {
 	if strings.HasSuffix(host, ".") {
 		host = strings.TrimSuffix(host, ".")
 	}
+	if address, err := netip.ParseAddr(host); err == nil {
+		kind := hostIPv6
+		if address.Is4() {
+			kind = hostIPv4
+		}
+		return address.String(), kind, nil
+	}
 	host = strings.ToLower(host)
 	if len(host) == 0 || len(host) > 253 {
 		return "", hostInvalid, invalid(field, "must satisfy DNS length limits")

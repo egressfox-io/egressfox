@@ -17,6 +17,7 @@ func TestNewAddressCanonicalizesEquivalentHosts(t *testing.T) {
 	}{
 		{name: "DNS case and root dot", raw: "Edge.Example.COM.", want: "edge.example.com"},
 		{name: "IPv4", raw: "192.0.2.10", want: "192.0.2.10"},
+		{name: "IPv4 with root dot", raw: "192.0.2.10.", want: "192.0.2.10"},
 		{name: "expanded IPv6", raw: "2001:0db8:0:0:0:0:0:1", want: "2001:db8::1"},
 		{name: "bracketed IPv6", raw: "[2001:db8::1]", want: "2001:db8::1"},
 		{name: "IPv4-mapped IPv6", raw: "::ffff:192.0.2.10", want: "::ffff:192.0.2.10"},
