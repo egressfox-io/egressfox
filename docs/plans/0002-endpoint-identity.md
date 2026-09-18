@@ -36,9 +36,9 @@ this exercise; it is not dictated by the plan.
 - [x] Add `internal/endpoint` with cohesive real types/functions and no Kubernetes,
   engine, database, network, or speculative public SDK dependencies.
 - [x] Implement deterministic identity and semantic validation for the declared subset.
-- [ ] Implement deterministic deduplication preserving source associations and aliases
+- [x] Implement deterministic deduplication preserving source associations and aliases
   without treating duplicate subscriptions as independent endpoint failures.
-- [ ] Prove equivalence and distinction, source/display rename invariance, input-order
+- [x] Prove equivalence and distinction, source/display rename invariance, input-order
   invariance, credential/TLS/transport change behavior, unknown-field rejection,
   and safe diagnostics using synthetic fixtures and table/property tests.
 - [ ] Update documentation and support limits; run the repository checks and inspect
@@ -66,6 +66,14 @@ The first implementation checkpoint adds canonical addresses, VLESS/Trojan
 credentials, TCP/WebSocket transport, ordinary TLS, versioned logical IDs, and
 private connection revisions. Focused race tests, vet, formatting, and whitespace
 checks pass. The stable version 1 ID has a golden test.
+
+The inventory checkpoint models provenance as source-to-connection relationships
+with source-local records and alias sets. Deduplication sorts by full identity,
+unions relationships and aliases, preserves multiple credential revisions, checks
+complete configuration equality after key matches, and returns sanitized conflicts.
+All input permutations produce the same result and re-deduplication is idempotent.
+Adversarial formatter tests cover valid and invalid format verbs so secrets and
+untrusted aliases remain behind explicit accessors.
 
 ## Handoff
 

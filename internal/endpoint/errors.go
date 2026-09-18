@@ -31,3 +31,18 @@ func (e *ValidationError) Unwrap() error { return ErrInvalid }
 
 // Field returns the stable field name that failed validation.
 func (e *ValidationError) Field() string { return e.field }
+
+// ConflictError reports incompatible configurations under one complete identity.
+// It exposes only the non-secret logical endpoint ID.
+type ConflictError struct {
+	id ID
+}
+
+func (e *ConflictError) Error() string {
+	return fmt.Sprintf("endpoint %s: complete identity maps to incompatible configurations", e.id)
+}
+
+func (e *ConflictError) Unwrap() error { return ErrConflict }
+
+// ID returns the safe logical endpoint ID involved in the conflict.
+func (e *ConflictError) ID() ID { return e.id }

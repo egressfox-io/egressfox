@@ -142,21 +142,18 @@ func TestCredentialAndConfigurationDiagnosticsAreRedacted(t *testing.T) {
 	credential := mustTrojanCredential(t, secret)
 	config := mustTrojanConfiguration(t, "edge.example.com", secret, mustWebSocket(t, "/path?token=not-a-secret"), mustTLS(t, "", false))
 
-	values := []string{
-		fmt.Sprintf("%s", credential),
-		fmt.Sprintf("%v", credential),
-		fmt.Sprintf("%+v", credential),
-		fmt.Sprintf("%#v", credential),
-		fmt.Sprintf("%q", credential),
-		fmt.Sprintf("%x", credential),
-		fmt.Sprintf("%v", config),
-		fmt.Sprintf("%+v", config),
-		fmt.Sprintf("%#v", config),
-		fmt.Sprintf("%#v", []endpoint.Configuration{config}),
-		fmt.Sprintf("%v", config.Identity()),
-		fmt.Sprintf("%#v", config.Identity()),
-		config.ID().String(),
+	values := []string{config.ID().String()}
+	formats := []string{"%v", "%+v", "%#v", "%s", "%q", "%x", "%X", "%d", "%o", "%p"}
+	for _, value := range []any{credential, config.Transport(), config.TLS(), config, config.Identity()} {
+		for _, format := range formats {
+			values = append(values, fmt.Sprintf(format, value))
+		}
 	}
+	values = append(values,
+		fmt.Sprintf("%#v", []endpoint.Configuration{config}),
+		fmt.Sprintf("%d", []endpoint.Configuration{config}),
+		fmt.Sprintf("%d", []endpoint.Identity{config.Identity()}),
+	)
 	for _, value := range values {
 		assertDoesNotContain(t, value, secret)
 	}
@@ -201,7 +198,7 @@ func TestValidationErrorsDoNotEchoCompleteURIs(t *testing.T) {
 func assertDoesNotContain(t testing.TB, value, secret string) {
 	t.Helper()
 	if strings.Contains(value, secret) {
-		t.Fatalf("diagnostic leaked secret %q in %q", secret, value)
+		t.Fatal("diagnostic contained a redaction canary")
 	}
 }
 

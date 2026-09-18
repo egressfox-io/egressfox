@@ -31,15 +31,21 @@ func (id ID) GoString() string { return fmt.Sprintf("endpoint.ID(%q)", id.String
 // Identity is the complete connection identity. Its private revision changes
 // with credentials and has no textual or serialization representation.
 type Identity struct {
-	id       ID
-	revision [sha256.Size]byte
+	id            ID
+	revision      *[sha256.Size]byte
+	nonComparable []struct{}
 }
 
 // ID returns the safe logical endpoint ID.
 func (identity Identity) ID() ID { return identity.id }
 
 // Equal reports whether two values describe the same complete connection revision.
-func (identity Identity) Equal(other Identity) bool { return identity == other }
+func (identity Identity) Equal(other Identity) bool {
+	if identity.id != other.id || identity.revision == nil || other.revision == nil {
+		return identity.id == other.id && identity.revision == nil && other.revision == nil
+	}
+	return *identity.revision == *other.revision
+}
 
 // SameEndpoint reports whether two revisions belong to the same logical endpoint.
 func (identity Identity) SameEndpoint(other Identity) bool { return identity.id == other.id }
@@ -49,6 +55,10 @@ func (identity Identity) String() string {
 }
 
 func (identity Identity) GoString() string { return "endpoint.Identity(" + identity.String() + ")" }
+
+func (identity Identity) Format(state fmt.State, _ rune) {
+	writeSafeFormat(state, identity.String())
+}
 
 func (Identity) MarshalJSON() ([]byte, error) {
 	return nil, errorsForJSON("connection identity")
@@ -68,7 +78,8 @@ func (c Configuration) Identity() Identity {
 	id := ID{value: "ef1_" + strings.ToLower(encoded)}
 
 	private := canonicalConfiguration(c, true)
-	return Identity{id: id, revision: sha256.Sum256(private)}
+	revision := sha256.Sum256(private)
+	return Identity{id: id, revision: &revision}
 }
 
 func canonicalConfiguration(c Configuration, includeCredential bool) []byte {
@@ -84,13 +95,13 @@ func canonicalConfiguration(c Configuration, includeCredential bool) []byte {
 	encoder.writeString(c.address.host)
 	encoder.writeUint16(c.address.port)
 	encoder.writeUint8(uint8(c.transport.kind))
-	encoder.writeString(c.transport.webSocketPath)
+	encoder.writeString(c.transport.WebSocketPath())
 	encoder.writeBool(c.tls.enabled)
 	encoder.writeString(c.tls.serverName)
 	encoder.writeBool(c.tls.insecureSkipVerify)
 	if includeCredential {
 		encoder.writeUint8(uint8(c.credential.protocol))
-		encoder.writeString(c.credential.value)
+		encoder.writeString(c.credential.secret.value)
 	}
 	return encoder.Bytes()
 }
