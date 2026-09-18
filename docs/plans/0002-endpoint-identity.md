@@ -33,9 +33,9 @@ this exercise; it is not dictated by the plan.
 ## Checkpoints and acceptance
 
 - [x] Write/review the canonicalization and credential-revision contract in the design.
-- [ ] Add `internal/endpoint` with cohesive real types/functions and no Kubernetes,
+- [x] Add `internal/endpoint` with cohesive real types/functions and no Kubernetes,
   engine, database, network, or speculative public SDK dependencies.
-- [ ] Implement deterministic identity and semantic validation for the declared subset.
+- [x] Implement deterministic identity and semantic validation for the declared subset.
 - [ ] Implement deterministic deduplication preserving source associations and aliases
   without treating duplicate subscriptions as independent endpoint failures.
 - [ ] Prove equivalence and distinction, source/display rename invariance, input-order
@@ -61,6 +61,11 @@ identity, preventing incompatible observation reuse. The initial semantic slice 
 VLESS and Trojan with TCP/WebSocket and ordinary TLS; unsupported options remain
 explicitly outside the model. Official sing-box and Mihomo outbound/transport/TLS
 documentation was reviewed on 2026-09-18 before fixing the slice.
+
+The first implementation checkpoint adds canonical addresses, VLESS/Trojan
+credentials, TCP/WebSocket transport, ordinary TLS, versioned logical IDs, and
+private connection revisions. Focused race tests, vet, formatting, and whitespace
+checks pass. The stable version 1 ID has a golden test.
 
 ## Handoff
 
