@@ -1,0 +1,13 @@
+# Local build and tool artifacts.
+/bin/
+/dist/
+/.cache/
+/coverage.out
+*.test
+.DS_Store
+
+# Local credentials and runtime state. Keep synthetic fixtures in testdata.
+/.env
+/.env.*
+/local/
+/state/
