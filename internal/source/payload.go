@@ -12,6 +12,9 @@ const (
 	DefaultMaxDecodedBytes = 4 << 20
 	DefaultMaxRecords      = 10_000
 	DefaultMaxRecordBytes  = 16 << 10
+	maxConfiguredBytes     = 64 << 20
+	maxConfiguredRecords   = 1_000_000
+	maxConfiguredRecord    = 1 << 20
 )
 
 type Limits struct {
@@ -31,6 +34,9 @@ func (l Limits) normalized() (Limits, error) {
 	}
 	if l.MaxSourceBytes <= 0 || l.MaxDecodedBytes <= 0 || l.MaxRecords <= 0 || l.MaxRecordBytes <= 0 {
 		return Limits{}, fmt.Errorf("source limits must all be positive")
+	}
+	if l.MaxSourceBytes > maxConfiguredBytes || l.MaxDecodedBytes > maxConfiguredBytes || l.MaxRecords > maxConfiguredRecords || l.MaxRecordBytes > maxConfiguredRecord {
+		return Limits{}, fmt.Errorf("source limits exceed implementation ceilings")
 	}
 	return l, nil
 }
@@ -65,6 +71,9 @@ type Inline struct {
 }
 
 func NewInline(source endpoint.SourceID, data []byte, limits Limits) (Inline, error) {
+	if source.String() == "<invalid-source-id>" {
+		return Inline{}, failure(source, ErrAcquire, "invalid_source_id")
+	}
 	limits, err := limits.normalized()
 	if err != nil {
 		return Inline{}, err

@@ -81,3 +81,21 @@ func TestHTTPSizeTimeoutAndRedirectPolicy(t *testing.T) {
 		t.Fatal("cross-origin redirect accepted")
 	}
 }
+
+func TestHTTPConfigurationAndCancellation(t *testing.T) {
+	t.Parallel()
+	if _, err := source.NewHTTP(sourceID(t, "scheme"), "ftp://example.com/source", source.HTTPOptions{}); err == nil {
+		t.Fatal("unsupported scheme accepted")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	defer server.Close()
+	s, err := source.NewHTTP(sourceID(t, "cancelled"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.Acquire(ctx); err == nil {
+		t.Fatal("cancelled acquisition succeeded")
+	}
+}

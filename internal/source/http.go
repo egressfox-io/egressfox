@@ -37,6 +37,9 @@ type HTTP struct {
 }
 
 func NewHTTP(source endpoint.SourceID, rawURL string, options HTTPOptions) (HTTP, error) {
+	if source.String() == "<invalid-source-id>" {
+		return HTTP{}, failure(source, ErrAcquire, "invalid_source_id")
+	}
 	limits, err := options.Limits.normalized()
 	if err != nil {
 		return HTTP{}, failure(source, ErrAcquire, "invalid_limits")
