@@ -7,7 +7,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | Plan | Status | Purpose |
 | --- | --- | --- |
 | [0001](0001-repository-bootstrap.md) | Complete | Repository foundation only |
-| [0002](0002-endpoint-identity.md) | Ready, not started | M1 endpoint identity and provenance |
+| [0002](0002-endpoint-identity.md) | In progress | M1 endpoint identity and provenance |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

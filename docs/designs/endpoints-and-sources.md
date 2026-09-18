@@ -1,8 +1,8 @@
 # Endpoints and sources
 
-Status: design direction; no source adapter, parser, or endpoint type exists yet.
-This document owns normalization and acquisition semantics. Exact Go structs,
-serialization, and identity encoding remain design work for M1.
+Status: accepted M1 identity contract; source acquisition remains design direction.
+This document owns normalization and acquisition semantics. The durable identity
+boundary is recorded in [ADR 0006](../decisions/0006-versioned-endpoint-identity.md).
 
 ## Decisions and requirements
 
@@ -36,13 +36,83 @@ transport includes protocol-specific options such as WebSocket paths or service 
 An untyped bag of strings shared by all renderers would hide unsupported semantics.
 Typed protocol variants should follow actual parsing/rendering needs.
 
+### M1 supported semantic slice
+
+M1 admits only the intersection needed to establish the domain contract:
+
+| Field | Supported behavior |
+| --- | --- |
+| Protocol | VLESS with empty flow; Trojan |
+| Server | DNS hostname, IPv4, or IPv6 plus port 1–65535 |
+| Credential | VLESS UUID; Trojan password |
+| Transport | Direct TCP; WebSocket with an explicit request path |
+| TLS | Optional for VLESS and required for Trojan; effective server name and certificate-verification mode |
+
+This is a normalization and inventory claim, not a renderer support claim. VLESS
+flow, UDP/packet modes, WebSocket headers and early data, gRPC/HTTP/QUIC transports,
+ALPN, Reality, ECH, certificate pins, client fingerprints, mTLS, multiplexing, and
+dial options are outside M1. Source adapters must reject an input that uses an
+unsupported connectivity field rather than discard the field. The
+[sing-box outbound](https://sing-box.sagernet.org/configuration/outbound/) and
+[Mihomo outbound](https://wiki.metacubex.one/en/config/proxies/) documentation was
+reviewed on 2026-09-18 to choose this common subset; target/version support remains
+an M3 renderer decision.
+
+### Canonicalization and identity version 1
+
+M1 has two related identity layers:
+
+- The **logical endpoint ID** includes protocol, normalized server and port,
+  transport kind and WebSocket path, TLS enabled state, effective TLS server name,
+  and certificate-verification mode. It excludes credentials, aliases, provenance,
+  provider assertions, observations, and lifecycle timestamps.
+- The **connection revision** includes the same fields and canonical credential
+  material. The full connection identity is logical ID plus revision. The revision
+  is confidential: it is comparable inside the domain but has no public text,
+  byte, JSON, log, metric, status, or error representation.
+
+A credential rotation is the same logical endpoint with a new connection revision.
+Current observations must use the full identity and cannot cross that boundary.
+Two simultaneously discovered credentials for one logical endpoint are distinct
+inventory records. Historical analysis may link them by logical ID only when it
+explicitly accounts for the revision change.
+
+Version 1 applies these canonicalization rules:
+
+- DNS hostnames are ASCII, case-insensitive, and stored lower-case without one
+  terminal root dot. Empty labels, invalid label edges, non-ASCII input, and values
+  longer than DNS limits are rejected. Internationalized names must arrive as
+  explicit ASCII A-labels; M1 does not perform implicit IDNA conversion.
+- IPv4 and IPv6 use Go `net/netip` canonical text. Brackets around an IPv6 host are
+  accepted and removed. IPv6 zones are rejected. IPv4-mapped IPv6 stays IPv6 and is
+  not silently collapsed to IPv4.
+- VLESS UUID hex is case-insensitive and stored in lower-case hyphenated form.
+  Trojan passwords and WebSocket paths are byte-for-byte significant after UTF-8
+  validation; they are not trimmed or case-folded. A WebSocket path must be explicit
+  and begin with `/`.
+- An omitted TLS server name becomes the canonical endpoint host. Explicit DNS
+  server names use the same DNS case/root-dot normalization; IP text is canonicalized.
+  TLS-disabled configuration cannot carry TLS options.
+- Source IDs and source-local record IDs are safe application identifiers. Aliases
+  are bounded, valid UTF-8 display data; they are never formatted by domain summary
+  methods and never affect identity.
+
+Canonical encodings begin with distinct `egressfox.endpoint/v1` and
+`egressfox.connection/v1` domains. Fields are written in the order above as
+length-prefixed UTF-8 or fixed-width scalar values, so concatenation is unambiguous.
+The logical SHA-256 digest is lower-case unpadded Base32 with prefix `ef1_`.
+The connection digest is kept private. A canonicalization change that can alter
+equivalence requires a new version and migration; implementations must not reinterpret
+stored version 1 IDs under new rules.
+
 ### Identity acceptance properties
 
 M1 must settle and test a canonicalization contract before persistence depends on it:
 
 - Equivalent supported input representations produce the same identity across runs.
 - Renaming/reordering a source or endpoint preserves connection identity.
-- Distinct authentication, TLS identity, transport, or protocol semantics remain distinct.
+- Distinct authentication changes the private connection revision. Distinct TLS,
+  transport, address, port, or protocol semantics change the logical ID.
 - Normalize DNS names, IP representations, defaults, and absent-versus-empty fields
   only where equivalence is established. Do not lowercase case-sensitive paths,
   arbitrary credentials, or SNI-related values without a defined rule.
@@ -52,24 +122,33 @@ M1 must settle and test a canonicalization contract before persistence depends o
   silently joining old measurements to unrelated endpoints.
 - Unrecognized fields affecting connectivity are rejected or retained as explicitly
   unsupported input; dropping them must not falsely merge two configurations.
-- Decide how resolved Secret revisions participate. Reference name alone cannot
-  distinguish credential rotation, and API-server resourceVersion is not a portable
-  semantic identity. Historical continuity after rotation requires an explicit rule.
+- Resolved credential material participates only in the private connection revision.
+  A Secret reference name or API-server resourceVersion is not semantic identity.
+  Adapters must resolve credentials before constructing a connection; historical
+  continuity uses the logical ID while current health remains revision-specific.
 
-An identity digest involving authentication material is **sensitive**: a plain
-hash does not protect low-entropy secrets. The choice between a private canonical
-digest, keyed fingerprints with key lifecycle, and separate stable record/connection
-revisions is open (Q1). Do not publish such hashes as metric labels or CR status.
-The future `explain` UI needs safe opaque IDs and aliases that are not assumed unique.
+The connection revision is **sensitive**: its plain digest does not protect
+low-entropy secrets. M1 exposes equality but not its bytes. Future protected
+persistence must be designed with the history schema; the revision must not appear
+in metric labels, CR status, errors, or diagnostics. The logical ID is safe for
+bounded diagnostics but remains opaque and is not a secrecy guarantee. The future
+`explain` UI may show it with aliases that are not assumed unique.
 
 ### Deduplication and provenance
 
-Deduplicate within an explicit inventory/credential trust scope. Two sources
-contributing the same endpoint do not make two independent failure domains.
-Union provenance, preserve conflicting assertions with their origin, and define
-a deterministic display-name choice separately. Do not overwrite metadata based
-on fetch order. Removing a source association must not remove an endpoint still
-present in another source.
+M1 deduplicates within one caller-provided inventory/trust scope using the full
+connection identity. It verifies complete configuration equality after an identity
+match; a mismatch is a deterministic conflict rather than an arrival-order choice.
+Records are ordered by logical ID and then private revision.
+
+Provenance is an inventory relationship, not part of endpoint identity. Each
+association has a safe source ID, a safe source-local record ID, and zero or more
+untrusted display aliases. Duplicate associations union and sort aliases; endpoint
+records union and sort associations. No single display name is selected. Two sources
+contributing the same connection do not make two endpoints or independent failure
+domains. Removing one association later must not remove a record that retains
+another association. Different connection revisions at the same logical endpoint
+remain separate records and therefore cannot share current probe health.
 
 Failure-domain source limits require a documented attribution rule for multi-source
 endpoints. Provider, subscription, ASN, and physical gateway are not synonyms.
@@ -139,7 +218,8 @@ Tests must not contact real subscription providers.
 ## Non-goals and open questions
 
 No proxy implementation, lossless editor for arbitrary engine configuration,
-cross-tenant inventory sharing, or universal schema is proposed. Q1 in the
-[decision queue](../decisions/open-questions.md) covers identity secrecy, rotation,
-and canonicalization. Q2 covers source admission/partial acceptance and the initial
-protocol/format slice. Do not choose a struct merely to make this document concrete.
+cross-tenant inventory sharing, or universal schema is proposed. Q1 is resolved by
+[ADR 0006](../decisions/0006-versioned-endpoint-identity.md). Q2 in the
+[decision queue](../decisions/open-questions.md) covers source admission, partial
+acceptance, and the first input format. M1's semantic slice does not choose that
+format or begin acquisition.

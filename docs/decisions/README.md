@@ -11,6 +11,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0003](0003-operator-tooling.md) | Kubebuilder/controller-runtime, alpha API, deferred generation | Accepted |
 | [0004](0004-sqlite-history.md) | SQLite for initial standalone historical state | Accepted |
 | [0005](0005-validated-publication.md) | Validate exact artifacts and preserve last-known-good | Accepted |
+| [0006](0006-versioned-endpoint-identity.md) | Versioned logical endpoint IDs and confidential connection revisions | Accepted |
 
 ## Adding a decision
 

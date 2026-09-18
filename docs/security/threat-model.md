@@ -89,8 +89,10 @@ Update this model alongside new network fetch paths, parsers, engine invocations
 secret providers, credential-bearing persistence, outputs, native escape hatches,
 CRD references, or RBAC changes. Add tests at the new boundary, not just a checklist.
 
-Open issues include identity fingerprint privacy (Q1), network policy enforcement
-through remote engines (Q3), backup/retention/SQLite driver choices (Q4), validator
+Identity fingerprint privacy is resolved by [ADR 0006](../decisions/0006-versioned-endpoint-identity.md):
+public IDs exclude credentials and private connection revisions remain sensitive.
+Open issues include network policy enforcement through remote engines (Q3),
+backup/retention/SQLite driver choices (Q4), validator
 isolation and version support (Q6), publication recovery (Q7), and operator
 state/permissions/deletion (Q8–Q9). All are recorded in the
 [decision queue](../decisions/open-questions.md).

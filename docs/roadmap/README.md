@@ -8,13 +8,14 @@ product is finished.
 
 ## Current state
 
-M0 (repository foundation) is complete as of 2026-09-18. M1–M6 have not started.
+M0 (repository foundation) is complete as of 2026-09-18. M1 is in progress;
+M2–M6 have not started.
 There is no EgressFox executable, parser, probe, database adapter, renderer,
 publisher, operator, CRD, or installation chart. Only repository tooling is
 executable today. The bootstrap stops at M0.
 
-**Next task: M1 — normalized endpoint identity and provenance-preserving deduplication.**
-Use the [ready execution plan](../plans/0002-endpoint-identity.md). Every later stage
+**Current task: M1 — normalized endpoint identity and provenance-preserving deduplication.**
+Use the [active execution plan](../plans/0002-endpoint-identity.md). Every later stage
 depends on distinguishing endpoints reliably; implementing a network parser or
 controller first would harden an unreviewed identity model.
 

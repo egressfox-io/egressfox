@@ -1,7 +1,7 @@
 # M1: Endpoint identity and provenance-preserving deduplication
 
-Status: ready, not started. Prepared: 2026-09-18.
-Branch/baseline: record when this task is actually started; bootstrap does not create it.
+Status: in progress. Prepared: 2026-09-18. Started: 2026-09-18.
+Branch/baseline: `feat/endpoint-model` from `0f77c1e`.
 
 ## Objective and scope
 
@@ -32,7 +32,7 @@ this exercise; it is not dictated by the plan.
 
 ## Checkpoints and acceptance
 
-- [ ] Write/review the canonicalization and credential-revision contract in the design.
+- [x] Write/review the canonicalization and credential-revision contract in the design.
 - [ ] Add `internal/endpoint` with cohesive real types/functions and no Kubernetes,
   engine, database, network, or speculative public SDK dependencies.
 - [ ] Implement deterministic identity and semantic validation for the declared subset.
@@ -52,8 +52,18 @@ that two differently named records with identical supported connection semantics
 deduplicate while two differing credentials do not share incompatible probe identity.
 Do not introduce live-network tests. Record actual results here when executed.
 
+## Decisions and evidence
+
+Q1 is resolved by [ADR 0006](../decisions/0006-versioned-endpoint-identity.md).
+M1 uses a safe logical endpoint ID plus a confidential connection revision. A
+credential rotation keeps logical continuity and changes the full connection
+identity, preventing incompatible observation reuse. The initial semantic slice is
+VLESS and Trojan with TCP/WebSocket and ordinary TLS; unsupported options remain
+explicitly outside the model. Official sing-box and Mihomo outbound/transport/TLS
+documentation was reviewed on 2026-09-18 before fixing the slice.
+
 ## Handoff
 
-No work has started and no implementation checks have been executed for M1. The
-first action is to inspect the branch/state and resolve Q1; the bootstrap ends
-before that action. Subsequent source work is M2, not part of this plan.
+The task branch and identity decision are established. Implementation, tests,
+completion documentation, and validation remain. Subsequent source work is M2,
+not part of this plan.

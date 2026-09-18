@@ -8,7 +8,6 @@ the agent/contributor undertaking the gated milestone owns bringing evidence.
 
 | ID | Question and decision evidence needed | Gate | Design owner |
 | --- | --- | --- | --- |
-| Q1 | Canonical endpoint encoding/version, credential fingerprint privacy, identity scope, rotation/history continuity, opaque display IDs. Compare supported protocol examples and prove equivalence/non-equivalence with tests. | M1 before persistent/public identity | [Endpoints](../designs/endpoints-and-sources.md) |
 | Q2 | First supported protocols/formats/source adapters; empty-source, partial-parse, stale inventory and disappearance policy. Specify strict admission and fixtures. | M2; protocol effects revisited at M3 | [Sources](../designs/endpoints-and-sources.md) |
 | Q3 | Through-endpoint probe engine topology, vantage, endpoint attribution, remote DNS/network restrictions, target incident detection, budget defaults. Benchmark isolated prototypes and failure/load cases without adding proxy protocols. | M4 before probe execution | [Observations](../designs/observations-and-selection.md) |
 | Q4 | SQLite driver/CGO, schema/migrations, retention, observation ordering, transaction/durability mode, clock discontinuity, restart/backup policy. Measure expected observation throughput and test recovery. | M4 before persistence contract | [History](../designs/observations-and-selection.md) |
@@ -24,3 +23,9 @@ the agent/contributor undertaking the gated milestone owns bringing evidence.
 The known P1-HA/P2-PostgreSQL tension is deliberate: HA must either use a supported
 single-writer durable-state arrangement, choose another design, or explicitly
 revise priorities. It must not be implemented by casually increasing replicas.
+
+## Resolved gates
+
+| ID | Resolution |
+| --- | --- |
+| Q1 | [ADR 0006](0006-versioned-endpoint-identity.md) defines identity version 1, credential rotation, private revision handling, and the initial semantic slice. Detailed canonicalization is in the [endpoint design](../designs/endpoints-and-sources.md). |
