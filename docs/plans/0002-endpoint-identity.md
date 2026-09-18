@@ -1,0 +1,59 @@
+# M1: Endpoint identity and provenance-preserving deduplication
+
+Status: ready, not started. Prepared: 2026-09-18.
+Branch/baseline: record when this task is actually started; bootstrap does not create it.
+
+## Objective and scope
+
+Implement the smallest useful Kubernetes-independent endpoint model, semantic
+identity and provenance-preserving deduplication, with no source I/O or product CLI.
+This is the one recommended next task in the [roadmap](../roadmap/README.md).
+The owning design is [endpoints and sources](../designs/endpoints-and-sources.md).
+
+No subscription parser, probe engine, storage adapter, score, renderer, publisher,
+controller, Rust workspace, or full protocol union belongs in this task.
+
+## Entry gates
+
+Read [ADR 0001](../decisions/0001-control-plane-and-core.md),
+[ADR 0002](../decisions/0002-go-and-module.md), and
+[Q1](../decisions/open-questions.md). Inspect existing work and create the task branch.
+
+Resolve Q1 before committing an identity contract: compare synthetic examples of
+supported connection semantics, decide identity scope/version, credential rotation
+and fingerprint privacy, and specify which fields are identity-bearing versus
+metadata. Explain hash/privacy tradeoffs and any future migration impact in the
+owning design. Do not expose a secret-derived fingerprint as a public identifier.
+
+Select a minimal protocol subset sufficient to exercise host/port, credentials,
+transport and TLS distinctions without inventing every protocol structure. Reject
+unsupported/unknown connection semantics explicitly. The exact Go shape follows
+this exercise; it is not dictated by the plan.
+
+## Checkpoints and acceptance
+
+- [ ] Write/review the canonicalization and credential-revision contract in the design.
+- [ ] Add `internal/endpoint` with cohesive real types/functions and no Kubernetes,
+  engine, database, network, or speculative public SDK dependencies.
+- [ ] Implement deterministic identity and semantic validation for the declared subset.
+- [ ] Implement deterministic deduplication preserving source associations and aliases
+  without treating duplicate subscriptions as independent endpoint failures.
+- [ ] Prove equivalence and distinction, source/display rename invariance, input-order
+  invariance, credential/TLS/transport change behavior, unknown-field rejection,
+  and safe diagnostics using synthetic fixtures and table/property tests.
+- [ ] Update documentation and support limits; run the repository checks and inspect
+  the full diff. Commit coherent checkpoints and leave a clean task branch.
+
+## Validation plan
+
+Use `make fmt`, `make check`, and `make vuln`, plus focused tests in the new package.
+Tests must demonstrate behavior, not merely mirror struct fields. Include a test
+that two differently named records with identical supported connection semantics
+deduplicate while two differing credentials do not share incompatible probe identity.
+Do not introduce live-network tests. Record actual results here when executed.
+
+## Handoff
+
+No work has started and no implementation checks have been executed for M1. The
+first action is to inspect the branch/state and resolve Q1; the bootstrap ends
+before that action. Subsequent source work is M2, not part of this plan.
