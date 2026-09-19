@@ -37,22 +37,24 @@ func (failure *ExecutionError) Unwrap() error { return ErrExecution }
 func (failure *ExecutionError) Code() string  { return failure.code }
 
 type Config struct {
-	Renderer       engine.Renderer
-	Checker        artifact.Checker
-	Binary         string
-	Vantage        observation.VantageID
-	Resolver       Resolver
-	StartupTimeout time.Duration
+	Renderer              engine.Renderer
+	Checker               artifact.Checker
+	Binary                string
+	Vantage               observation.VantageID
+	Resolver              Resolver
+	StartupTimeout        time.Duration
+	AllowPrivateEndpoints bool
 }
 
 type Executor struct {
-	renderer       engine.Renderer
-	checker        artifact.Checker
-	binary         string
-	vantage        observation.VantageID
-	resolver       Resolver
-	startupTimeout time.Duration
-	reserve        func() (net.Listener, int, error)
+	renderer              engine.Renderer
+	checker               artifact.Checker
+	binary                string
+	vantage               observation.VantageID
+	resolver              Resolver
+	startupTimeout        time.Duration
+	allowPrivateEndpoints bool
+	reserve               func() (net.Listener, int, error)
 }
 
 func NewExecutor(config Config) (*Executor, error) {
@@ -75,7 +77,7 @@ func NewExecutor(config Config) (*Executor, error) {
 	return &Executor{
 		renderer: config.Renderer, checker: config.Checker, binary: config.Binary,
 		vantage: config.Vantage, resolver: resolver, startupTimeout: config.StartupTimeout,
-		reserve: reserveLoopback,
+		allowPrivateEndpoints: config.AllowPrivateEndpoints, reserve: reserveLoopback,
 	}, nil
 }
 
@@ -92,11 +94,15 @@ func (executor *Executor) Execute(ctx context.Context, record endpoint.Record, t
 	if err != nil {
 		return observation.Observation{}, executionFailure("evidence_key")
 	}
+	executionRecord, err := executor.authorizeEndpoint(ctx, record)
+	if err != nil {
+		return observation.Observation{}, err
+	}
 	listener, port, err := executor.reserve()
 	if err != nil {
 		return observation.Observation{}, executionFailure("listener")
 	}
-	inventory, err := endpoint.Deduplicate([]endpoint.Record{record})
+	inventory, err := endpoint.Deduplicate([]endpoint.Record{executionRecord})
 	if err != nil {
 		_ = listener.Close()
 		return observation.Observation{}, executionFailure("inventory")
@@ -188,6 +194,29 @@ func (executor *Executor) Execute(ctx context.Context, record endpoint.Record, t
 		Key: key, StartedAt: startedAt, CompletedAt: startedAt.Add(duration), Duration: duration,
 		Outcome: outcome, StatusCode: status,
 	})
+}
+
+func (executor *Executor) authorizeEndpoint(ctx context.Context, record endpoint.Record) (endpoint.Record, error) {
+	configuration := record.Configuration()
+	address, err := authorizeHost(ctx, executor.resolver, configuration.Address().Host(), executor.allowPrivateEndpoints, "endpoint")
+	if err != nil {
+		return endpoint.Record{}, err
+	}
+	executionAddress, err := endpoint.NewAddress(address.String(), int(configuration.Address().Port()))
+	if err != nil {
+		return endpoint.Record{}, executionFailure("endpoint_address")
+	}
+	executionConfiguration, err := endpoint.NewConfiguration(
+		configuration.Protocol(), executionAddress, configuration.Credential(), configuration.Transport(), configuration.TLS(),
+	)
+	if err != nil {
+		return endpoint.Record{}, executionFailure("endpoint_configuration")
+	}
+	executionRecord, err := endpoint.NewRecord(executionConfiguration, record.Provenance()...)
+	if err != nil {
+		return endpoint.Record{}, executionFailure("endpoint_record")
+	}
+	return executionRecord, nil
 }
 
 func engineArguments(profile artifact.Profile, configPath, workspace string) []string {

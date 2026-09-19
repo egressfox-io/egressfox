@@ -29,10 +29,12 @@ direct route or engine-native health test. Failure to render, validate, start or
 the local engine alive is an execution failure and produces no endpoint observation.
 
 The initial probe kind is an HTTP GET through the local SOCKS listener. HTTPS is the
-safe default. Plain HTTP and private/loopback targets require separate explicit
-trusted-input options. EgressFox resolves the target locally, applies destination
-policy to every result, chooses a deterministic allowed address, and passes that
-literal address through SOCKS; HTTPS retains the original hostname for SNI and Host.
+safe default. Plain HTTP, private/loopback endpoints and private/loopback targets
+require separate explicit trusted-input options. EgressFox resolves both the endpoint
+and target locally, applies destination policy to every result, and rejects the whole
+answer set if any address is denied. It chooses a deterministic allowed address and
+renders/dials an execution-only literal; endpoint TLS and target HTTPS retain their
+original hostnames for SNI, and target HTTP retains its original Host.
 Redirects are rejected, environment proxy variables are ignored, response bytes are
 bounded, and success requires the configured exact status plus a body that reaches
 EOF within the limit. The measured duration spans request execution through bounded

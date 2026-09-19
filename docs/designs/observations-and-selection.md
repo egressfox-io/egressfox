@@ -1,7 +1,7 @@
 # Observations, history, and selection
 
-Status: accepted M4 observation, probe and history contract fixed by ADR 0009;
-adaptive selection and metric instruments are not implemented.
+Status: M4 observation, probe and history contract implemented under ADR 0009;
+adaptive selection and exported metric instruments are not implemented.
 
 ## Decisions and scope
 
@@ -21,9 +21,10 @@ No scoring formula, weight, timeout default, or threshold is accepted yet.
 
 Record the full endpoint connection identity (logical ID plus confidential revision),
 profile/target revision, execution vantage, probe kind, start/completion time,
-duration, and a bounded outcome/reason. The summary key must prevent mixing different
-paths, credentials, targets, or methods. M4 must define protected persistence for
-the confidential revision before storing it; diagnostics use only the logical ID.
+duration, and a bounded outcome/reason. The summary key prevents mixing different
+paths, credentials, targets, or methods. M4 exposes narrow protected persistence
+boundaries for confidential connection and target revisions; diagnostics use only
+safe logical IDs.
 DNS, direct TCP, TLS, HTTP, and through-endpoint checks answer different questions.
 A successful TCP dial to the proxy is not proof it can reach a destination.
 
@@ -36,21 +37,21 @@ A successful TCP dial to the proxy is not proof it can reach a destination.
 | No sample yet or expired evidence | Unknown/stale; not zero latency, success, or observed failure |
 | Target fails across many endpoints and the control path | Suspected target/observer incident; avoid automatically condemning every endpoint |
 
-Observations may contain connect latency, TTFB, total request time, result, exit
-IP, and measured country/ASN. Derived summaries may contain EWMA latency, rolling
-availability, jitter, failure/recovery streaks, flapping, and freshness. Define
-units, windows, sample counts, and denominators before implementing each field.
+M4 observations contain end-to-end bounded request duration, outcome and an optional
+safe HTTP status. M4 summaries contain sample/success counts, success ratio, latest
+sample/success, mean successful duration and explicit freshness. Connect/TTFB
+breakdowns, exit IP, country/ASN, EWMA, jitter, streaks and flapping remain future
+work and require defined units, windows, sample counts and denominators.
 Do not call HTTP latency variation packet loss or invent an ICMP metric from it.
 No response bodies or authentication data belong in ordinary observation records.
 
 ### Through-endpoint execution
 
-Proposed direction: run/use an isolated, pinned engine with an endpoint-specific
-outbound and a controlled local proxy/API interface, then execute a bounded probe
-through it. The engine implements authentication, transport, and tunneling. Keep
-this separate from the production gateway so probes cannot change user traffic.
-The execution adapter must prove which endpoint was used; no automatic fallback
-to another endpoint or direct connection may masquerade as success.
+The implemented path runs an isolated, pinned engine with an endpoint-specific
+outbound and loopback SOCKS listener, then executes one bounded HTTP GET through it.
+The engine implements authentication, transport, tunneling and SOCKS. This remains
+separate from the production gateway, and no fallback or direct route can masquerade
+as success.
 
 M4 chooses one isolated pinned engine process per endpoint/revision and request.
 It renders the M3 one-endpoint gateway, validates exact bytes, waits for a private
@@ -59,6 +60,17 @@ and waits for the engine. Rendering, validation, process/readiness, resolution a
 authorization failures produce execution errors rather than endpoint observations.
 This deliberately favors attribution and cleanup over startup efficiency.
 
+HTTPS is the default; plain HTTP, private/loopback endpoints and private/loopback
+targets require independent explicit authorization. The executor resolves endpoint
+and target names locally, rejects either full answer set if any address violates
+policy, sorts allowed addresses, and renders/dials execution-only literals while
+retaining original HTTP Host and TLS SNI. It rejects redirects, environment proxies,
+link-local/multicast/unspecified addresses and untrusted private/shared/control space,
+and bounds readiness, request duration and response bytes. Success, request
+timeout, connection failure, TLS failure, unexpected status/redirect and oversized
+response are observations after request start. Resolution, authorization, rendering,
+native validation, process/readiness and scheduler failures are safe execution errors.
+
 Probe vantage matters: an operator Pod may have a different route than a gateway
 Pod or standalone host. P0 must declare its vantage and limits. Remote/distributed
 probing is not assumed. Engine-local URL tests are a different observation source
@@ -66,10 +78,11 @@ unless they provide the identity, target, and timing semantics the core requires
 
 ### Bounded scheduling
 
-Use a bounded queue and global concurrency/rate budgets plus per-source/provider,
-target, and endpoint limits where needed. Stagger checks; prioritize a bounded
-set of selected endpoints while keeping exploration capacity for recovery and
-unknown candidates. Use deadlines, backoff, cancellation, and bounded retries.
+M4 uses a bounded queue, maximum job count, global worker count, per-logical-endpoint
+limit and per-target limit. Defaults are 256 queued jobs, 10,000 total jobs, four
+workers, one job per logical endpoint and two per target. Result slots preserve input
+order; cancellations create no observation. Rate limiting, staggering, retries,
+adaptive priority and exploration policy remain M5 or later work.
 
 Capacity estimates must consider `endpoints × profiles ÷ interval` plus retry and
 recovery traffic. The Cartesian product must never translate into an unbounded
@@ -88,23 +101,21 @@ per-key and global retention. The database directory and files are a confidentia
 same-host boundary. Unknown future schema versions and inaccessible/corrupt state
 fail instead of silently falling back to memory.
 
-Organize storage around real operations: persist an observation and its summary
-consistently, load a coherent decision snapshot, record selection transitions,
-and record publication receipts. Keep SQL and migrations in the adapter. Do not
-introduce a generic CRUD repository, ORM, or PostgreSQL-shaped abstraction now.
+The M4 adapter persists an immutable observation idempotently, prunes retention in
+the same transaction, loads an exact complete-key time window, and derives the same
+domain summary after restart. SQL and schema migration stay in the adapter; there is
+no generic CRUD repository, ORM, selection-state table or publication receipt here.
 
-Potential retained facts include first/last seen, last success/failure, rolling
-availability, EWMA and jitter, streaks, flapping state, selected-since/cooldown,
-score history, selection history, and compact decision reasons. Partition by the
-observation dimensions; retain bounded raw samples separately from aggregates.
-The specific schema and retention budgets are open. Store secret references where
-possible, not copied subscription bodies or rendered credential-bearing configs.
+Schema v1 retains only immutable raw samples partitioned by complete evidence key.
+Defaults enforce 30 days, 512 rows per key and 100,000 rows globally. It stores
+private fixed-size connection/target revisions, never subscription bodies, target
+URLs, credentials or rendered configurations. Selection state, streaks, cooldown,
+score and decision history remain M5 decisions.
 
-Persist enough anti-flapping state that restart does not reset residence time and
-trigger churn. Define wall-clock jump handling and how durations resume after
-restart. Inject evaluation time in tests. Late/duplicate observations must not
-move summary time backwards or increment streaks twice. Decide sample IDs and
-out-of-order processing in the storage/observation milestone.
+Sample digests make replay idempotent. Explicit evaluation times make age pruning,
+query windows and freshness deterministic; late samples remain immutable facts and
+summary ordering uses completion time plus sample ID. M5 must separately define and
+persist enough anti-flapping/selection state that restart does not trigger churn.
 
 Database loss is an explicit cold start. Do not pretend unknown history is healthy.
 An inaccessible/corrupt database must not replace an output with an empty artifact.

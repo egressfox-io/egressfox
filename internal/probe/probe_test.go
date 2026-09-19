@@ -87,6 +87,33 @@ func TestAuthorizeLiteralDoesNotResolveAndRejectsUnspecified(t *testing.T) {
 	}
 }
 
+func TestAuthorizeEndpointPinsAddressWithoutChangingEvidenceIdentity(t *testing.T) {
+	t.Parallel()
+	record := testRecord(t, 7, "endpoint-credential")
+	vantage, _ := observation.NewVantageID("test-host")
+	executor := &Executor{
+		vantage:  vantage,
+		resolver: &fixedResolver{addresses: []netip.Addr{netip.MustParseAddr("8.8.8.8")}},
+	}
+	executionRecord, err := executor.authorizeEndpoint(context.Background(), record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executionRecord.Configuration().Address().Host() != "8.8.8.8" ||
+		executionRecord.Configuration().TLS().ServerName() != record.Configuration().TLS().ServerName() ||
+		executionRecord.Identity().Equal(record.Identity()) {
+		t.Fatalf("execution record did not pin only the network address")
+	}
+	privateRecord := recordWithAddress(t, "127.0.0.1", "private-endpoint")
+	if _, err := executor.authorizeEndpoint(context.Background(), privateRecord); !errors.Is(err, ErrExecution) {
+		t.Fatalf("private endpoint error = %v", err)
+	}
+	executor.allowPrivateEndpoints = true
+	if _, err := executor.authorizeEndpoint(context.Background(), privateRecord); err != nil {
+		t.Fatalf("explicitly authorized private endpoint = %v", err)
+	}
+}
+
 func TestExecutorReportsSafeEngineExit(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses a POSIX shell script")
@@ -305,7 +332,12 @@ func (runner *delayedRunner) Execute(ctx context.Context, record endpoint.Record
 
 func testRecord(t testing.TB, index int, credential string) endpoint.Record {
 	t.Helper()
-	address, err := endpoint.NewAddress(fmt.Sprintf("edge-%d.example.test", index), 443)
+	return recordWithAddress(t, fmt.Sprintf("edge-%d.example.test", index), credential)
+}
+
+func recordWithAddress(t testing.TB, host, credential string) endpoint.Record {
+	t.Helper()
+	address, err := endpoint.NewAddress(host, 443)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +354,7 @@ func testRecord(t testing.TB, index int, credential string) endpoint.Record {
 		t.Fatal(err)
 	}
 	source, _ := endpoint.NewSourceID("test")
-	recordID, _ := endpoint.NewRecordID(fmt.Sprintf("record-%d", index))
+	recordID, _ := endpoint.NewRecordID(fmt.Sprintf("record-%x", []byte(host)))
 	provenance, err := endpoint.NewProvenance(source, recordID)
 	if err != nil {
 		t.Fatal(err)

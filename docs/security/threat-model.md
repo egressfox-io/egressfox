@@ -1,7 +1,8 @@
 # Threat model
 
 Status: design requirements with M1 domain redaction, M2 bounded source controls,
-and M3 secret-bearing artifact/native-validator/file-publication controls implemented.
+M3 secret-bearing artifact/native-validator/file-publication controls, and M4
+probe authorization/budget/history controls implemented.
 Repository tooling provides read-only CI permissions, pinned Actions, and a
 vulnerability-check command. There is no network runtime to secure or supported
 production release. Reporting guidance is in [SECURITY.md](../../SECURITY.md).
@@ -9,14 +10,17 @@ production release. Reporting guidance is in [SECURITY.md](../../SECURITY.md).
 M2 HTTP acquisition permits HTTPS by default, requires explicit intent for HTTP and
 non-public destinations, checks resolved addresses on the actual dial path, disables
 environment proxy use, limits same-origin redirects, time and bytes, and exposes only
-safe source IDs/reason codes. These controls cover source acquisition only; endpoint
-and probe destination authorization remains an M4 boundary. Deployment egress policy
-is still required defense in depth. M3 native validation pins the exact engine
+safe source IDs/reason codes. M4 independently resolves and authorizes every endpoint
+and probe-target answer, pins engine/HTTP dials to deterministic allowed literals,
+and requires separate trusted intent for private endpoint and target ranges. Deployment
+egress policy remains required defense in depth. M3 native validation pins the exact engine
 profile, runs without a shell in a private temporary directory with a deadline and
 controlled environment, and reduces child output to safe reason codes. The M3 file
 publisher requires a trusted private directory, rejects symlinks and unmanaged
 targets, uses `0600` files, and keeps protected receipt/journal/previous state in
-that same secret boundary.
+that same secret boundary. M4 bounds jobs, queues, concurrency, process readiness,
+requests, response bytes and SQLite retention; its diagnostics omit engine output,
+raw targets, credentials and confidential revisions.
 
 ## Assets, actors, and trust boundaries
 
@@ -58,11 +62,11 @@ Trust boundaries:
 | Engine control API or proxy listener exposed | Bind probe control interfaces privately, authenticate where applicable, do not create an open proxy; keep control and application listeners distinct |
 | Dependency/build compromise | Review new dependencies, pin Actions and tool versions, checksum downloaded executables, `govulncheck`, scoped CI permissions; image scanning/signing/SBOM before release pipeline |
 
-Redirect policy must cover every hop. Internal-source use is legitimate, so exceptions
-must be explicit deployment/user intent with scoped permissions rather than a
-blanket relaxation. A proxy may resolve a hostname remotely; local DNS inspection
-alone cannot prove the remote destination address. Q3 must choose what is enforceable
-and document residual risk before shipping through-endpoint probes.
+Redirect policy covers every hop by rejecting redirects. Internal endpoint/target use
+is legitimate, so private-network exceptions are independent explicit trusted intent.
+The M4 engine receives endpoint and target literals after local resolution, preventing
+remote proxy resolution from bypassing these checks. DNS answers can change after an
+observation, and deployment egress policy must still enforce an independent boundary.
 
 ## Sensitive data handling
 
@@ -104,11 +108,11 @@ CRD references, or RBAC changes. Add tests at the new boundary, not just a check
 
 Identity fingerprint privacy is resolved by [ADR 0006](../decisions/0006-versioned-endpoint-identity.md):
 public IDs exclude credentials and private connection revisions remain sensitive.
-Open issues include network policy enforcement through remote engines (Q3),
-backup/retention/SQLite driver choices (Q4), Secret publication and runtime
-activation/rollback (remaining Q7), and operator state/permissions/deletion
-(Q8–Q9). M3 validator and file recovery choices are resolved by
-[ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md). All open
+Q3/Q4 probe and history choices are resolved by
+[ADR 0009](../decisions/0009-bounded-probes-and-sqlite-evidence.md). Open issues include
+adaptive selection (Q5), Secret publication and runtime activation/rollback (remaining
+Q7), and operator state/permissions/deletion (Q8–Q9). M3 validator and file recovery
+choices are resolved by [ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md). All open
 items are recorded in the [decision queue](../decisions/open-questions.md).
 
 Configuration validation cannot prove an endpoint is trustworthy, a destination

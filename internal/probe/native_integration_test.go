@@ -75,7 +75,7 @@ func TestPinnedEnginesProduceControlledObservations(t *testing.T) {
 			}
 			executor, err := probe.NewExecutor(probe.Config{
 				Renderer: test.renderer, Checker: checker, Binary: binary, Vantage: vantage,
-				StartupTimeout: 5 * time.Second,
+				StartupTimeout: 5 * time.Second, AllowPrivateEndpoints: true,
 			})
 			if err != nil {
 				t.Fatal(err)

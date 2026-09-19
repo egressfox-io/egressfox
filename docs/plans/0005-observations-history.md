@@ -60,10 +60,11 @@ global pruning. Tests cover restart replay, evidence-key isolation, schema rejec
 permissions and symlinks, cancellation, concurrent writers, and raw-secret absence from
 the database and its WAL/SHM sidecars.
 
-The probe checkpoint authorizes every locally resolved destination address before
-execution, rejects redirects and environment proxies, pins the dial to one authorized
-literal while preserving HTTP Host and TLS SNI, and bounds engine readiness, request
-time and response bytes. Each request renders and natively validates a one-record
+The probe checkpoint authorizes every locally resolved endpoint and target address
+before execution, requires independent intent for their private ranges, rejects
+redirects and environment proxies, and pins both dials to authorized literals while
+preserving HTTP Host and TLS SNI. It bounds engine readiness, request time and response
+bytes. Each request renders and natively validates a one-record
 gateway, runs one isolated engine process, and produces either a revision-specific
 observation or a safe execution failure. The scheduler enforces global, per-logical-
 endpoint, per-target, queue and total-job limits with cancellation and stable result
