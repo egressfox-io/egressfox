@@ -8,6 +8,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | --- | --- | --- |
 | [0001](0001-repository-bootstrap.md) | Complete | Repository foundation only |
 | [0002](0002-endpoint-identity.md) | Complete | M1 endpoint identity and provenance |
+| [0003](0003-source-inventory.md) | Complete | M2 safe source-to-inventory pipeline |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

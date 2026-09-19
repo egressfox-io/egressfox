@@ -1,8 +1,9 @@
 # EgressFox agent contract
 
 EgressFox is a Go control plane that derives desired Mihomo/sing-box configuration.
-M1 provides the Kubernetes-independent endpoint identity and inventory domain; there
-is still no product CLI, parser, probe, renderer, publisher, CRD, or controller.
+M1 provides endpoint identity, and M2 provides bounded source acquisition, strict
+URI ingestion and transactional snapshots. There is still no product CLI, probe,
+renderer, publisher, CRD, or controller.
 Read the [documentation map](docs/README.md),
 [architecture](docs/architecture.md), and [current roadmap](docs/roadmap/README.md)
 before implementation. Planned features are not existing behavior.
@@ -62,11 +63,12 @@ Run `make fmt` after Go edits; `make check` runs formatting, vet, race tests, bu
 offline documentation links/anchors, and whitespace checks. Run `make vuln` for
 the online pinned vulnerability scan. `make help` lists available commands.
 
-These checks cover repository tooling and the M1 endpoint domain. Add relevant
-layers from the [test strategy](docs/development/testing.md) as behavior appears:
+These checks cover repository tooling and the M1/M2 endpoint and source domains.
+Add relevant layers from the [test strategy](docs/development/testing.md) as behavior appears:
 parser fuzzing, renderer goldens/native validation, publication failure tests,
 SQLite integration, envtest, and real-cluster/traffic tests. Do not claim
 unavailable checks passed.
-Complete the workflow's definition of done before handoff. M1's completed execution
-record is the [endpoint plan](docs/plans/0002-endpoint-identity.md); the
-[roadmap](docs/roadmap/README.md) identifies M2 as the next milestone, gated by Q2.
+Complete the workflow's definition of done before handoff. Completed execution
+records are the [endpoint plan](docs/plans/0002-endpoint-identity.md) and
+[source plan](docs/plans/0003-source-inventory.md); the roadmap identifies M3 as
+the next milestone, gated by Q6 and the file part of Q7.

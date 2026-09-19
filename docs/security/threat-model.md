@@ -1,9 +1,17 @@
 # Threat model
 
-Status: design requirements with M1 domain redaction boundaries implemented.
+Status: design requirements with M1 domain redaction and M2 bounded source controls
+implemented.
 Repository tooling provides read-only CI permissions, pinned Actions, and a
 vulnerability-check command. There is no network runtime to secure or supported
 production release. Reporting guidance is in [SECURITY.md](../../SECURITY.md).
+
+M2 HTTP acquisition permits HTTPS by default, requires explicit intent for HTTP and
+non-public destinations, checks resolved addresses on the actual dial path, disables
+environment proxy use, limits same-origin redirects, time and bytes, and exposes only
+safe source IDs/reason codes. These controls cover source acquisition only; endpoint
+and probe destination authorization remains an M4 boundary. Deployment egress policy
+is still required defense in depth.
 
 ## Assets, actors, and trust boundaries
 

@@ -32,7 +32,8 @@ contract, not a substitute for these documents. No original conversation is need
   the affected public/persistent contract.
 - **Open question**: unresolved, with a milestone gate in the decision queue.
 - **Implemented**: backed by code and validation evidence; current milestone status
-  is in the roadmap. This applies to repository tooling and the M1 endpoint domain.
+  is in the roadmap. This applies to repository tooling and the M1/M2 endpoint and
+  source domains.
 - **Future/experimental**: cataloged beyond the current milestone; not current work.
 
 Priority and maturity are independent. P0 does not mean implemented; an accepted

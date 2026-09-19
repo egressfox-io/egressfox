@@ -10,10 +10,11 @@ on policy, destination-aware observations, and historical network behavior.
 > **EgressFox decides what configuration should exist. Mihomo or sing-box decides
 > how traffic flows through it.**
 
-**Status: M1 endpoint domain complete.** Versioned connection identity,
-normalization, provenance, and deterministic deduplication are implemented. There
-is no working EgressFox CLI, source adapter, probe, renderer, operator, or gateway
-deployment yet. Project domain: `egressfox.io`.
+**Status: M2 source-to-inventory domain complete.** Versioned connection identity,
+bounded inline/HTTP acquisition, strict URI-list/Base64 ingestion, transactional
+source snapshots, provenance, and deterministic inventory are implemented. There
+is no working EgressFox CLI, probe, renderer, operator, or gateway deployment yet.
+Project domain: `egressfox.io`.
 
 ```mermaid
 flowchart LR
@@ -43,8 +44,8 @@ the engines' responsibility.
 
 | Stage | Contents |
 | --- | --- |
-| Present | M1 endpoint identity/inventory domain with tests; product/design documentation, ADRs, threat model, contributor workflow, Go documentation checker, and CI configuration |
-| Planned P0 | Source acquisition, standalone CLI, destination-aware probes, SQLite history, adaptive selection, both renderers, validated file/Secret publication, and a Kubernetes operator for BYO runtimes |
+| Present | M1 endpoint identity and M2 bounded source/snapshot pipeline with tests; architecture, security, development and CI documentation |
+| Planned P0 | Standalone CLI, destination-aware probes, SQLite history, adaptive selection, both renderers, validated file/Secret publication, and a Kubernetes operator for BYO runtimes |
 | Later or experimental | Managed engines, richer policy/diversity and explain tooling, additional outputs, HA, PostgreSQL, UIs, and advanced networking integrations |
 
 Kubernetes is an integration over the same core as standalone mode. Initial
@@ -54,7 +55,8 @@ TProxy automation, and eBPF integration are future research areas.
 ## Start here
 
 - [Documentation map](docs/README.md) — authoritative product, architecture, and design sources.
-- [Implementation roadmap](docs/roadmap/README.md) — dependencies and exit criteria; M2 source-to-inventory is next.
+- [Implementation roadmap](docs/roadmap/README.md) — dependencies and exit criteria;
+  M3 validated rendering/publication is next.
 - [Contributing](CONTRIBUTING.md) — branch, design, test, and commit expectations.
 - [Agent instructions](AGENTS.md) — compact navigation and operating contract.
 - [Security](SECURITY.md) — reporting limitations and threat-model entry point.
@@ -69,7 +71,7 @@ make check
 make vuln
 ```
 
-These validate repository tooling, documentation, and the M1 endpoint domain. They
+These validate repository tooling, documentation, and the M1/M2 core domains. They
 do not run a gateway. The vulnerability check needs network access. All commands
 and their limits are documented in the development guide.
 

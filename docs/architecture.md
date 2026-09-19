@@ -57,7 +57,8 @@ Probe outcomes and summary semantics belong in [observations and selection](desi
 
 ## Component boundaries and future code placement
 
-There is one Go module. `internal/endpoint` implements the M1 domain and
+There is one Go module. `internal/endpoint` implements the M1 domain,
+`internal/source` implements the M2 acquisition and snapshot boundary, and
 `tools/checkdocs` is repository tooling; there is no product executable yet. The
 remaining paths are placement guidance, **not directories to pre-create**. Introduce
 packages with their first real consumer; combine closely related code until a tested
@@ -66,7 +67,7 @@ dependency boundary warrants splitting it.
 | Responsibility | Intended location when implemented | Dependency constraint |
 | --- | --- | --- |
 | Normalized endpoint types and identity | `internal/endpoint` | No Kubernetes or engine imports |
-| Acquisition adapters and subscription parsers | `internal/source` and format-specific children | Produce normalized input; cannot publish output |
+| Acquisition adapters and subscription parsers | `internal/source` (implemented M2 slice) and format-specific children when justified | Produce normalized input; cannot publish output |
 | Probe scheduling and observation types | `internal/probe` | Engine execution behind a narrow adapter; no protocol implementation |
 | History reads/writes and SQLite adapter | `internal/state` | Domain-shaped operations; no generic ORM or backend framework |
 | Eligibility, scoring, selection | `internal/selection` | Deterministic inputs; no I/O or Kubernetes types |

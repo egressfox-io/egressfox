@@ -209,7 +209,8 @@ accepted. Explicit format selection is preferred. Auto-detection first recognize
 known proxy URI schemes and otherwise chooses Base64 only after strict decoding to
 a recognizable URI list. Blank lines and lines beginning with `#` are ignored. The
 default limits are 4 MiB input, 4 MiB decoded input, 10,000 records, and 16 KiB per
-record.
+record. Hard configurable ceilings are 64 MiB input/decoded bytes, 1,000,000 records,
+and 1 MiB per record.
 
 The URI subset maps exactly to M1. VLESS requires UUID authentication, an explicit
 port, `encryption=none`, empty flow, TCP or WebSocket with an explicit path, and

@@ -1,7 +1,9 @@
 # Testing and reproducible evaluation
 
 Status: testing strategy. M1 implements endpoint identity, validation, provenance,
-deduplication, redaction, permutation, and canonicalization fuzz tests. Commands
+deduplication, redaction, permutation, and canonicalization fuzz tests. M2 adds
+bounded HTTP integration tests, parser/admission tests, snapshot reconciliation,
+leakage canaries and URI fuzzing. Commands
 available now are listed in [workflow](workflow.md). Do not claim
 controller, renderer, or traffic tests run until their milestones implement them.
 
