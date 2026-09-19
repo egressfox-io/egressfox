@@ -253,6 +253,24 @@ func TestStoreCancellationConcurrencyAndSecretBoundary(t *testing.T) {
 	}
 }
 
+func BenchmarkStoreAppendAndLoadWindow(b *testing.B) {
+	store := openTestStore(b, state.Retention{MaxAge: 24 * time.Hour, MaxPerKey: 512, MaxRows: 10_000})
+	base := time.Date(2026, 9, 19, 14, 0, 0, 0, time.UTC)
+	key := testKey(b, "benchmark-credential", "benchmark-target", "https://example.test/", "benchmark-host")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := range b.N {
+		completed := base.Add(time.Duration(index) * time.Millisecond)
+		value := testObservation(b, key, completed, time.Millisecond, observation.OutcomeSuccess, 204)
+		if err := store.Append(context.Background(), value, completed); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := store.Load(context.Background(), key, completed.Add(-time.Minute), completed); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func openTestStore(t testing.TB, retention state.Retention) *state.Store {
 	t.Helper()
 	directory := privateTempDir(t)
