@@ -30,7 +30,7 @@ retention and complete evidence keys.
 - [x] Record Q3/Q4, target/outcome/vantage/revision semantics and dependency choice.
 - [x] Implement immutable observation/target types, confidential revision persistence
   boundary, freshness and deterministic summaries.
-- [ ] Implement schema migration, insertion/query/restart and bounded SQLite retention.
+- [x] Implement schema migration, insertion/query/restart and bounded SQLite retention.
 - [ ] Implement target authorization, isolated Mihomo/sing-box execution and bounded
   HTTP probing without protocol reimplementation.
 - [ ] Implement bounded scheduler and representative load/benchmark evidence.
@@ -53,7 +53,14 @@ immutable observations and deterministic window/freshness summaries. Tests prove
 credential rotation, target and vantage isolation, canonical targets, boundary-time
 behavior, permutation replay and formatting/JSON redaction.
 
+The SQLite checkpoint pins the CGo-free driver and implements protected-file opening,
+WAL/FULL durability with one database connection, schema-v1 migration and verification,
+idempotent insertion, exact-key replay and summaries, and transactional age/per-key/
+global pruning. Tests cover restart replay, evidence-key isolation, schema rejection,
+permissions and symlinks, cancellation, concurrent writers, and raw-secret absence from
+the database and its WAL/SHM sidecars.
+
 ## Resume and handoff
 
-Next: implement and exercise schema version 1, transactional insertion/retention,
-restart queries and summary reconstruction in the SQLite adapter.
+Next: implement target authorization, isolated engine execution and the bounded HTTP
+measurement path without implementing a proxy protocol in EgressFox.
