@@ -48,7 +48,7 @@ func (checker NativeChecker) Check(ctx context.Context, candidate Candidate) (Ev
 	if err != nil {
 		return Evidence{}, validationFailure(checker.profile, contextCode(ctx, "version_failed"))
 	}
-	if !strings.Contains(versionOutput, checker.profile.Version) {
+	if !hasVersionToken(versionOutput, checker.profile.Version) {
 		return Evidence{}, validationFailure(checker.profile, "version_mismatch")
 	}
 	directory, err := os.MkdirTemp("", "egressfox-validator-")
@@ -77,6 +77,15 @@ func (checker NativeChecker) Check(ctx context.Context, candidate Candidate) (Ev
 		return Evidence{}, validationFailure(checker.profile, contextCode(ctx, "candidate_rejected"))
 	}
 	return Evidence{ValidatorID: "native/" + checker.profile.Engine.String() + "/" + checker.profile.Version}, nil
+}
+
+func hasVersionToken(output, version string) bool {
+	for _, field := range strings.Fields(output) {
+		if strings.TrimPrefix(field, "v") == version {
+			return true
+		}
+	}
+	return false
 }
 
 func (checker NativeChecker) run(ctx context.Context, directory string, args ...string) (string, error) {

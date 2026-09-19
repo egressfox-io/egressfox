@@ -75,13 +75,33 @@ func TestNativeCheckerUsesPinnedProfileAndSanitizesFailure(t *testing.T) {
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	native, err := artifact.NewNativeChecker(artifact.SingBox1141, binary, time.Second)
+	native, err := artifact.NewNativeChecker(artifact.SingBox1141, binary, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
 	candidate := mustCandidate(t, artifact.SingBox1141, []byte(`{"password":"native-secret-canary"}`))
 	_, err = artifact.Validate(context.Background(), candidate, native)
 	if !errors.Is(err, artifact.ErrValidation) || strings.Contains(err.Error(), "native-secret-canary") {
+		t.Fatalf("native error = %v", err)
+	}
+}
+
+func TestNativeCheckerRejectsNearVersionMatch(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "fake-sing-box")
+	script := "#!/bin/sh\necho 'sing-box version 1.14.10'\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	native, err := artifact.NewNativeChecker(artifact.SingBox1141, binary, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := mustCandidate(t, artifact.SingBox1141, []byte(`{"password":"version-secret-canary"}`))
+	_, err = artifact.Validate(context.Background(), candidate, native)
+	var validationError *artifact.ValidationError
+	if !errors.As(err, &validationError) || validationError.Code() != "version_mismatch" || strings.Contains(err.Error(), "version-secret-canary") {
 		t.Fatalf("native error = %v", err)
 	}
 }
