@@ -3,6 +3,9 @@ package selection
 import (
 	"errors"
 	"time"
+
+	"github.com/egressfox-io/egressfox/internal/endpoint"
+	"github.com/egressfox-io/egressfox/internal/observation"
 )
 
 // Frame is one immutable evidence snapshot in a deterministic strategy replay.
@@ -63,7 +66,7 @@ func Compare(scenario Scenario, strategies ...Strategy) ([]Report, error) {
 			}
 			for _, selected := range decision.Selected {
 				for _, explanation := range decision.Explanations {
-					if explanation.EndpointID == selected.ID() && explanation.Reason == ReasonEligible {
+					if explanation.connection.Equal(connectionRef(selected)) && explanation.Reason == ReasonEligible {
 						latencyTotal += explanation.MeanSuccessDuration
 						latencySamples++
 						break
@@ -79,4 +82,9 @@ func Compare(scenario Scenario, strategies ...Strategy) ([]Report, error) {
 		reports[index] = report
 	}
 	return reports, nil
+}
+
+func connectionRef(record endpoint.Record) observation.ConnectionRef {
+	reference, _ := observation.NewConnectionRef(record.Identity())
+	return reference
 }

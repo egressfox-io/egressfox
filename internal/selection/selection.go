@@ -86,7 +86,8 @@ type Context struct {
 func NewContext(target observation.TargetRef, vantage observation.VantageID, kind observation.Kind, profile artifact.Profile) (Context, error) {
 	// A dummy valid connection is deliberately unnecessary: the individual
 	// summaries validate their complete keys. Validate the public dimensions here.
-	if target.ID().String() == "" || vantage.String() == "" || kind.String() == "unknown" || profile.Engine.String() == "unknown" {
+	if target.ID().String() == "" || vantage.String() == "" || kind != observation.KindHTTPGet ||
+		(profile != artifact.Mihomo11931 && profile != artifact.SingBox1141) {
 		return Context{}, errors.New("invalid selection context")
 	}
 	if _, err := target.Revision().RevealForPersistence(); err != nil {
@@ -152,12 +153,19 @@ func (state State) Validate() error {
 		if member.SelectedAt.IsZero() {
 			return errors.New("invalid selection member time")
 		}
+		if member.Connection.ID().String() == "<invalid-endpoint-id>" {
+			return errors.New("invalid selection member connection")
+		}
+		if _, err := member.Connection.Revision().RevealForPersistence(); err != nil {
+			return errors.New("invalid selection member connection")
+		}
 		key := refKey(member.Connection)
 		if _, ok := seen[key]; ok {
 			return errors.New("duplicate selection member")
 		}
 		seen[key] = struct{}{}
 	}
+	seenCooldown := make(map[string]struct{}, len(state.Cooldowns))
 	for _, cooldown := range state.Cooldowns {
 		if cooldown.Until.IsZero() {
 			return errors.New("invalid selection cooldown time")
@@ -165,6 +173,11 @@ func (state State) Validate() error {
 		if _, err := cooldown.Connection.Revision().RevealForPersistence(); err != nil {
 			return errors.New("invalid selection cooldown connection")
 		}
+		key := refKey(cooldown.Connection)
+		if _, exists := seenCooldown[key]; exists {
+			return errors.New("duplicate selection cooldown")
+		}
+		seenCooldown[key] = struct{}{}
 	}
 	return nil
 }
@@ -186,6 +199,7 @@ const (
 )
 
 type Explanation struct {
+	connection          observation.ConnectionRef
 	EndpointID          endpoint.ID
 	Reason              Reason
 	Samples             int
@@ -276,6 +290,7 @@ func Select(scope string, context Context, policy Policy, candidates []Candidate
 
 	rankedValues := make([]ranked, 0, len(ordered))
 	explanations := make([]Explanation, 0, len(ordered))
+	reasons := make(map[string]Reason, len(ordered))
 	present := make(map[string]observation.ConnectionRef, len(ordered))
 	for _, candidate := range ordered {
 		ref, err := observation.NewConnectionRef(candidate.Record.Identity())
@@ -286,6 +301,7 @@ func Select(scope string, context Context, policy Policy, candidates []Candidate
 		incumbent, selectedAt := findMember(previousMembers, ref)
 		explanation := evaluate(candidate, ref, context, policy, cooldowns, incumbent, selectedAt, now)
 		explanations = append(explanations, explanation)
+		reasons[refKey(ref)] = explanation.Reason
 		if explanation.Reason == ReasonEligible {
 			rankedValues = append(rankedValues, ranked{candidate: candidate, ref: ref, explanation: explanation})
 		}
@@ -314,7 +330,7 @@ func Select(scope string, context Context, policy Policy, candidates []Candidate
 				continue
 			}
 			emergency = true
-			reason := explanationReason(explanations, member.Connection.ID())
+			reason := reasons[refKey(member.Connection)]
 			if reason == ReasonFailureStreak || reason == ReasonUnreliable {
 				nextCooldowns = upsertCooldown(nextCooldowns, Cooldown{Connection: member.Connection, Until: now.Add(policy.Cooldown)})
 			}
@@ -364,7 +380,7 @@ func Select(scope string, context Context, policy Policy, candidates []Candidate
 }
 
 func evaluate(candidate Candidate, ref observation.ConnectionRef, context Context, policy Policy, cooldowns []Cooldown, incumbent bool, selectedAt, now time.Time) Explanation {
-	value := Explanation{EndpointID: candidate.Record.ID(), Reason: ReasonEligible, Incumbent: incumbent,
+	value := Explanation{connection: ref, EndpointID: candidate.Record.ID(), Reason: ReasonEligible, Incumbent: incumbent,
 		ResidenceActive: incumbent && now.Before(selectedAt.Add(policy.Residence))}
 	if candidate.Evidence == nil {
 		value.Reason = ReasonMissingEvidence
@@ -553,14 +569,6 @@ func sameMembers(left, right []Member) bool {
 		}
 	}
 	return true
-}
-func explanationReason(values []Explanation, id endpoint.ID) Reason {
-	for _, value := range values {
-		if value.EndpointID == id {
-			return value.Reason
-		}
-	}
-	return ReasonMissingEvidence
 }
 func upsertCooldown(values []Cooldown, value Cooldown) []Cooldown {
 	for index := range values {

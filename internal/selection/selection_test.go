@@ -152,6 +152,28 @@ func TestTopNPermutationRestartAndRevisionIsolation(t *testing.T) {
 	}
 }
 
+func TestFailureReasonTracksExactConnectionRevision(t *testing.T) {
+	context := testContext(t, artifact.SingBox1141)
+	policy := selection.DefaultPolicy(selection.StrategyAdaptive)
+	oldRevision := testCandidate(t, context, 1, "old-secret", 20, 20, 20*time.Millisecond, 20, 0, true)
+	initial, err := selection.Select("gateway", context, policy, []selection.Candidate{oldRevision}, nil, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedOld := testCandidate(t, context, 1, "old-secret", 20, 18, 20*time.Millisecond, 0, 2, true)
+	newRevision := testCandidate(t, context, 1, "new-secret", 20, 20, 30*time.Millisecond, 20, 0, true)
+	if failedOld.Record.ID() != newRevision.Record.ID() || failedOld.Record.Identity().Equal(newRevision.Record.Identity()) {
+		t.Fatal("fixture is not a credential rotation")
+	}
+	decision, err := selection.Select("gateway", context, policy, []selection.Candidate{newRevision, failedOld}, &initial.Next, testNow.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decision.Next.Cooldowns) != 1 || !decision.Next.Cooldowns[0].Connection.Equal(initial.Next.Members[0].Connection) {
+		t.Fatal("failure cooldown was attached to the wrong connection revision")
+	}
+}
+
 func TestAdaptiveHysteresisExactBoundary(t *testing.T) {
 	context := testContext(t, artifact.SingBox1141)
 	policy := selection.DefaultPolicy(selection.StrategyAdaptive)
