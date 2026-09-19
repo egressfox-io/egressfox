@@ -1,0 +1,57 @@
+{
+  "log": {
+    "disabled": true
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "egressfox-in",
+      "listen": "127.0.0.1",
+      "listen_port": 1080
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "egressfox-ef1_low7f5ua6d56qdga4bflifb2zznsivicmojd36mxxxbhho5anmla-001",
+      "server": "edge.example.com",
+      "server_port": 443,
+      "uuid": "7ae477a8-3884-4dad-a5a8-a5106778cbbb",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "tls.example.com",
+        "insecure": false
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/proxy"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "egressfox-ef1_m7zgz5r43nhixglmzzq7gqdw6q6y3kndypm7pcxcyyyzlyhz3a2q-001",
+      "server": "2001:db8::1",
+      "server_port": 8443,
+      "password": "synthetic-password",
+      "network": "tcp",
+      "tls": {
+        "enabled": true,
+        "server_name": "2001:db8::1",
+        "insecure": true
+      }
+    },
+    {
+      "type": "selector",
+      "tag": "egressfox",
+      "outbounds": [
+        "egressfox-ef1_low7f5ua6d56qdga4bflifb2zznsivicmojd36mxxxbhho5anmla-001",
+        "egressfox-ef1_m7zgz5r43nhixglmzzq7gqdw6q6y3kndypm7pcxcyyyzlyhz3a2q-001"
+      ],
+      "default": "egressfox-ef1_low7f5ua6d56qdga4bflifb2zznsivicmojd36mxxxbhho5anmla-001"
+    }
+  ],
+  "route": {
+    "final": "egressfox"
+  }
+}
