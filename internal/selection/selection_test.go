@@ -152,6 +152,79 @@ func TestTopNPermutationRestartAndRevisionIsolation(t *testing.T) {
 	}
 }
 
+func TestAdaptiveHysteresisExactBoundary(t *testing.T) {
+	context := testContext(t, artifact.SingBox1141)
+	policy := selection.DefaultPolicy(selection.StrategyAdaptive)
+	policy.Residence = 0
+	incumbent := testCandidate(t, context, 1, "incumbent-secret", 100, 100, 100*time.Millisecond, 100, 0, true)
+	initial, err := selection.Select("gateway", context, policy, []selection.Candidate{incumbent}, nil, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		latency time.Duration
+		changed bool
+	}{
+		{91 * time.Millisecond, false}, {90 * time.Millisecond, true},
+	} {
+		challenger := testCandidate(t, context, 2, "challenger-secret", 100, 100, test.latency, 100, 0, true)
+		decision, err := selection.Select("gateway", context, policy, []selection.Candidate{incumbent, challenger}, &initial.Next, testNow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if decision.Changed != test.changed {
+			t.Fatalf("latency %s changed=%t want %t", test.latency, decision.Changed, test.changed)
+		}
+	}
+}
+
+func TestAdaptiveScenarioResistsJitterAndHandlesOutage(t *testing.T) {
+	context := testContext(t, artifact.Mihomo11931)
+	policy := selection.DefaultPolicy(selection.StrategyAdaptive)
+	policy.Residence = time.Minute
+	policy.Cooldown = 2 * time.Minute
+	a := func(latency time.Duration, failures, successes int, fresh bool) selection.Candidate {
+		return testCandidate(t, context, 1, "a-secret", 30, 30-failures, latency, successes, failures, fresh)
+	}
+	b := func(latency time.Duration, failures, successes int, fresh bool) selection.Candidate {
+		return testCandidate(t, context, 2, "b-secret", 30, 30-failures, latency, successes, failures, fresh)
+	}
+	frames := []selection.Frame{
+		{At: testNow, Candidates: []selection.Candidate{a(50*time.Millisecond, 0, 30, true), b(60*time.Millisecond, 0, 30, true)}},
+		{At: testNow.Add(2 * time.Minute), Candidates: []selection.Candidate{a(50*time.Millisecond, 0, 30, true), b(47*time.Millisecond, 0, 30, true)}},
+		{At: testNow.Add(3 * time.Minute), Candidates: []selection.Candidate{a(50*time.Millisecond, 2, 0, true), b(60*time.Millisecond, 0, 30, true)}},
+		{At: testNow.Add(4 * time.Minute), Candidates: []selection.Candidate{a(50*time.Millisecond, 2, 0, false), b(60*time.Millisecond, 2, 0, false)}},
+		{At: testNow.Add(6 * time.Minute), Candidates: []selection.Candidate{a(40*time.Millisecond, 0, 3, true), b(60*time.Millisecond, 0, 30, true)}},
+	}
+	var state *selection.State
+	selected := make([]string, 0, len(frames))
+	for _, frame := range frames {
+		decision, err := selection.Select("gateway", context, policy, frame.Candidates, state, frame.At)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(decision.Selected) == 0 {
+			selected = append(selected, "none")
+		} else {
+			selected = append(selected, decision.Selected[0].ID().String())
+		}
+		next := decision.Next
+		state = &next
+	}
+	if selected[0] != selected[1] {
+		t.Fatal("sub-threshold jitter changed selection")
+	}
+	if selected[2] == selected[1] {
+		t.Fatal("confirmed failure did not replace incumbent")
+	}
+	if selected[3] != "none" {
+		t.Fatal("complete outage fabricated an eligible endpoint")
+	}
+	if selected[4] == "none" {
+		t.Fatal("recovery did not restore a feasible selection")
+	}
+}
+
 func TestSelectionDiagnosticsDoNotLeak(t *testing.T) {
 	context := testContext(t, artifact.SingBox1141)
 	candidate := testCandidate(t, context, 1, "selection-secret-canary", 10, 10, time.Millisecond, 10, 0, true)
@@ -166,20 +239,54 @@ func TestSelectionDiagnosticsDoNotLeak(t *testing.T) {
 	}
 }
 
-func BenchmarkSelectTopNThousandCandidates(b *testing.B) {
-	context := testContext(b, artifact.SingBox1141)
+func BenchmarkSelectTopN(b *testing.B) {
+	for _, size := range []int{1_000, 10_000} {
+		b.Run(fmt.Sprintf("candidates_%d", size), func(b *testing.B) {
+			context := testContext(b, artifact.SingBox1141)
+			policy := selection.DefaultPolicy(selection.StrategyAdaptive)
+			policy.TopN = 10
+			candidates := make([]selection.Candidate, size)
+			for index := range candidates {
+				candidates[index] = testCandidate(b, context, index+1, fmt.Sprintf("secret-%d", index), 20, 18+index%3, time.Duration(10+index%100)*time.Millisecond, 5, 0, true)
+			}
+			b.ResetTimer()
+			for range b.N {
+				if _, err := selection.Select("gateway", context, policy, candidates, nil, testNow); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func FuzzSelectionPermutation(f *testing.F) {
+	context := testContext(f, artifact.SingBox1141)
 	policy := selection.DefaultPolicy(selection.StrategyAdaptive)
-	policy.TopN = 10
-	candidates := make([]selection.Candidate, 1000)
-	for index := range candidates {
-		candidates[index] = testCandidate(b, context, index+1, fmt.Sprintf("secret-%d", index), 20, 18+index%3, time.Duration(10+index%100)*time.Millisecond, 5, 0, true)
+	policy.TopN = 2
+	candidates := []selection.Candidate{testCandidate(f, context, 1, "one", 20, 20, 30*time.Millisecond, 20, 0, true), testCandidate(f, context, 2, "two", 20, 19, 20*time.Millisecond, 10, 0, true), testCandidate(f, context, 3, "three", 20, 20, 40*time.Millisecond, 20, 0, true)}
+	baseline, err := selection.Select("gateway", context, policy, candidates, nil, testNow)
+	if err != nil {
+		f.Fatal(err)
 	}
-	b.ResetTimer()
-	for range b.N {
-		if _, err := selection.Select("gateway", context, policy, candidates, nil, testNow); err != nil {
-			b.Fatal(err)
+	f.Add([]byte{2, 1, 0})
+	f.Add([]byte{0, 0, 0})
+	f.Fuzz(func(t *testing.T, order []byte) {
+		permuted := append([]selection.Candidate(nil), candidates...)
+		for index := len(permuted) - 1; index > 0; index-- {
+			choice := 0
+			if len(order) > 0 {
+				choice = int(order[index%len(order)]) % (index + 1)
+			}
+			permuted[index], permuted[choice] = permuted[choice], permuted[index]
 		}
-	}
+		decision, err := selection.Select("gateway", context, policy, permuted, nil, testNow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !sameSelected(baseline.Selected, decision.Selected) {
+			t.Fatal("input permutation changed semantic decision")
+		}
+	})
 }
 
 func testContext(t testing.TB, profile artifact.Profile) selection.Context {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"sort"
 	"time"
 
@@ -457,12 +458,24 @@ func optimize(selected, rankedValues []ranked, previous []Member, policy Policy,
 		if worst < 0 {
 			continue
 		}
-		incumbentCost, challengerCost := selected[worst].explanation.AdaptiveCostNanos, challenger.explanation.AdaptiveCostNanos
-		if incumbentCost > challengerCost && (incumbentCost-challengerCost)*1000 >= incumbentCost*int64(policy.RequiredImprovementPermille) {
+		if improvesBy(challenger.explanation, selected[worst].explanation, policy.RequiredImprovementPermille) {
 			selected[worst] = challenger
 		}
 	}
 	return selected
+}
+
+func improvesBy(challenger, incumbent Explanation, requiredPermille int) bool {
+	// challenger duration/confidence <= incumbent duration/confidence *
+	// (1000-required)/1000. big.Int preserves the exact public boundary
+	// without overflow at the observation duration ceiling.
+	left := new(big.Int).SetInt64(challenger.MeanSuccessDuration.Nanoseconds())
+	left.Mul(left, big.NewInt(incumbent.ConfidencePPM))
+	left.Mul(left, big.NewInt(1000))
+	right := new(big.Int).SetInt64(incumbent.MeanSuccessDuration.Nanoseconds())
+	right.Mul(right, big.NewInt(challenger.ConfidencePPM))
+	right.Mul(right, big.NewInt(int64(1000-requiredPermille)))
+	return left.Cmp(right) <= 0 && challenger.AdaptiveCostNanos < incumbent.AdaptiveCostNanos
 }
 
 func wilsonLowerPPM(successes, samples int) int64 {
