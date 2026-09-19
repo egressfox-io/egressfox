@@ -346,6 +346,7 @@ type checkpointPayload struct {
 	Kind              observation.Kind     `json:"kind"`
 	Profile           artifact.Profile     `json:"profile"`
 	PolicyFingerprint []byte               `json:"policy_fingerprint"`
+	EvaluatedAt       int64                `json:"evaluated_at_ns"`
 	Members           []checkpointMember   `json:"members"`
 	Cooldowns         []checkpointCooldown `json:"cooldowns"`
 	Receipt           []byte               `json:"receipt"`
@@ -484,7 +485,7 @@ func encodeCheckpoint(value selection.State, receipt artifact.Receipt) ([]byte, 
 	}
 	payload := checkpointPayload{Scope: value.Scope, TargetID: value.Context.Target.ID().String(), TargetRevision: targetRevision,
 		Vantage: value.Context.Vantage.String(), Kind: value.Context.Kind, Profile: value.Context.Profile,
-		PolicyFingerprint: append([]byte(nil), value.PolicyFingerprint[:]...), Receipt: receiptBytes}
+		PolicyFingerprint: append([]byte(nil), value.PolicyFingerprint[:]...), EvaluatedAt: value.EvaluatedAt.UTC().UnixNano(), Receipt: receiptBytes}
 	for _, member := range value.Members {
 		revision, err := member.Connection.Revision().RevealForPersistence()
 		if err != nil {
@@ -523,7 +524,10 @@ func decodeCheckpoint(encoded []byte) (storedCheckpoint, error) {
 	if err != nil {
 		return storedCheckpoint{}, err
 	}
-	value := selection.State{Scope: payload.Scope, Context: selectionContext}
+	if payload.EvaluatedAt == 0 {
+		return storedCheckpoint{}, errors.New("invalid decision evaluation time")
+	}
+	value := selection.State{Scope: payload.Scope, Context: selectionContext, EvaluatedAt: time.Unix(0, payload.EvaluatedAt).UTC()}
 	copy(value.PolicyFingerprint[:], payload.PolicyFingerprint)
 	for _, stored := range payload.Members {
 		connection, err := restoreConnection(stored.EndpointID, stored.Revision)

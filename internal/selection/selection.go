@@ -117,12 +117,13 @@ type State struct {
 	Scope             string
 	Context           Context
 	PolicyFingerprint [sha256.Size]byte
+	EvaluatedAt       time.Time
 	Members           []Member
 	Cooldowns         []Cooldown
 }
 
 func (state State) String() string {
-	return fmt.Sprintf("selection state scope=%s members=%d cooldowns=%d context_revisions=<private>", state.Scope, len(state.Members), len(state.Cooldowns))
+	return fmt.Sprintf("selection state scope=%s members=%d cooldowns=%d evaluated_at=%s context_revisions=<private>", state.Scope, len(state.Members), len(state.Cooldowns), state.EvaluatedAt.UTC().Format(time.RFC3339Nano))
 }
 func (State) MarshalJSON() ([]byte, error) {
 	return nil, errors.New("selection state JSON serialization is disabled")
@@ -141,6 +142,9 @@ func (state State) Validate() error {
 	}
 	if zero {
 		return errors.New("invalid selection policy fingerprint")
+	}
+	if state.EvaluatedAt.IsZero() {
+		return errors.New("invalid selection evaluation time")
 	}
 	seen := make(map[string]struct{}, len(state.Members))
 	for _, member := range state.Members {
@@ -251,6 +255,9 @@ func Select(scope string, context Context, policy Policy, candidates []Candidate
 	cooldowns := []Cooldown(nil)
 	transition := TransitionInitial
 	if usablePrevious {
+		if now.Before(previous.EvaluatedAt) {
+			return Decision{}, errors.New("selection evaluation is older than committed state")
+		}
 		previousMembers = append(previousMembers, previous.Members...)
 		cooldowns = append(cooldowns, previous.Cooldowns...)
 		transition = TransitionUnchanged
@@ -350,7 +357,7 @@ func Select(scope string, context Context, policy Policy, candidates []Candidate
 		transition = TransitionOptimized
 	}
 	return Decision{Selected: selectedRecords, Explanations: explanations,
-		Next:    State{Scope: scope, Context: context, PolicyFingerprint: fingerprint, Members: nextMembers, Cooldowns: nextCooldowns},
+		Next:    State{Scope: scope, Context: context, PolicyFingerprint: fingerprint, EvaluatedAt: now, Members: nextMembers, Cooldowns: nextCooldowns},
 		Changed: changed, Degraded: len(selected) < policy.TopN, Transition: transition,
 		Eligible: len(rankedValues), Requested: policy.TopN}, nil
 }

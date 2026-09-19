@@ -93,7 +93,7 @@ func TestDecisionCheckpointCommitAndCrashRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	fingerprint := sha256.Sum256([]byte("policy"))
-	decisionState := selection.State{Scope: "gateway", Context: selectionContext, PolicyFingerprint: fingerprint,
+	decisionState := selection.State{Scope: "gateway", Context: selectionContext, PolicyFingerprint: fingerprint, EvaluatedAt: now,
 		Members: []selection.Member{{Connection: key.Connection(), SelectedAt: now}}}
 	first := checkpointReceipt(t, []byte("first-secret-artifact"))
 	second := checkpointReceipt(t, []byte("second-secret-artifact"))
