@@ -47,6 +47,33 @@ func TestStrategiesUseCommonEligibilityAndConfidence(t *testing.T) {
 	}
 }
 
+func TestPolicyValidationRejectsInvalidBounds(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*selection.Policy)
+	}{
+		{"strategy", func(policy *selection.Policy) { policy.Strategy = 0 }},
+		{"top n", func(policy *selection.Policy) { policy.TopN = 0 }},
+		{"samples", func(policy *selection.Policy) { policy.MinSamples = 513 }},
+		{"success", func(policy *selection.Policy) { policy.MinSuccessPermille = 1001 }},
+		{"failure streak", func(policy *selection.Policy) { policy.FailureStreak = 0 }},
+		{"recovery", func(policy *selection.Policy) { policy.RecoverySuccesses = 0 }},
+		{"freshness", func(policy *selection.Policy) { policy.Freshness = policy.EvidenceWindow + time.Nanosecond }},
+		{"residence", func(policy *selection.Policy) { policy.Residence = -time.Nanosecond }},
+		{"cooldown", func(policy *selection.Policy) { policy.Cooldown = -time.Nanosecond }},
+		{"improvement", func(policy *selection.Policy) { policy.RequiredImprovementPermille = 1000 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			policy := selection.DefaultPolicy(selection.StrategyAdaptive)
+			test.mutate(&policy)
+			if err := policy.Validate(); err == nil {
+				t.Fatal("invalid policy was accepted")
+			}
+		})
+	}
+}
+
 func TestEligibilityReasonsAreExplicit(t *testing.T) {
 	context := testContext(t, artifact.Mihomo11931)
 	missing := testRecord(t, 1, "missing-secret")
