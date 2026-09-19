@@ -11,17 +11,17 @@ product is finished.
 M0 (repository foundation) is complete as of 2026-09-18. M1 (endpoint identity
 and inventory primitives), M2 (safe source-to-inventory path), M3 (validated
 engine artifacts and recoverable file publication), and M4 (bounded observations
-and persistent history) are complete as of 2026-09-19. M5–M6 have not started.
-There is no EgressFox executable, adaptive selection/reconciliation loop, operator,
-CRD, or installation chart. The Kubernetes-independent pipeline now includes
-revision-specific through-engine observations, bounded scheduling, deterministic
-summaries and protected bounded SQLite history.
+and persistent history), and M5 (adaptive standalone reconciliation) are complete as
+of 2026-09-19. M6 has not started. There is no product executable, daemon, operator,
+CRD, Secret publisher, runtime activation integration or installation chart. The
+Kubernetes-independent pipeline now includes deterministic static/lowest/adaptive
+Top-N decisions, restart-stable anti-churn state and validated file/LKG publication
+through both renderers.
 
-**Next milestone: M5 — adaptive standalone reconciliation.** Resolve Q5 from
-reproducible evidence before fixing eligibility, score, hysteresis, residence,
-recovery and emergency-switch behavior. M4 now supplies exact revision/target/
-vantage evidence, freshness-aware summaries and restart-persistent bounded history
-without coupling selection to engines, SQL or Kubernetes.
+**Next milestone: M6 — Kubernetes BYO operator and Secret delivery.** Resolve Q8/Q9
+and the Secret portion of Q7 before generating the API/scaffold. M5 supplies the
+Kubernetes-independent decision and reconciliation use case that controllers can
+call without moving endpoint, evidence, engine or publication semantics into CRDs.
 
 ## P0 milestones
 

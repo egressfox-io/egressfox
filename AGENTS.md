@@ -3,9 +3,10 @@
 EgressFox is a Go control plane that derives desired Mihomo/sing-box configuration.
 M1 provides endpoint identity, M2 provides bounded source acquisition and
 transactional snapshots, M3 provides validated artifacts and recoverable local-file
-publication, and M4 provides bounded through-engine observations plus SQLite history.
-There is still no product CLI, adaptive selection/reconciliation loop, daemon, CRD,
-controller, or runtime reload/activation integration.
+publication, M4 provides bounded through-engine observations plus SQLite history,
+and M5 provides deterministic adaptive selection and standalone reconciliation to
+validated file/LKG publication. There is still no product CLI/daemon, CRD,
+controller, Secret publisher, or runtime reload/activation integration.
 Read the [documentation map](docs/README.md),
 [architecture](docs/architecture.md), and [current roadmap](docs/roadmap/README.md)
 before implementation. Planned features are not existing behavior.
@@ -65,12 +66,12 @@ Run `make fmt` after Go edits; `make check` runs formatting, vet, race tests, bu
 offline documentation links/anchors, and whitespace checks. Run `make vuln` for
 the online pinned vulnerability scan. `make help` lists available commands.
 
-These checks cover repository tooling and the M1–M4 endpoint, source, renderer,
-artifact, publication, observation, probe and history domains.
+These checks cover repository tooling and the M1–M5 endpoint, source, renderer,
+artifact, publication, observation, probe, history, selection and reconciliation domains.
 Add relevant layers from the [test strategy](docs/development/testing.md) as behavior appears:
 parser fuzzing, renderer goldens/native validation, publication failure tests,
 SQLite integration, envtest, and real-cluster/traffic tests. Do not claim
 unavailable checks passed.
 Complete the workflow's definition of done before handoff. Completed execution
 records are indexed in [execution plans](docs/plans/README.md); the roadmap
-identifies M5 as the next milestone, gated by Q5.
+identifies M6 as the next milestone, gated by Q8/Q9 and the Secret portion of Q7.

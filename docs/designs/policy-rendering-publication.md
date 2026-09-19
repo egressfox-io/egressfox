@@ -159,6 +159,14 @@ committed receipt or discard a pre-commit attempt. One publisher serializes loca
 calls; composition guarantees one process/writer per target. No-op means exact bytes
 and compatibility profile still match the owned target.
 
+M5 exposes that protected current receipt to `internal/reconcile` without exposing
+artifact bytes or a public digest. SQLite stores a pending decision/receipt before
+file publication and promotes it only after publisher readback matches. Restart
+promotes a matching pending checkpoint or discards a non-matching one; committed
+selection state is reused only while its receipt still matches the current LKG.
+This explicitly bridges the database/filesystem crash window without claiming an
+atomic transaction. An evaluation older than committed state is rejected.
+
 Use distinct concepts: candidate, validated, published, and activated. P0 LKG means
 the last successfully published, validated artifact plus its provenance. In BYO
 mode activation remains unknown; a publication Condition must not claim traffic

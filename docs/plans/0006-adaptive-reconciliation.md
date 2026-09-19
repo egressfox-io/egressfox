@@ -1,6 +1,6 @@
 # M5: Adaptive standalone reconciliation
 
-Status: in progress. Prepared: 2026-09-19. Started: 2026-09-19.
+Status: complete. Prepared: 2026-09-19. Started: 2026-09-19. Completed: 2026-09-19.
 Branch/baseline: `feat/adaptive-reconciliation` from `f587b12`.
 
 ## Objective and boundaries
@@ -29,13 +29,13 @@ windows without claiming a filesystem/database transaction.
 ## Checkpoints
 
 - [x] Discover M1–M4 contracts and record Q5, defaults, score and commit protocol.
-- [ ] Implement pure selection policy, evidence snapshots, explanations, Top-N and
+- [x] Implement pure selection policy, evidence snapshots, explanations, Top-N and
   deterministic scenario comparison with property/benchmark coverage.
-- [ ] Extend protected artifact receipts and SQLite schema for committed/pending
+- [x] Extend protected artifact receipts and SQLite schema for committed/pending
   restart-stable decision checkpoints.
-- [ ] Implement reusable standalone plan/apply reconciliation through both renderers,
+- [x] Implement reusable standalone plan/apply reconciliation through both renderers,
   native-validation boundary and file publisher, including failure recovery tests.
-- [ ] Complete scenarios, architecture/security review, documentation, validation,
+- [x] Complete scenarios, architecture/security review, documentation, validation,
   coherent commits and clean handoff without M6 work.
 
 ## Progress and evidence
@@ -47,10 +47,47 @@ tests. Primary references reviewed for Q5 include the NIST Wilson interval guida
 RFC 8085 latency-estimator guidance, Envoy outlier recovery behavior and Google SRE
 load-balancing/overload guidance. No unresolved product-defining M5 gate remains.
 
+The selection checkpoint implements a common hard gate, deterministic static and
+lowest-latency baselines, Wilson-adjusted adaptive cost, exact relative hysteresis,
+residence, failure cooldown/recovery and emergency replacement. Decisions contain
+safe structured evidence/reasons and bounded next state. Replay compares all three
+strategies on the same frames. Permutation, credential/context isolation, Top-N
+shortfall, complete outage, jitter, recovery and redaction tests protect the domain.
+
+Artifact receipts now have a protected value type, and the file publisher can read
+the exact owned LKG receipt after its existing recovery checks. SQLite schema v2
+migrates schema v1 and stores committed/pending decision checkpoints. Tests prove
+restart promotion after publication, discard before publication and refusal to use
+state for a mismatched LKG.
+
+`internal/reconcile` composes bounded history summaries, pure selection, M3 policy,
+both existing renderers, required checker validation and file publication. It stages
+before publish and promotes after receipt readback. Integration tests prove first
+publication, byte-identical no-op, restart continuity, obsolete-time rejection,
+validation failure, publication failure and zero-eligible LKG retention.
+
+Final validation on Darwin arm64 / Apple M4 Pro:
+
+- `make fmt` — passed.
+- `make check` — passed outside the restricted sandbox, including vet, all
+  race-enabled tests, build, documentation and whitespace checks. The first sandboxed
+  run reached the existing M2 loopback fixture and failed only because bind was denied.
+- `make docs` — passed; offline links and anchors are valid.
+- `make vuln` — passed with pinned `govulncheck` v1.8.0; no vulnerabilities found.
+- `go test -race -count=5 ./internal/selection ./internal/reconcile ./internal/state`
+  — passed.
+- `go test -run '^$' -fuzz '^FuzzSelectionPermutation$' -fuzztime=10s
+  ./internal/selection` — passed 2,631,469 executions without a failure.
+- `go test -run '^$' -bench BenchmarkSelectTopN -benchtime=3x
+  ./internal/selection` — 15,156,222 ns/op at 1,000 candidates and 198,986,083
+  ns/op at 10,000 candidates for Top-10 (development-host evidence only).
+- `git diff --check` — passed. No fuzz corpus, engine binary, generated real
+  configuration, credential, URI, archive or temporary publication file was added.
+
 ## Resume and handoff
 
-Implement `internal/selection` first, then protected receipt/checkpoint persistence
-and `internal/reconcile`. Keep the selector free of SQL, engine and Kubernetes imports.
-Before completion update this record with exact commands/results, mark M5 in the
-roadmap, update the plan/ADR indexes and decision queue, and leave the task branch
-clean. Do not start M6.
+M5 is complete on `feat/adaptive-reconciliation`. M6 is next and remains gated by
+Q8/Q9 and the Secret portion of Q7. It can adapt the shared reconciliation use case
+to Kubernetes desired state and protected Secret output without changing selection,
+renderer or artifact semantics. No M6 code, CRD, controller, Secret publisher,
+daemon or product CLI was implemented.

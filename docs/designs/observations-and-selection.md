@@ -1,7 +1,7 @@
 # Observations, history, and selection
 
-Status: M4 observation, probe and history contract implemented under ADR 0009;
-adaptive selection and exported metric instruments are not implemented.
+Status: M4 observation/probe/history and M5 deterministic selection/reconciliation
+contracts implemented under ADRs 0009 and 0010. Prometheus export remains future.
 
 ## Decisions and scope
 
@@ -15,7 +15,8 @@ EgressFox selects desired pool membership or a preferred endpoint. The engine
 still makes every connection-level routing/balancing decision. A small advantage
 must not automatically displace a stable incumbent; confirmed unavailability
 must permit emergency replacement without waiting for normal residence time.
-No scoring formula, weight, timeout default, or threshold is accepted yet.
+The accepted M5 formula, eligibility and transition defaults are defined by
+[ADR 0010](../decisions/0010-deterministic-adaptive-selection.md).
 
 ## Probe evidence
 
@@ -38,9 +39,10 @@ A successful TCP dial to the proxy is not proof it can reach a destination.
 | Target fails across many endpoints and the control path | Suspected target/observer incident; avoid automatically condemning every endpoint |
 
 M4 observations contain end-to-end bounded request duration, outcome and an optional
-safe HTTP status. M4 summaries contain sample/success counts, success ratio, latest
-sample/success, mean successful duration and explicit freshness. Connect/TTFB
-breakdowns, exit IP, country/ASN, EWMA, jitter, streaks and flapping remain future
+safe HTTP status. Summaries contain sample/success counts, success ratio, latest
+sample/success, mean successful duration, trailing success/failure streaks and
+explicit freshness. Connect/TTFB breakdowns, exit IP, country/ASN, EWMA, jitter and
+persisted transition-frequency penalties remain future
 work and require defined units, windows, sample counts and denominators.
 Do not call HTTP latency variation packet loss or invent an ICMP metric from it.
 No response bodies or authentication data belong in ordinary observation records.
@@ -95,27 +97,30 @@ engine-native health tests and EgressFox probes from multiplying load invisibly.
 
 [ADR 0004](../decisions/0004-sqlite-history.md) chooses SQLite for initial standalone
 persistence and [ADR 0009](../decisions/0009-bounded-probes-and-sqlite-evidence.md)
-fixes the M4 adapter: ncruces/go-sqlite3 v0.35.5, schema version 1, WAL with FULL
+fixes the adapter: ncruces/go-sqlite3 v0.35.5, WAL with FULL
 synchronization, one connection/writer, explicit migration and transactional age,
 per-key and global retention. The database directory and files are a confidential
 same-host boundary. Unknown future schema versions and inaccessible/corrupt state
 fail instead of silently falling back to memory.
 
-The M4 adapter persists an immutable observation idempotently, prunes retention in
+The adapter persists an immutable observation idempotently, prunes retention in
 the same transaction, loads an exact complete-key time window, and derives the same
 domain summary after restart. SQL and schema migration stay in the adapter; there is
-no generic CRUD repository, ORM, selection-state table or publication receipt here.
+no generic CRUD repository or ORM.
 
 Schema v1 retains only immutable raw samples partitioned by complete evidence key.
 Defaults enforce 30 days, 512 rows per key and 100,000 rows globally. It stores
 private fixed-size connection/target revisions, never subscription bodies, target
-URLs, credentials or rendered configurations. Selection state, streaks, cooldown,
-score and decision history remain M5 decisions.
+URLs, credentials or rendered configurations. M5 migrates to schema v2 with at most
+one committed and one pending protected selection checkpoint per gateway scope.
+Checkpoints hold exact context/revisions, policy fingerprint, selected-at times,
+bounded cooldowns and an M3 protected receipt. Derived scores are never persisted.
 
 Sample digests make replay idempotent. Explicit evaluation times make age pruning,
 query windows and freshness deterministic; late samples remain immutable facts and
-summary ordering uses completion time plus sample ID. M5 must separately define and
-persist enough anti-flapping/selection state that restart does not trigger churn.
+summary ordering uses completion time plus sample ID. Trailing streaks are derived
+from that order. M5 persists the minimum anti-churn state so restart does not reset
+residence or cooldown.
 
 Database loss is an explicit cold start. Do not pretend unknown history is healthy.
 An inaccessible/corrupt database must not replace an output with an empty artifact.
@@ -129,41 +134,52 @@ is a P2 option; operator HA remains a separate design problem.
 
 ## Eligibility before scoring
 
-Apply static criteria (protocol, source, country/ASN, IP family, tags, alias,
-allow/deny) and freshness/health constraints before ranking. Untrusted metadata
-must carry provenance. Hard policy restrictions cannot be traded for a higher
-score. Latency and historical availability filters need explicit treatment for
-insufficient samples and unknown values.
+M5 applies one common evidence gate before every strategy: exact connection and
+context, a fresh summary, minimum sample and success thresholds, at least one
+successful latency, no configured failure streak, and no active/unrecovered
+failure cooldown. Missing, insufficient, stale, unreliable, failed, cooldown and
+recovery cases have separate safe reason codes. Unknown revisions require probes;
+they are not selected with a fabricated zero score. M4 can probe the complete
+admitted inventory independently, so selection is not required for exploration.
 
-P0 Top-N means select up to the requested bound from eligible endpoints, with
-deterministic tie-breaking. It does not authorize unsafe repetition or fallback
-when fewer candidates exist. A policy must define whether a smaller set is usable,
-and publication must handle no feasible set explicitly. The proposed default is
-retain LKG and report degraded/unready; direct fallback requires explicit intent.
+Future static source/country/ASN/tag policy restrictions also belong before ranking.
+Hard policy restrictions cannot be traded for a higher score. Untrusted metadata
+must retain provenance.
 
-Potential strategies are all, seeded random, lowest latency, highest availability,
-weighted, and adaptive. Only implemented, validated strategies belong in a public
-enum. Random strategy must persist or explicitly derive its seed/epoch so retries
-do not continually churn the configuration.
+Top-N selects an ordered set of unique exact connection revisions up to the requested
+bound. A positive shortfall is published as an explicit degraded result; zero
+eligible candidates retain LKG and publish nothing. No unhealthy repetition or
+direct fallback fills the pool. Endpoint ID plus private revision provides the
+canonical tie-break without exposing the revision.
 
-## Adaptive selection research
+M5 implements only `static`, `lowest_latency`, and `adaptive`. Static uses canonical
+connection order after eligibility. Lowest latency uses mean successful duration,
+then canonical order. Adaptive uses the risk-adjusted cost below. Random, weighted,
+availability-only and `all` values are not accepted enum placeholders.
 
-Treat the following as mechanisms to evaluate, not an accepted formula:
+## Adaptive selection
 
-- Smooth latency with a documented EWMA and availability windows.
-- Compare an eligible challenger with the incumbent using an improvement threshold
-  and hysteresis; distinguish absolute and relative improvements.
-- Enforce minimum residence time for ordinary switches and failure penalties or
-  cooldown to avoid flapping; persist state across restarts.
-- Require evidence of recovery before re-entry, while continuing bounded exploration.
-- Bypass ordinary residence/improvement gates for an incumbent that meets the
-  configured failure criteria. No eligible replacement means a visible shortfall.
-- Treat unavailable/unknown latency as missing evidence, never as a superior score.
+Algorithm `adaptive/v1` calculates the 95% Wilson lower bound `L` for successful
+samples and ranks by `mean successful duration / L`; lower is better. Confidence is
+reported in parts per million and cost in nanoseconds. The selector uses exact
+rational integer comparison for the relative replacement boundary, so its result is
+not sensitive to displayed cost rounding. It uses the explicit M4 rolling window
+rather than adding EWMA state.
 
-Example acceptance scenarios: a challenger 2 ms faster does not *necessarily*
-replace a stable endpoint; a confirmed failed selected endpoint can be replaced
-at the next decision without residence delay; a recovering endpoint does not
-oscillate immediately back into service. These describe properties, not constants.
+The initial validated defaults are 30-minute history, five-minute freshness, three
+samples, 600-per-mille success, two trailing failures, ten-minute residence,
+ten-percent required improvement, 15-minute failure cooldown and three trailing
+successes for recovery. Configuration bounds are enforced and surprising values are
+rejected rather than clamped. A policy change changes the fingerprint and starts a
+fresh decision context.
+
+Eligible incumbents retain their order. Ordinary replacement waits for residence
+and the relative improvement boundary. Disappearance, stale/invalid evidence or
+confirmed failure bypasses those gates. Only observed failure/unreliability starts
+cooldown; source disappearance and credential rotation do not. A revision, target,
+vantage, probe-kind or engine-profile change never inherits incompatible evidence.
+No additional flapping score is used until evaluation shows a need beyond these
+interpretable mechanisms.
 
 Destination failures and global gateway failures require separate detection scopes.
 Avoid two competing optimization loops: EgressFox may manage pool membership while
@@ -177,8 +193,8 @@ means before selecting an optimization algorithm. Never silently relax constrain
 
 ## Explainability and observability
 
-P0 internal decisions should preserve compact reason codes, algorithm/version,
-input revision/cutoff, relevant normalized signals, eligibility exclusions,
+M5 decisions preserve compact reason codes, algorithm/version through the policy
+fingerprint, explicit evaluation time, relevant normalized signals, exclusions,
 prior selection, and switch category. This enables later P1 `explain`/diff tools
 without keeping all raw history in memory. Reasons must distinguish policy denial,
 unsupported protocol, stale evidence, recovery cooldown, and insufficient capacity.
@@ -199,7 +215,9 @@ and histograms for duration with explicit units. Future families include:
 | `egressfox_publish_*` | Attempts, errors, and published-generation age |
 | `egressfox_failover_*` | Control-plane switch counts and detection-to-publication timing |
 
-These are namespacing intentions, not existing metrics. End-to-end recovery time
+M5 exposes bounded decision counts and replay reports in-process, including eligible,
+selected, degraded, change, emergency and no-feasible results. The table remains
+namespacing intent for a future metrics exporter. End-to-end recovery time
 requires traffic measurements; publication timing alone is not failover time.
 Default labels should be bounded enums such as engine, stage, result, and reason.
 No endpoint IDs, raw hosts, URIs, destinations, external IPs, content digests, or
@@ -209,8 +227,7 @@ See [Prometheus naming guidance](https://prometheus.io/docs/practices/naming/).
 
 ## Non-goals and open questions
 
-No production score weights, target availability guarantee, distributed probe
-fleet, predictive model, arbitrary user scoring code, or observability stack is
-implemented. Q5 in the [decision queue](../decisions/open-questions.md) gates
-adaptive scoring. Reproducible replay
+No target availability guarantee, distributed probe fleet, predictive model,
+arbitrary user scoring code, metrics exporter or observability stack is implemented.
+Q5 is resolved by ADR 0010. Reproducible replay
 and traffic experiments are specified in the [test strategy](../development/testing.md).

@@ -6,8 +6,9 @@ reviewed renderer goldens, exact-profile native validation, publication failure 
 recovery tests, and an opt-in controlled sing-box traffic smoke. Commands available
 now are listed in [workflow](workflow.md). M4 adds resolver/authorization, scheduler
 budget, through-engine observation, SQLite migration/restart/retention and summary
-tests. Do not claim M5–M6 selection, controller or cluster tests run before those
-milestones implement them.
+tests. M5 adds pure strategy/scenario replay, permutation fuzzing, exact transition
+boundaries, SQLite checkpoint recovery and both-renderer standalone reconciliation.
+Do not claim M6 controller or cluster tests run before that milestone implements them.
 
 ## Layers and gates
 
@@ -19,7 +20,7 @@ milestones implement them.
 | Native engine validation | Golden output accepted by the exact pinned engine/version/build; wrong version/unsupported feature rejection | M3 |
 | File publication integration | Invalid generation retains LKG, no-op equality, stale work, disk-full/permission/symlink/conflict/crash-recovery boundaries | M3 |
 | Network and SQLite integration | Local controlled destinations, through-engine endpoint attribution, cancellations/budgets, transactions/migrations/restarts/retention | M4 |
-| Selection replay and scenario tests | Stable ties, unknown/stale evidence, ordinary residence, emergency replacement, recovery, no feasible candidates, restart continuity | M5 |
+| Selection replay and scenario tests | Stable ties, unknown/stale evidence, ordinary residence, emergency replacement, recovery, no feasible candidates, restart continuity (implemented M5) | M5 |
 | Kubernetes envtest | API validation/defaults/status, indexed watches, Secret rotation, retries/conflicts, ownership and idempotency | M6 |
 | Real-cluster tests using kind | Helm install/upgrade, RBAC, garbage collection, volume/Secret consumption, operator restart, BYO lifecycle | M6 |
 | End-to-end traffic | Generated engine actually proxies controlled workload; wrong routes, selective destination failures, failover and recovery | M3 small smoke; M5/M6 full scenarios |

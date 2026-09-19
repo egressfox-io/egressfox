@@ -1,8 +1,9 @@
 # Threat model
 
 Status: design requirements with M1 domain redaction, M2 bounded source controls,
-M3 secret-bearing artifact/native-validator/file-publication controls, and M4
-probe authorization/budget/history controls implemented.
+M3 secret-bearing artifact/native-validator/file-publication controls, M4 probe
+authorization/budget/history controls, and M5 revision/context-bound selection plus
+receipt-bound decision checkpoints implemented.
 Repository tooling provides read-only CI permissions, pinned Actions, and a
 vulnerability-check command. There is no network runtime to secure or supported
 production release. Reporting guidance is in [SECURITY.md](../../SECURITY.md).
@@ -20,7 +21,9 @@ publisher requires a trusted private directory, rejects symlinks and unmanaged
 targets, uses `0600` files, and keeps protected receipt/journal/previous state in
 that same secret boundary. M4 bounds jobs, queues, concurrency, process readiness,
 requests, response bytes and SQLite retention; its diagnostics omit engine output,
-raw targets, credentials and confidential revisions.
+raw targets, credentials and confidential revisions. M5 explanations expose safe
+logical endpoint IDs and bounded integer evidence components only; selection state,
+private revisions and artifact receipts remain in the protected SQLite/file boundary.
 
 ## Assets, actors, and trust boundaries
 
@@ -109,8 +112,9 @@ CRD references, or RBAC changes. Add tests at the new boundary, not just a check
 Identity fingerprint privacy is resolved by [ADR 0006](../decisions/0006-versioned-endpoint-identity.md):
 public IDs exclude credentials and private connection revisions remain sensitive.
 Q3/Q4 probe and history choices are resolved by
-[ADR 0009](../decisions/0009-bounded-probes-and-sqlite-evidence.md). Open issues include
-adaptive selection (Q5), Secret publication and runtime activation/rollback (remaining
+[ADR 0009](../decisions/0009-bounded-probes-and-sqlite-evidence.md), and Q5 selection
+by [ADR 0010](../decisions/0010-deterministic-adaptive-selection.md). Open issues include
+Secret publication and runtime activation/rollback (remaining
 Q7), and operator state/permissions/deletion (Q8–Q9). M3 validator and file recovery
 choices are resolved by [ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md). All open
 items are recorded in the [decision queue](../decisions/open-questions.md).
