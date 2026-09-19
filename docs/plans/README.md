@@ -11,6 +11,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0003](0003-source-inventory.md) | Complete | M2 safe source-to-inventory pipeline |
 | [0004](0004-validated-publication.md) | Complete | M3 validated engine artifacts and recoverable file publication |
 | [0005](0005-observations-history.md) | Complete | M4 bounded observations and persistent history |
+| [0006](0006-adaptive-reconciliation.md) | In progress | M5 adaptive standalone reconciliation |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

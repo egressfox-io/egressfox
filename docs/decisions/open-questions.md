@@ -8,7 +8,7 @@ the agent/contributor undertaking the gated milestone owns bringing evidence.
 
 | ID | Question and decision evidence needed | Gate | Design owner |
 | --- | --- | --- | --- |
-| Q5 | Adaptive score definition, eligibility/freshness/confidence, hysteresis/residence/recovery/cooldown rules, emergency failure criteria and tuning. Compare against baselines on reproducible traces; no arbitrary production constants. | M5 | [Selection](../designs/observations-and-selection.md) |
+| Q5 | Resolved by [ADR 0010](0010-deterministic-adaptive-selection.md): common hard eligibility, Wilson-adjusted latency, deterministic Top-N, residence/hysteresis and failure cooldown/recovery with receipt-bound restart state. Defaults remain evaluation inputs rather than universal optimality claims. | Resolved in M5 | [Selection](../designs/observations-and-selection.md) |
 | Q7 | Kubernetes Secret generation/backup ownership and later runtime activation/reload/rollback acknowledgment. File publication is resolved by ADR 0008. | Secret at M6; reload P1 | [Publication](../designs/policy-rendering-publication.md) |
 | Q8 | CRD names/scope/fields/defaults, pool-to-gateway references, inline P0 routing evolution to EgressPolicy, ownership/deletion, status truth tables, Secret references and RBAC. Review concrete examples and upgrade scenarios before generation. | M6 API gate | [Kubernetes](../designs/kubernetes.md) |
 | Q9 | Operator durable state location, sharing coherent pool snapshots, single-active topology/fencing, volume/restart semantics; later HA without assuming shared SQLite or prematurely requiring PostgreSQL. | M6 single-active; P1 HA | [Kubernetes](../designs/kubernetes.md) |
