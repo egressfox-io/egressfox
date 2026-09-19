@@ -76,6 +76,9 @@ func RestoreConnectionRef(id endpoint.ID, revision endpoint.Revision) (Connectio
 
 func (reference ConnectionRef) ID() endpoint.ID             { return reference.id }
 func (reference ConnectionRef) Revision() endpoint.Revision { return reference.revision }
+func (reference ConnectionRef) Equal(other ConnectionRef) bool {
+	return reference.id == other.id && reference.revision.Equal(other.revision)
+}
 
 type TargetRef struct {
 	id       TargetID
@@ -92,6 +95,9 @@ func RestoreTargetRef(id TargetID, encodedRevision []byte) (TargetRef, error) {
 }
 func (reference TargetRef) ID() TargetID             { return reference.id }
 func (reference TargetRef) Revision() TargetRevision { return reference.revision }
+func (reference TargetRef) Equal(other TargetRef) bool {
+	return reference.id == other.id && reference.revision.Equal(other.revision)
+}
 
 type Key struct {
 	connection ConnectionRef

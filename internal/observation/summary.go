@@ -8,14 +8,16 @@ import (
 )
 
 type Summary struct {
-	Key                 Key
-	Samples             int
-	Successes           int
-	SuccessRatio        float64
-	Latest              *Observation
-	LatestSuccess       *Observation
-	MeanSuccessDuration time.Duration
-	Fresh               bool
+	Key                  Key
+	Samples              int
+	Successes            int
+	SuccessRatio         float64
+	Latest               *Observation
+	LatestSuccess        *Observation
+	MeanSuccessDuration  time.Duration
+	ConsecutiveSuccesses int
+	ConsecutiveFailures  int
+	Fresh                bool
 }
 
 func Summarize(key Key, values []Observation, now time.Time, window, freshness time.Duration) (Summary, error) {
@@ -59,6 +61,19 @@ func Summarize(key Key, values []Observation, now time.Time, window, freshness t
 		result.Latest = &latest
 		result.SuccessRatio = float64(result.Successes) / float64(result.Samples)
 		result.Fresh = now.Sub(latest.completedAt) <= freshness
+		for index := len(filtered) - 1; index >= 0; index-- {
+			if filtered[index].Successful() {
+				if result.ConsecutiveFailures > 0 {
+					break
+				}
+				result.ConsecutiveSuccesses++
+			} else {
+				if result.ConsecutiveSuccesses > 0 {
+					break
+				}
+				result.ConsecutiveFailures++
+			}
+		}
 	}
 	if result.Successes > 0 {
 		result.MeanSuccessDuration = total / time.Duration(result.Successes)

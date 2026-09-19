@@ -71,6 +71,24 @@ func (identity Identity) Equal(other Identity) bool {
 	return *identity.revision == *other.revision
 }
 
+// Compare orders complete connection identities without exposing confidential
+// revision bytes. Invalid identities sort before valid identities.
+func (identity Identity) Compare(other Identity) int {
+	if compared := strings.Compare(identity.id.value, other.id.value); compared != 0 {
+		return compared
+	}
+	if identity.revision == nil {
+		if other.revision == nil {
+			return 0
+		}
+		return -1
+	}
+	if other.revision == nil {
+		return 1
+	}
+	return bytes.Compare(identity.revision[:], other.revision[:])
+}
+
 // SameEndpoint reports whether two revisions belong to the same logical endpoint.
 func (identity Identity) SameEndpoint(other Identity) bool { return identity.id == other.id }
 
