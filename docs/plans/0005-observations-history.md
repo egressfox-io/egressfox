@@ -31,10 +31,10 @@ retention and complete evidence keys.
 - [x] Implement immutable observation/target types, confidential revision persistence
   boundary, freshness and deterministic summaries.
 - [x] Implement schema migration, insertion/query/restart and bounded SQLite retention.
-- [ ] Implement target authorization, isolated Mihomo/sing-box execution and bounded
+- [x] Implement target authorization, isolated Mihomo/sing-box execution and bounded
   HTTP probing without protocol reimplementation.
-- [ ] Implement bounded scheduler and representative load/benchmark evidence.
-- [ ] Prove controlled through-engine observation for both pinned engines and restart
+- [x] Implement bounded scheduler and representative load/benchmark evidence.
+- [x] Prove controlled through-engine observation for both pinned engines and restart
   replay; keep ordinary tests offline.
 - [ ] Complete architecture/security review, documentation, full validation and
   coherent commits; leave a reviewable branch without task artifacts.
@@ -60,7 +60,23 @@ global pruning. Tests cover restart replay, evidence-key isolation, schema rejec
 permissions and symlinks, cancellation, concurrent writers, and raw-secret absence from
 the database and its WAL/SHM sidecars.
 
+The probe checkpoint authorizes every locally resolved destination address before
+execution, rejects redirects and environment proxies, pins the dial to one authorized
+literal while preserving HTTP Host and TLS SNI, and bounds engine readiness, request
+time and response bytes. Each request renders and natively validates a one-record
+gateway, runs one isolated engine process, and produces either a revision-specific
+observation or a safe execution failure. The scheduler enforces global, per-logical-
+endpoint, per-target, queue and total-job limits with cancellation and stable result
+positions. Its 1,000-job benchmark completed in 2.47 ms/op on the recorded development
+host (performance evidence only, not a cross-platform target).
+
+The official checksum-verified Mihomo v1.19.31 and sing-box v1.14.1 Darwin arm64
+binaries both passed the opt-in controlled test: each client was natively validated,
+started with a one-revision configuration, and returned a successful HTTP observation
+through a local TLS Trojan server. Ordinary tests remain offline and skip this fixture
+unless the pinned binary paths are supplied explicitly.
+
 ## Resume and handoff
 
-Next: implement target authorization, isolated engine execution and the bounded HTTP
-measurement path without implementing a proxy protocol in EgressFox.
+Next: complete owning documentation and the M4 architecture/security review, then run
+the full repository validation and close this execution record.
