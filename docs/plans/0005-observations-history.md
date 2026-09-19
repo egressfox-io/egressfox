@@ -27,8 +27,8 @@ retention and complete evidence keys.
 
 ## Checkpoints
 
-- [ ] Record Q3/Q4, target/outcome/vantage/revision semantics and dependency choice.
-- [ ] Implement immutable observation/target types, confidential revision persistence
+- [x] Record Q3/Q4, target/outcome/vantage/revision semantics and dependency choice.
+- [x] Implement immutable observation/target types, confidential revision persistence
   boundary, freshness and deterministic summaries.
 - [ ] Implement schema migration, insertion/query/restart and bounded SQLite retention.
 - [ ] Implement target authorization, isolated Mihomo/sing-box execution and bounded
@@ -47,7 +47,13 @@ all ADRs and open questions, M1 identity, M2 source semantics, and M3 renderers,
 artifact validation, publication and controlled sing-box fixture. Official SQLite,
 Go driver and `x/net/proxy` documentation was reviewed on 2026-09-19.
 
+The first implementation checkpoint adds an explicit protected endpoint-revision
+persistence boundary plus safe target ID/revision, vantage, complete evidence keys,
+immutable observations and deterministic window/freshness summaries. Tests prove
+credential rotation, target and vantage isolation, canonical targets, boundary-time
+behavior, permutation replay and formatting/JSON redaction.
+
 ## Resume and handoff
 
-Next: update the owning design and decision queue, validate the decision checkpoint,
-then implement the observation domain before its SQLite and engine consumers.
+Next: implement and exercise schema version 1, transactional insertion/retention,
+restart queries and summary reconstruction in the SQLite adapter.

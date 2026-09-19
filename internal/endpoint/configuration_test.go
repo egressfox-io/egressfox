@@ -1,6 +1,7 @@
 package endpoint_test
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,6 +80,28 @@ func TestCredentialRotationPreservesLogicalIDAndChangesRevision(t *testing.T) {
 	}
 	if !first.Identity().SameEndpoint(rotated.Identity()) {
 		t.Fatal("credential rotation lost logical endpoint continuity")
+	}
+}
+
+func TestIdentityPersistenceBoundariesRoundTripWithoutFormattingRevision(t *testing.T) {
+	t.Parallel()
+	configuration := mustVLESSConfiguration(t, "edge.example.com", syntheticVLESSUserID, endpoint.NewTCPTransport(), mustTLS(t, "edge.example.com", false))
+	identity := configuration.Identity()
+	restoredID, err := endpoint.ParseID(identity.ID().String())
+	if err != nil || restoredID != identity.ID() {
+		t.Fatalf("ParseID() = %v, %v", restoredID, err)
+	}
+	protected, err := identity.Revision().RevealForPersistence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredRevision, err := endpoint.RestoreRevision(protected)
+	if err != nil || !restoredRevision.Equal(identity.Revision()) {
+		t.Fatalf("RestoreRevision() error = %v", err)
+	}
+	formatted := fmt.Sprintf("%v %+v %#v", identity.Revision(), identity.Revision(), identity.Revision())
+	if strings.Contains(formatted, hex.EncodeToString(protected)) {
+		t.Fatal("revision formatting exposed persistence bytes")
 	}
 }
 

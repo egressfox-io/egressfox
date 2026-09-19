@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -17,6 +19,19 @@ const (
 // ID is a versioned, non-secret logical endpoint identifier.
 type ID struct {
 	value string
+}
+
+// ParseID restores a validated safe logical endpoint identifier.
+func ParseID(value string) (ID, error) {
+	if !strings.HasPrefix(value, "ef1_") {
+		return ID{}, invalid("endpoint.id", "has an unsupported identity version")
+	}
+	encoded := strings.TrimPrefix(value, "ef1_")
+	decoded, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(encoded))
+	if err != nil || len(decoded) != sha256.Size || strings.ToLower(encoded) != encoded {
+		return ID{}, invalid("endpoint.id", "is not a canonical endpoint identifier")
+	}
+	return ID{value: value}, nil
 }
 
 func (id ID) String() string {
@@ -38,6 +53,15 @@ type Identity struct {
 
 // ID returns the safe logical endpoint ID.
 func (identity Identity) ID() ID { return identity.id }
+
+// Revision returns the confidential connection revision.
+func (identity Identity) Revision() Revision {
+	if identity.revision == nil {
+		return Revision{}
+	}
+	value := *identity.revision
+	return Revision{value: &value}
+}
 
 // Equal reports whether two values describe the same complete connection revision.
 func (identity Identity) Equal(other Identity) bool {
@@ -63,6 +87,47 @@ func (identity Identity) Format(state fmt.State, _ rune) {
 func (Identity) MarshalJSON() ([]byte, error) {
 	return nil, errorsForJSON("connection identity")
 }
+
+// Revision is a confidential deterministic connection revision. Its protected
+// bytes may only cross an explicitly protected persistence boundary.
+type Revision struct {
+	value         *[sha256.Size]byte
+	nonComparable []struct{}
+}
+
+// RestoreRevision restores a revision read from protected persistence.
+func RestoreRevision(encoded []byte) (Revision, error) {
+	if len(encoded) != sha256.Size {
+		return Revision{}, errors.New("connection revision must contain 32 protected bytes")
+	}
+	var value [sha256.Size]byte
+	copy(value[:], encoded)
+	return Revision{value: &value}, nil
+}
+
+// Equal reports whether two confidential revisions are equal.
+func (revision Revision) Equal(other Revision) bool {
+	return revision.value != nil && other.value != nil && *revision.value == *other.value
+}
+
+// RevealForPersistence returns a copy for a protected persistence boundary.
+func (revision Revision) RevealForPersistence() ([]byte, error) {
+	if revision.value == nil {
+		return nil, errors.New("invalid connection revision")
+	}
+	return append([]byte(nil), revision.value[:]...), nil
+}
+
+func (Revision) String() string   { return "<private-connection-revision>" }
+func (Revision) GoString() string { return "endpoint.Revision(<private>)" }
+func (revision Revision) Format(state fmt.State, _ rune) {
+	writeSafeFormat(state, revision.String())
+}
+func (Revision) MarshalJSON() ([]byte, error) {
+	return nil, errorsForJSON("connection revision")
+}
+
+var _ json.Marshaler = Revision{}
 
 // ID returns the safe logical endpoint ID.
 func (c Configuration) ID() ID { return c.Identity().ID() }
