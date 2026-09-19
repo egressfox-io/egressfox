@@ -1,6 +1,6 @@
 # Architecture and domain language
 
-Status: accepted boundaries with M1–M3 components implemented. The
+Status: accepted boundaries with M1–M4 components implemented. The
 [ADRs](decisions/README.md) record durable choices; detailed designs distinguish
 implemented behavior from future requirements.
 
@@ -58,19 +58,21 @@ Probe outcomes and summary semantics belong in [observations and selection](desi
 ## Component boundaries and future code placement
 
 There is one Go module. `internal/endpoint` implements M1, `internal/source`
-implements M2, and M3 is implemented by `internal/policy`, `internal/engine`,
-`internal/artifact`, and `internal/publish`. `tools/checkdocs` is repository tooling;
-there is no product executable yet. The remaining paths are placement guidance,
-**not directories to pre-create**. Introduce
-packages with their first real consumer; combine closely related code until a tested
-dependency boundary warrants splitting it.
+implements M2, M3 is implemented by `internal/policy`, `internal/engine`,
+`internal/artifact`, and `internal/publish`, and M4 is implemented by
+`internal/observation`, `internal/probe`, and `internal/state`. `tools/checkdocs` is
+repository tooling; there is no product executable yet. The remaining paths are
+placement guidance, **not directories to pre-create**. Introduce packages with their
+first real consumer; combine closely related code until a tested dependency boundary
+warrants splitting it.
 
 | Responsibility | Intended location when implemented | Dependency constraint |
 | --- | --- | --- |
 | Normalized endpoint types and identity | `internal/endpoint` | No Kubernetes or engine imports |
 | Acquisition adapters and subscription parsers | `internal/source` (implemented M2 slice) and format-specific children when justified | Produce normalized input; cannot publish output |
-| Probe scheduling and observation types | `internal/probe` | Engine execution behind a narrow adapter; no protocol implementation |
-| History reads/writes and SQLite adapter | `internal/state` | Domain-shaped operations; no generic ORM or backend framework |
+| Observation evidence and summaries | `internal/observation` (implemented M4) | Revision/target/vantage-specific value types; no scheduler or SQL dependency |
+| Probe scheduling and engine execution | `internal/probe` (implemented M4) | Pinned engines behind a narrow adapter; no proxy-protocol implementation |
+| History reads/writes and SQLite adapter | `internal/state` (implemented M4) | Domain-shaped operations; no generic ORM or backend framework |
 | Eligibility, scoring, selection | `internal/selection` | Deterministic inputs; no I/O or Kubernetes types |
 | Common routing and desired gateway model | `internal/policy` (implemented M3 slice) | No native engine maps in common semantics |
 | Engine configuration and validation | `internal/engine/mihomo`, `internal/engine/singbox`, `internal/artifact` (implemented M3 profiles) | Engine dependencies stay here; no publication side effects |

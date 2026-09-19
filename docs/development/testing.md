@@ -4,8 +4,10 @@ Status: testing strategy. M1 implements endpoint identity and inventory tests. M
 adds bounded HTTP, parser/admission, snapshot, leakage and URI fuzz tests. M3 adds
 reviewed renderer goldens, exact-profile native validation, publication failure and
 recovery tests, and an opt-in controlled sing-box traffic smoke. Commands available
-now are listed in [workflow](workflow.md). Do not claim M4–M6 storage, selection,
-controller or cluster tests run before those milestones implement them.
+now are listed in [workflow](workflow.md). M4 adds resolver/authorization, scheduler
+budget, through-engine observation, SQLite migration/restart/retention and summary
+tests. Do not claim M5–M6 selection, controller or cluster tests run before those
+milestones implement them.
 
 ## Layers and gates
 
@@ -71,6 +73,12 @@ M3 native tests are opt-in so ordinary tests stay offline. Set
 `TestSingBoxPublishedArtifactCarriesControlledTraffic`. The harness verifies the
 configured profile itself and rejects a version mismatch. Only use official,
 checksum-verified binaries matching [ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md).
+
+M4's `TestPinnedEnginesProduceControlledObservations` uses the same variables and
+requires sing-box for its controlled local TLS Trojan server. It natively validates
+and runs each available pinned client, then requires a successful bounded HTTP
+observation through that exact one-revision path. The fixture is opt-in, loopback-only,
+uses synthetic credentials, and implements no proxy protocol in EgressFox.
 
 ## Kubernetes tests
 

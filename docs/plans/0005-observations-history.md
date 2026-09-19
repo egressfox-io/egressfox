@@ -1,6 +1,6 @@
 # M4: Bounded observations and persistent history
 
-Status: in progress. Prepared: 2026-09-19. Started: 2026-09-19.
+Status: complete. Prepared: 2026-09-19. Started: 2026-09-19. Completed: 2026-09-19.
 Branch/baseline: `feat/observations-history` from `424f5aa`.
 
 ## Objective and boundaries
@@ -36,7 +36,7 @@ retention and complete evidence keys.
 - [x] Implement bounded scheduler and representative load/benchmark evidence.
 - [x] Prove controlled through-engine observation for both pinned engines and restart
   replay; keep ordinary tests offline.
-- [ ] Complete architecture/security review, documentation, full validation and
+- [x] Complete architecture/security review, documentation, full validation and
   coherent commits; leave a reviewable branch without task artifacts.
 
 ## Progress and evidence
@@ -68,7 +68,7 @@ bytes. Each request renders and natively validates a one-record
 gateway, runs one isolated engine process, and produces either a revision-specific
 observation or a safe execution failure. The scheduler enforces global, per-logical-
 endpoint, per-target, queue and total-job limits with cancellation and stable result
-positions. Its 1,000-job benchmark completed in 2.47 ms/op on the recorded development
+positions. Its 1,000-job benchmark completed in 2.14 ms/op on the recorded development
 host (performance evidence only, not a cross-platform target).
 
 The official checksum-verified Mihomo v1.19.31 and sing-box v1.14.1 Darwin arm64
@@ -77,7 +77,39 @@ started with a one-revision configuration, and returned a successful HTTP observ
 through a local TLS Trojan server. Ordinary tests remain offline and skip this fixture
 unless the pinned binary paths are supplied explicitly.
 
+The final architecture/security review added independent endpoint-address
+authorization before rendering. Endpoint and target hostnames are both resolved
+locally, every answer is checked, and execution-only literal addresses prevent the
+engine from performing a second policy-bypassing resolution. Original endpoint
+identity/revision and TLS names remain the evidence semantics. Future M5 selection
+can consume summaries without importing engines, SQL or Kubernetes; source refresh,
+credential rotation, target rotation, vantage changes and engine profile changes all
+retain separate evidence.
+
+Final validation on Darwin arm64 / Apple M4 Pro:
+
+- `make fmt` — passed; no formatting changes remained.
+- `make check` — passed, including `go vet`, all race-enabled tests, build,
+  documentation validation and whitespace checks. It ran outside the restricted
+  network sandbox because existing local HTTP fixtures require loopback bind.
+- `make docs` — passed; offline links and anchors are valid.
+- `make vuln` — passed with pinned `govulncheck` v1.8.0; no vulnerabilities found.
+- `go test -race -count=5 ./internal/probe` — passed.
+- `go test -race -count=5 ./internal/state` — passed at the SQLite checkpoint.
+- `EGRESSFOX_MIHOMO_BINARY=... EGRESSFOX_SINGBOX_BINARY=... go test -race
+  -count=1 -run TestPinnedEnginesProduceControlledObservations -v ./internal/probe`
+  — both checksum-verified pinned engines passed.
+- `go test -run '^$' -bench BenchmarkSchedulerThousandJobs -benchtime=5x
+  ./internal/probe` — 2,140,867 ns/op, 2,911,342 B/op, 47,148 allocs/op for 1,000 jobs.
+- `go test -run '^$' -bench BenchmarkStoreAppendAndLoadWindow -benchtime=100x
+  ./internal/state` — 225,077 ns/op, 74,683 B/op, 1,120 allocs/op.
+- `git diff --check` — passed. Official engine archives matched the SHA-256 values
+  recorded in ADR 0008; binaries and temporary runtime state remained outside the
+  repository.
+
 ## Resume and handoff
 
-Next: complete owning documentation and the M4 architecture/security review, then run
-the full repository validation and close this execution record.
+M4 is complete on `feat/observations-history`. M5 is next and remains gated by Q5:
+use this revision-specific persistent evidence to research and define eligibility,
+adaptive scoring, hysteresis/residence/recovery and emergency replacement. No M5
+selection or reconciliation behavior was implemented here.
