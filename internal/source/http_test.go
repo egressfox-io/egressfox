@@ -2,6 +2,7 @@ package source_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -42,12 +43,15 @@ func TestHTTPFailuresAreBoundedAndRedacted(t *testing.T) {
 		http.Error(w, strings.Repeat("x", 100), http.StatusUnauthorized)
 	}))
 	defer server.Close()
-	httpSource, err := source.NewHTTP(sourceID(t, "http-source"), server.URL+"?token="+secret, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, Headers: http.Header{"Authorization": {"Bearer " + secret}}})
+	options := source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, Headers: http.Header{"Authorization": {"Bearer " + secret}}}
+	httpSource, err := source.NewHTTP(sourceID(t, "http-source"), server.URL+"?token="+secret, options)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = httpSource.Acquire(context.Background())
-	if err == nil || strings.Contains(fmt.Sprintf("%v %+v %#v", err, httpSource, httpSource), secret) {
+	encoded, marshalErr := json.Marshal(options)
+	formatted := fmt.Sprintf("%v %+v %#v %s %v", err, httpSource, httpSource, encoded, marshalErr)
+	if err == nil || strings.Contains(formatted, secret) {
 		t.Fatal("HTTP diagnostic leaked or missing")
 	}
 	blocked, _ := source.NewHTTP(sourceID(t, "blocked"), server.URL, source.HTTPOptions{AllowHTTP: true})

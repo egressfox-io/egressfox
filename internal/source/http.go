@@ -30,6 +30,20 @@ type HTTPOptions struct {
 	Resolver             Resolver
 }
 
+func (o HTTPOptions) String() string {
+	return fmt.Sprintf("HTTP options timeout=%s redirects=%d headers=<redacted>", o.Timeout, o.MaxRedirects)
+}
+
+func (o HTTPOptions) GoString() string { return o.String() }
+
+func (o HTTPOptions) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte(o.String()))
+}
+
+func (HTTPOptions) MarshalJSON() ([]byte, error) {
+	return nil, fmt.Errorf("HTTP source options JSON serialization is disabled because it may contain credentials")
+}
+
 type HTTP struct {
 	source   endpoint.SourceID
 	location *url.URL
