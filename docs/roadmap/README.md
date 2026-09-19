@@ -9,15 +9,17 @@ product is finished.
 ## Current state
 
 M0 (repository foundation) is complete as of 2026-09-18. M1 (endpoint identity
-and inventory primitives) and M2 (safe source-to-inventory path) are complete as
-of 2026-09-19. M3–M6 have not started. There is no EgressFox executable, probe,
-database adapter, renderer, publisher, operator, CRD, or installation chart. The
-Kubernetes-independent `internal/endpoint` and `internal/source` domains are
-implemented.
+and inventory primitives), M2 (safe source-to-inventory path), and M3 (validated
+engine artifacts and recoverable file publication) are complete as of 2026-09-19.
+M4–M6 have not started. There is no EgressFox executable, probe/history store,
+selection loop, operator, CRD, or installation chart. The Kubernetes-independent
+endpoint/source pipeline now feeds deterministic Mihomo and sing-box renderers,
+exact-profile native validation, and a protected local-file publisher.
 
-**Next milestone: M3 — validated engine artifacts and file publication.** Resolve
-Q6 and the file portion of Q7 before fixing renderer/publication contracts. M2 now
-provides deterministic admitted inventory without coupling renderers to sources.
+**Next milestone: M4 — bounded observations and persistent history.** Resolve Q3
+and Q4 before fixing probe execution and SQLite contracts. M3 now supplies pinned,
+validated engine configurations and a controlled through-engine traffic fixture;
+M4 can measure the intended endpoint revision without implementing a proxy protocol.
 
 ## P0 milestones
 

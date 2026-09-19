@@ -49,12 +49,12 @@ TCP/UDP support must be reviewed with each admitted rule/protocol feature.
 
 ## Upstream findings
 
-Research date: 2026-09-18. Releases inspected: Mihomo
+Research dates: 2026-09-18 and 2026-09-19. Releases inspected and tested: Mihomo
 [v1.19.31](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.31) and sing-box
 [v1.14.1](https://github.com/SagerNet/sing-box/releases/tag/v1.14.1). Documentation
-may describe development features newer than these releases. These are research
-baselines, **not a tested EgressFox support matrix**; pin exact binaries and fixture
-versions when implementing M3.
+may describe development features newer than these releases. These two exact
+versions form the implemented M3 compatibility matrix; other versions are rejected
+until deliberately qualified.
 
 | Concern | Mihomo model | sing-box model | Design consequence |
 | --- | --- | --- | --- |
@@ -104,8 +104,9 @@ artifact. The generation is SHA-256 over engine, profile and exact bytes, but re
 confidential in memory and protected receipts because low-entropy credentials can be
 guessed from a public digest. Validator subprocess output is never returned verbatim.
 
-Proposed artifact metadata includes engine/version profile, renderer/model schema
-version, input revision, content digest, validation result, and intended target.
+Artifact metadata includes the engine/version profile, renderer schema, media type,
+exact-byte generation and bounded validator identity. Input/desired revisions and
+intended targets remain future reconciliation state rather than artifact content.
 Keep volatile timestamps out of payload bytes unless the format explicitly requires
 them. A content digest supports equality, not authenticity or secrecy; do not expose
 credential-derived digests publicly without a separate security decision.
@@ -121,9 +122,9 @@ Validation has layers:
 Mihomo's [CLI source](https://github.com/MetaCubeX/mihomo/blob/v1.19.31/main.go)
 defines configuration test mode (`-t`, with configuration path `-f`); sing-box's
 [configuration documentation](https://sing-box.sagernet.org/configuration/) documents
-`sing-box check`. These are future integration-test tools, not installed prerequisites
-or commands executed by this bootstrap. M3 must verify invocation, exit behavior,
-build flags, auxiliary files, and time/resource limits with pinned binaries.
+`sing-box check`. The M3 native checker runs these exact commands after verifying
+the executable's version. Official release assets are opt-in test prerequisites,
+never downloaded by ordinary unit tests or retained in the repository.
 
 Engine validation may load external files, resolve names, or initialize resources.
 Treat the validator as a restricted child process: no shell, deadline, bounded
@@ -202,10 +203,12 @@ Never invent an unvalidated replacement as a response to that conflict.
 | Process dies after target commit, before receipt | Recover from durable staged metadata/target identity; do not assume failure or overwrite newer output |
 | Engine rejects/reload fails after publication | Preserve previous known-good bytes; report activation failure separately; rollback rules need their own design |
 
-There is no atomic transaction across target and state store. M3 must design and
-test the file journal/receipt recovery, including first publication, retries, disk
-full, permissions, interrupted rename, and rollback retention. Selecting a target
-adapter does not waive these requirements.
+There is no atomic transaction across target and state store. M3 tests first
+publication, replacement/no-op, permissions and symlinks, an interrupted target
+rename, target/receipt rollback after a sync failure, journal recovery, temporary
+cleanup, cancellation and in-process concurrency. Filesystem exhaustion and a
+cross-process lock are deployment/future composition concerns; one process owns a
+target in M3.
 
 ### Target-specific constraints
 
@@ -235,7 +238,8 @@ idempotency, authentication, acknowledgment, retry, and rollback contracts.
 
 ## Non-goals and open questions
 
-No runtime routing implementation, universal policy language, live engine reload,
-native merge engine, or claim of compatibility exists here. Q6–Q7 in the
-[decision queue](../decisions/open-questions.md) cover the common subset, compatibility
-matrix, LKG recovery, empty-pool behavior, and activation/rollback contracts.
+No EgressFox runtime routing implementation, universal policy language, live engine
+reload or native merge engine exists here. M3 compatibility is limited to the exact
+profiles and common slice above. The [decision queue](../decisions/open-questions.md)
+retains Secret publication and activation/rollback under Q7 and native composition
+under Q10.

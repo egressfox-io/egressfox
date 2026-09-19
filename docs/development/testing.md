@@ -1,11 +1,11 @@
 # Testing and reproducible evaluation
 
-Status: testing strategy. M1 implements endpoint identity, validation, provenance,
-deduplication, redaction, permutation, and canonicalization fuzz tests. M2 adds
-bounded HTTP integration tests, parser/admission tests, snapshot reconciliation,
-leakage canaries and URI fuzzing. Commands
-available now are listed in [workflow](workflow.md). Do not claim
-controller, renderer, or traffic tests run until their milestones implement them.
+Status: testing strategy. M1 implements endpoint identity and inventory tests. M2
+adds bounded HTTP, parser/admission, snapshot, leakage and URI fuzz tests. M3 adds
+reviewed renderer goldens, exact-profile native validation, publication failure and
+recovery tests, and an opt-in controlled sing-box traffic smoke. Commands available
+now are listed in [workflow](workflow.md). Do not claim M4–M6 storage, selection,
+controller or cluster tests run before those milestones implement them.
 
 ## Layers and gates
 
@@ -64,6 +64,13 @@ with the test harness. Upgrade one tested matrix deliberately; do not use `lates
 in compatibility tests. Golden rendering must not depend on wall-clock timestamps,
 map iteration, a developer's home directory, or remote rule-set changes. Auxiliary
 files need pinned fixtures and explicit ownership.
+
+M3 native tests are opt-in so ordinary tests stay offline. Set
+`EGRESSFOX_MIHOMO_BINARY` and `EGRESSFOX_SINGBOX_BINARY` to absolute paths for
+`TestPinnedNativeValidation`; the sing-box variable also enables
+`TestSingBoxPublishedArtifactCarriesControlledTraffic`. The harness verifies the
+configured profile itself and rejects a version mismatch. Only use official,
+checksum-verified binaries matching [ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md).
 
 ## Kubernetes tests
 

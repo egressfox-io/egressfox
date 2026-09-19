@@ -1,8 +1,8 @@
 # Architecture and domain language
 
-Status: accepted boundaries with proposed component decomposition. The
-[ADRs](decisions/README.md) record durable choices; detailed designs describe
-requirements and unresolved choices, not implemented behavior.
+Status: accepted boundaries with M1–M3 components implemented. The
+[ADRs](decisions/README.md) record durable choices; detailed designs distinguish
+implemented behavior from future requirements.
 
 ## System shape
 
@@ -57,10 +57,11 @@ Probe outcomes and summary semantics belong in [observations and selection](desi
 
 ## Component boundaries and future code placement
 
-There is one Go module. `internal/endpoint` implements the M1 domain,
-`internal/source` implements the M2 acquisition and snapshot boundary, and
-`tools/checkdocs` is repository tooling; there is no product executable yet. The
-remaining paths are placement guidance, **not directories to pre-create**. Introduce
+There is one Go module. `internal/endpoint` implements M1, `internal/source`
+implements M2, and M3 is implemented by `internal/policy`, `internal/engine`,
+`internal/artifact`, and `internal/publish`. `tools/checkdocs` is repository tooling;
+there is no product executable yet. The remaining paths are placement guidance,
+**not directories to pre-create**. Introduce
 packages with their first real consumer; combine closely related code until a tested
 dependency boundary warrants splitting it.
 
@@ -71,9 +72,9 @@ dependency boundary warrants splitting it.
 | Probe scheduling and observation types | `internal/probe` | Engine execution behind a narrow adapter; no protocol implementation |
 | History reads/writes and SQLite adapter | `internal/state` | Domain-shaped operations; no generic ORM or backend framework |
 | Eligibility, scoring, selection | `internal/selection` | Deterministic inputs; no I/O or Kubernetes types |
-| Common routing and desired gateway model | `internal/policy` | No native engine maps in common semantics |
-| Engine configuration and validation | `internal/engine/mihomo`, `internal/engine/singbox` | Engine dependencies stay here; no publication side effects |
-| File and Secret publication | `internal/publish`, Kubernetes adapter under `internal/operator` | Consume validated artifacts; serialize writes per target |
+| Common routing and desired gateway model | `internal/policy` (implemented M3 slice) | No native engine maps in common semantics |
+| Engine configuration and validation | `internal/engine/mihomo`, `internal/engine/singbox`, `internal/artifact` (implemented M3 profiles) | Engine dependencies stay here; no publication side effects |
+| File and Secret publication | `internal/publish` (file implemented M3); Kubernetes adapter under `internal/operator` later | Consume validated artifacts; serialize writes per target |
 | Shared reconciliation/use cases | `internal/reconcile` | Explicit consumers of adapters; no Kubernetes client dependency |
 | Standalone process composition | `cmd/egressfox` | Thin flags, lifecycle, dependency wiring |
 | Kubernetes API and reconcilers | Kubebuilder-generated `api/v1alpha1`, `internal/controller`; adapter helpers in `internal/operator` | Convert Kubernetes objects to core inputs; never invert this dependency |

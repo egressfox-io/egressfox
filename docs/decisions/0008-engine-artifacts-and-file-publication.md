@@ -64,6 +64,17 @@ rename begins, receipt completion proceeds to avoid an ambiguous committed state
 Publication proves durable file replacement under the documented sync assumptions,
 not engine reload or traffic activation.
 
+The compatibility evidence used the official Darwin arm64 release assets. GitHub
+release metadata reported SHA-256
+`d131f44b3deb2a8356f7ac75048ad67a10d53243323951c4f3cda7b672922963`
+for `mihomo-darwin-arm64-v1.19.31.gz` and
+`b9024642ef7b4848252df5469b7f60ef3c18bb5e217a16a0934f0174f8ad11b4`
+for `sing-box-1.14.1-darwin-arm64.tar.gz`; downloaded bytes matched. Both native
+checkers accepted the reviewed goldens. A controlled test rendered, validated and
+published the sing-box configuration, then carried an HTTP request over its SOCKS
+listener through a local TLS Trojan server. This proves the M3 path for that fixture,
+not general endpoint availability or production activation.
+
 ## Alternatives
 
 Using native YAML/JSON as common policy couples every consumer to one engine.

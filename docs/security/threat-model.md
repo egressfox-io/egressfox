@@ -1,7 +1,7 @@
 # Threat model
 
-Status: design requirements with M1 domain redaction and M2 bounded source controls
-implemented.
+Status: design requirements with M1 domain redaction, M2 bounded source controls,
+and M3 secret-bearing artifact/native-validator/file-publication controls implemented.
 Repository tooling provides read-only CI permissions, pinned Actions, and a
 vulnerability-check command. There is no network runtime to secure or supported
 production release. Reporting guidance is in [SECURITY.md](../../SECURITY.md).
@@ -11,7 +11,12 @@ non-public destinations, checks resolved addresses on the actual dial path, disa
 environment proxy use, limits same-origin redirects, time and bytes, and exposes only
 safe source IDs/reason codes. These controls cover source acquisition only; endpoint
 and probe destination authorization remains an M4 boundary. Deployment egress policy
-is still required defense in depth.
+is still required defense in depth. M3 native validation pins the exact engine
+profile, runs without a shell in a private temporary directory with a deadline and
+controlled environment, and reduces child output to safe reason codes. The M3 file
+publisher requires a trusted private directory, rejects symlinks and unmanaged
+targets, uses `0600` files, and keeps protected receipt/journal/previous state in
+that same secret boundary.
 
 ## Assets, actors, and trust boundaries
 
@@ -100,10 +105,11 @@ CRD references, or RBAC changes. Add tests at the new boundary, not just a check
 Identity fingerprint privacy is resolved by [ADR 0006](../decisions/0006-versioned-endpoint-identity.md):
 public IDs exclude credentials and private connection revisions remain sensitive.
 Open issues include network policy enforcement through remote engines (Q3),
-backup/retention/SQLite driver choices (Q4), validator
-isolation and version support (Q6), publication recovery (Q7), and operator
-state/permissions/deletion (Q8–Q9). All are recorded in the
-[decision queue](../decisions/open-questions.md).
+backup/retention/SQLite driver choices (Q4), Secret publication and runtime
+activation/rollback (remaining Q7), and operator state/permissions/deletion
+(Q8–Q9). M3 validator and file recovery choices are resolved by
+[ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md). All open
+items are recorded in the [decision queue](../decisions/open-questions.md).
 
 Configuration validation cannot prove an endpoint is trustworthy, a destination
 will remain available, or a runtime actually loaded the artifact. Operators remain
