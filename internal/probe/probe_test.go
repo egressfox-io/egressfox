@@ -2,6 +2,8 @@ package probe
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -169,6 +171,27 @@ func TestConsumeResponseOutcomesAndBounds(t *testing.T) {
 				t.Fatalf("consume = %s, %d, %v", outcome, status, err)
 			}
 		})
+	}
+}
+
+func TestTransportErrorClassification(t *testing.T) {
+	t.Parallel()
+	if !isTimeout(&net.DNSError{IsTimeout: true}) {
+		t.Fatal("network timeout was not classified")
+	}
+	for _, err := range []error{
+		tls.RecordHeaderError{},
+		tls.AlertError(40),
+		x509.UnknownAuthorityError{},
+		x509.HostnameError{},
+		x509.CertificateInvalidError{},
+	} {
+		if !isTLSFailure(err) {
+			t.Fatalf("TLS error %T was not classified", err)
+		}
+	}
+	if isTLSFailure(&net.DNSError{IsTimeout: true}) {
+		t.Fatal("non-TLS error was classified as TLS")
 	}
 }
 

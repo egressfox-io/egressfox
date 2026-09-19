@@ -361,9 +361,13 @@ func isTimeout(err error) bool {
 
 func isTLSFailure(err error) bool {
 	var certificateError *tls.CertificateVerificationError
+	var recordError tls.RecordHeaderError
+	var alertError tls.AlertError
 	var authorityError x509.UnknownAuthorityError
 	var hostnameError x509.HostnameError
-	return errors.As(err, &certificateError) || errors.As(err, &authorityError) || errors.As(err, &hostnameError)
+	var invalidError x509.CertificateInvalidError
+	return errors.As(err, &certificateError) || errors.As(err, &recordError) || errors.As(err, &alertError) ||
+		errors.As(err, &authorityError) || errors.As(err, &hostnameError) || errors.As(err, &invalidError)
 }
 
 func contextCode(ctx context.Context, fallback string) string {
