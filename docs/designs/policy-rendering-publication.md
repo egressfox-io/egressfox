@@ -1,7 +1,7 @@
 # Policy, renderers, and safe publication
 
-Status: accepted safety boundaries with proposed contracts. There are no renderer
-implementations, supported engine versions, or publication adapters yet.
+Status: accepted boundaries with the M3 renderer, native-validation and file
+publication contract fixed by ADR 0008.
 
 ## Decisions
 
@@ -12,6 +12,21 @@ output. Credential-bearing output is sensitive even when encoded or checksummed.
 See [ADR 0005](../decisions/0005-validated-publication.md).
 
 ## Policy direction
+
+### M3 common slice
+
+[ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md) defines the
+implemented M3 slice: one loopback SOCKS listener, the caller-supplied admitted
+inventory, a deterministic selector containing every record and an explicit final
+route to it. M3 is TCP-only. Empty inventories and non-loopback listeners fail.
+DNS policy, ordered destination rules, direct/block actions, multiple groups,
+balancing, URL tests and endpoint selection are deferred rather than assigned engine
+defaults.
+
+The compatibility profiles are Mihomo v1.19.31 and sing-box v1.14.1. Both render
+complete configurations for the M1 VLESS/Trojan, TCP/WebSocket and ordinary TLS
+slice. Generated names use safe logical IDs and deterministic revision ordinals;
+aliases and confidential revisions never become native names.
 
 A desired gateway model combines the selected endpoint set, common routing intent,
 engine compatibility profile, and target/runtime settings. Separate pool derivation
@@ -83,6 +98,12 @@ a silently reduced policy.
 
 ## Rendering and validation
 
+M3 represents candidate and validated artifacts as distinct secret-bearing types.
+Only native validation bound to the exact bytes/profile produces a publishable
+artifact. The generation is SHA-256 over engine, profile and exact bytes, but remains
+confidential in memory and protected receipts because low-entropy credentials can be
+guessed from a public digest. Validator subprocess output is never returned verbatim.
+
 Proposed artifact metadata includes engine/version profile, renderer/model schema
 version, input revision, content digest, validation result, and intended target.
 Keep volatile timestamps out of payload bytes unless the format explicitly requires
@@ -125,6 +146,17 @@ Validate the final composition, not just EgressFox's generated portion. This pat
 does not grant subscription content authority over output configuration.
 
 ## Publication state and LKG
+
+### M3 file protocol
+
+M3 requires an existing private directory and rejects symlink targets and unmanaged
+existing files. It stages `0600` files on the target filesystem, retains one previous
+artifact, syncs content, writes a protected journal, atomically renames, syncs the
+directory, reads back, writes a protected receipt and removes the journal. A matching
+target and receipt is the restart-recoverable LKG. A journal lets restart complete a
+committed receipt or discard a pre-commit attempt. One publisher serializes local
+calls; composition guarantees one process/writer per target. No-op means exact bytes
+and compatibility profile still match the owned target.
 
 Use distinct concepts: candidate, validated, published, and activated. P0 LKG means
 the last successfully published, validated artifact plus its provenance. In BYO

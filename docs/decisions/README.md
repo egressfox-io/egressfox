@@ -13,6 +13,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0005](0005-validated-publication.md) | Validate exact artifacts and preserve last-known-good | Accepted |
 | [0006](0006-versioned-endpoint-identity.md) | Versioned logical endpoint IDs and confidential connection revisions | Accepted |
 | [0007](0007-safe-source-snapshots.md) | Bounded source snapshots with transactional replacement | Accepted |
+| [0008](0008-engine-artifacts-and-file-publication.md) | Pinned engine artifacts and journaled file publication | Accepted |
 
 ## Adding a decision
 
