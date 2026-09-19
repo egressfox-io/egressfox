@@ -152,6 +152,55 @@ type receiptData struct {
 	ValidatorID    string `json:"validator_id"`
 }
 
+// Receipt is protected publication evidence for one exact validated artifact.
+// Its encoded value only crosses explicit protected persistence boundaries.
+type Receipt struct {
+	encoded       []byte
+	nonComparable []struct{}
+}
+
+func RestoreReceipt(encoded []byte) (Receipt, error) {
+	var data receiptData
+	if json.Unmarshal(encoded, &data) != nil || len(data.Generation) != sha256.Size || !safeValidatorID(data.ValidatorID) {
+		return Receipt{}, errors.New("invalid protected artifact receipt")
+	}
+	profile := Profile{data.Engine, data.Version, data.RendererSchema, data.MediaType}
+	if _, err := NewCandidate(profile, []byte{1}); err != nil {
+		return Receipt{}, errors.New("invalid protected artifact receipt")
+	}
+	canonical, err := json.Marshal(data)
+	if err != nil {
+		return Receipt{}, errors.New("invalid protected artifact receipt")
+	}
+	return Receipt{encoded: canonical}, nil
+}
+
+func (receipt Receipt) RevealForPersistence() ([]byte, error) {
+	if len(receipt.encoded) == 0 {
+		return nil, errors.New("invalid protected artifact receipt")
+	}
+	return append([]byte(nil), receipt.encoded...), nil
+}
+
+func (receipt Receipt) Equal(other Receipt) bool {
+	return len(receipt.encoded) > 0 && len(receipt.encoded) == len(other.encoded) && subtle.ConstantTimeCompare(receipt.encoded, other.encoded) == 1
+}
+
+func (Receipt) String() string                         { return "artifact receipt <protected>" }
+func (Receipt) GoString() string                       { return "artifact.Receipt(<protected>)" }
+func (receipt Receipt) Format(state fmt.State, _ rune) { _, _ = state.Write([]byte(receipt.String())) }
+func (Receipt) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("artifact receipt JSON serialization is disabled")
+}
+
+func (a Validated) Receipt() (Receipt, error) {
+	encoded, err := a.ProtectedReceipt()
+	if err != nil {
+		return Receipt{}, err
+	}
+	return RestoreReceipt(encoded)
+}
+
 func (a Validated) ProtectedReceipt() ([]byte, error) {
 	if len(a.candidate.content) == 0 || !safeValidatorID(a.evidence.ValidatorID) {
 		return nil, errors.New("invalid validated artifact")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,10 +14,12 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver"
 
 	"github.com/egressfox-io/egressfox/internal/artifact"
+	"github.com/egressfox-io/egressfox/internal/endpoint"
 	"github.com/egressfox-io/egressfox/internal/observation"
+	"github.com/egressfox-io/egressfox/internal/selection"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 var (
 	ErrOpen        = errors.New("history store open failed")
@@ -118,10 +121,19 @@ func (store *Store) initialize(ctx context.Context) error {
 		return failure(ErrOpen, "migration_begin")
 	}
 	defer transaction.Rollback()
-	if _, err := transaction.ExecContext(ctx, schemaV1); err != nil {
-		return failure(ErrOpen, "migration_schema")
+	if version == 0 {
+		if _, err := transaction.ExecContext(ctx, schemaV1); err != nil {
+			return failure(ErrOpen, "migration_schema_v1")
+		}
+		version = 1
 	}
-	if _, err := transaction.ExecContext(ctx, `PRAGMA user_version=1`); err != nil {
+	if version == 1 {
+		if _, err := transaction.ExecContext(ctx, schemaV2); err != nil {
+			return failure(ErrOpen, "migration_schema_v2")
+		}
+		version = 2
+	}
+	if _, err := transaction.ExecContext(ctx, `PRAGMA user_version=2`); err != nil {
 		return failure(ErrOpen, "migration_version")
 	}
 	if err := transaction.Commit(); err != nil {
@@ -145,6 +157,13 @@ FROM observations LIMIT 0`)
 	}
 	if err := rows.Close(); err != nil {
 		return failure(ErrOpen, "schema_close")
+	}
+	checkpointRows, err := store.database.QueryContext(ctx, `SELECT scope_id, slot, payload, updated_at_ns FROM selection_checkpoints LIMIT 0`)
+	if err != nil {
+		return failure(ErrOpen, "selection_schema_verify")
+	}
+	if err := checkpointRows.Close(); err != nil {
+		return failure(ErrOpen, "selection_schema_close")
 	}
 	return nil
 }
@@ -174,6 +193,16 @@ CREATE INDEX observations_evidence_time ON observations (
     completed_at_ns, sample_id
 );
 CREATE INDEX observations_completed_time ON observations (completed_at_ns, sample_id);
+`
+
+const schemaV2 = `
+CREATE TABLE selection_checkpoints (
+    scope_id TEXT NOT NULL,
+    slot INTEGER NOT NULL CHECK(slot IN (0, 1)),
+    payload BLOB NOT NULL CHECK(length(payload) BETWEEN 1 AND 4194304),
+    updated_at_ns INTEGER NOT NULL,
+    PRIMARY KEY (scope_id, slot)
+);
 `
 
 func (store *Store) Append(ctx context.Context, value observation.Observation, now time.Time) error {
@@ -302,6 +331,246 @@ func (store *Store) Count(ctx context.Context) (int, error) {
 		return 0, failure(ErrPersistence, contextCode(ctx, "count"))
 	}
 	return count, nil
+}
+
+const (
+	checkpointCommitted = 0
+	checkpointPending   = 1
+)
+
+type checkpointPayload struct {
+	Scope             string               `json:"scope"`
+	TargetID          string               `json:"target_id"`
+	TargetRevision    []byte               `json:"target_revision"`
+	Vantage           string               `json:"vantage"`
+	Kind              observation.Kind     `json:"kind"`
+	Profile           artifact.Profile     `json:"profile"`
+	PolicyFingerprint []byte               `json:"policy_fingerprint"`
+	Members           []checkpointMember   `json:"members"`
+	Cooldowns         []checkpointCooldown `json:"cooldowns"`
+	Receipt           []byte               `json:"receipt"`
+}
+
+type checkpointMember struct {
+	EndpointID string `json:"endpoint_id"`
+	Revision   []byte `json:"connection_revision"`
+	SelectedAt int64  `json:"selected_at_ns"`
+}
+
+type checkpointCooldown struct {
+	EndpointID string `json:"endpoint_id"`
+	Revision   []byte `json:"connection_revision"`
+	Until      int64  `json:"until_ns"`
+}
+
+type storedCheckpoint struct {
+	state   selection.State
+	receipt artifact.Receipt
+}
+
+// StageDecision durably records a decision that may only become committed after
+// its exact protected artifact receipt is observed at the publisher boundary.
+func (store *Store) StageDecision(ctx context.Context, value selection.State, receipt artifact.Receipt, now time.Time) error {
+	if err := value.Validate(); err != nil || now.IsZero() {
+		return failure(ErrPersistence, "decision_state")
+	}
+	payload, err := encodeCheckpoint(value, receipt)
+	if err != nil || len(payload) > 4<<20 {
+		return failure(ErrPersistence, "decision_encode")
+	}
+	if _, err := store.database.ExecContext(ctx, `
+INSERT INTO selection_checkpoints(scope_id, slot, payload, updated_at_ns)
+VALUES(?, ?, ?, ?)
+ON CONFLICT(scope_id, slot) DO UPDATE SET payload=excluded.payload, updated_at_ns=excluded.updated_at_ns`,
+		value.Scope, checkpointPending, payload, now.UTC().UnixNano()); err != nil {
+		return failure(ErrPersistence, contextCode(ctx, "decision_stage"))
+	}
+	return nil
+}
+
+// CommitDecision promotes the pending checkpoint only when it names the exact
+// currently published artifact receipt supplied by the caller.
+func (store *Store) CommitDecision(ctx context.Context, scope string, current artifact.Receipt) error {
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return failure(ErrPersistence, contextCode(ctx, "decision_commit_begin"))
+	}
+	defer transaction.Rollback()
+	pending, found, err := loadCheckpoint(ctx, transaction, scope, checkpointPending)
+	if err != nil || !found || !pending.receipt.Equal(current) {
+		return failure(ErrPersistence, "decision_commit_mismatch")
+	}
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM selection_checkpoints WHERE scope_id=? AND slot=?`, scope, checkpointCommitted); err != nil {
+		return failure(ErrPersistence, contextCode(ctx, "decision_commit_replace"))
+	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE selection_checkpoints SET slot=? WHERE scope_id=? AND slot=?`, checkpointCommitted, scope, checkpointPending); err != nil {
+		return failure(ErrPersistence, contextCode(ctx, "decision_commit_promote"))
+	}
+	if err := transaction.Commit(); err != nil {
+		return failure(ErrPersistence, contextCode(ctx, "decision_commit"))
+	}
+	return nil
+}
+
+// RecoverDecision resolves a pending filesystem/database crash window and returns
+// committed state only when it matches the publisher's current protected receipt.
+func (store *Store) RecoverDecision(ctx context.Context, scope string, current artifact.Receipt, currentExists bool) (*selection.State, error) {
+	if !safeCheckpointScope(scope) {
+		return nil, failure(ErrPersistence, "decision_scope")
+	}
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, failure(ErrPersistence, contextCode(ctx, "decision_recover_begin"))
+	}
+	defer transaction.Rollback()
+	pending, pendingFound, err := loadCheckpoint(ctx, transaction, scope, checkpointPending)
+	if err != nil {
+		return nil, err
+	}
+	if pendingFound && currentExists && pending.receipt.Equal(current) {
+		if _, err := transaction.ExecContext(ctx, `DELETE FROM selection_checkpoints WHERE scope_id=? AND slot=?`, scope, checkpointCommitted); err != nil {
+			return nil, failure(ErrPersistence, "decision_recover_replace")
+		}
+		if _, err := transaction.ExecContext(ctx, `UPDATE selection_checkpoints SET slot=? WHERE scope_id=? AND slot=?`, checkpointCommitted, scope, checkpointPending); err != nil {
+			return nil, failure(ErrPersistence, "decision_recover_promote")
+		}
+	} else if pendingFound {
+		if _, err := transaction.ExecContext(ctx, `DELETE FROM selection_checkpoints WHERE scope_id=? AND slot=?`, scope, checkpointPending); err != nil {
+			return nil, failure(ErrPersistence, "decision_recover_discard")
+		}
+	}
+	committed, found, err := loadCheckpoint(ctx, transaction, scope, checkpointCommitted)
+	if err != nil {
+		return nil, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return nil, failure(ErrPersistence, contextCode(ctx, "decision_recover_commit"))
+	}
+	if !found || !currentExists || !committed.receipt.Equal(current) {
+		return nil, nil
+	}
+	value := committed.state
+	return &value, nil
+}
+
+type checkpointQuery interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func loadCheckpoint(ctx context.Context, query checkpointQuery, scope string, slot int) (storedCheckpoint, bool, error) {
+	var payload []byte
+	err := query.QueryRowContext(ctx, `SELECT payload FROM selection_checkpoints WHERE scope_id=? AND slot=?`, scope, slot).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return storedCheckpoint{}, false, nil
+	}
+	if err != nil {
+		return storedCheckpoint{}, false, failure(ErrPersistence, contextCode(ctx, "decision_load"))
+	}
+	value, err := decodeCheckpoint(payload)
+	if err != nil {
+		return storedCheckpoint{}, false, failure(ErrPersistence, "decision_corrupt")
+	}
+	return value, true, nil
+}
+
+func encodeCheckpoint(value selection.State, receipt artifact.Receipt) ([]byte, error) {
+	targetRevision, err := value.Context.Target.Revision().RevealForPersistence()
+	if err != nil {
+		return nil, err
+	}
+	receiptBytes, err := receipt.RevealForPersistence()
+	if err != nil {
+		return nil, err
+	}
+	payload := checkpointPayload{Scope: value.Scope, TargetID: value.Context.Target.ID().String(), TargetRevision: targetRevision,
+		Vantage: value.Context.Vantage.String(), Kind: value.Context.Kind, Profile: value.Context.Profile,
+		PolicyFingerprint: append([]byte(nil), value.PolicyFingerprint[:]...), Receipt: receiptBytes}
+	for _, member := range value.Members {
+		revision, err := member.Connection.Revision().RevealForPersistence()
+		if err != nil {
+			return nil, err
+		}
+		payload.Members = append(payload.Members, checkpointMember{member.Connection.ID().String(), revision, member.SelectedAt.UTC().UnixNano()})
+	}
+	for _, cooldown := range value.Cooldowns {
+		revision, err := cooldown.Connection.Revision().RevealForPersistence()
+		if err != nil {
+			return nil, err
+		}
+		payload.Cooldowns = append(payload.Cooldowns, checkpointCooldown{cooldown.Connection.ID().String(), revision, cooldown.Until.UTC().UnixNano()})
+	}
+	return json.Marshal(payload)
+}
+
+func decodeCheckpoint(encoded []byte) (storedCheckpoint, error) {
+	var payload checkpointPayload
+	if len(encoded) == 0 || len(encoded) > 4<<20 || json.Unmarshal(encoded, &payload) != nil || len(payload.PolicyFingerprint) != 32 || len(payload.Members) > 10_000 || len(payload.Cooldowns) > 10_000 {
+		return storedCheckpoint{}, errors.New("invalid decision checkpoint")
+	}
+	targetID, err := observation.NewTargetID(payload.TargetID)
+	if err != nil {
+		return storedCheckpoint{}, err
+	}
+	target, err := observation.RestoreTargetRef(targetID, payload.TargetRevision)
+	if err != nil {
+		return storedCheckpoint{}, err
+	}
+	vantage, err := observation.NewVantageID(payload.Vantage)
+	if err != nil {
+		return storedCheckpoint{}, err
+	}
+	selectionContext, err := selection.NewContext(target, vantage, payload.Kind, payload.Profile)
+	if err != nil {
+		return storedCheckpoint{}, err
+	}
+	value := selection.State{Scope: payload.Scope, Context: selectionContext}
+	copy(value.PolicyFingerprint[:], payload.PolicyFingerprint)
+	for _, stored := range payload.Members {
+		connection, err := restoreConnection(stored.EndpointID, stored.Revision)
+		if err != nil || stored.SelectedAt == 0 {
+			return storedCheckpoint{}, errors.New("invalid decision member")
+		}
+		value.Members = append(value.Members, selection.Member{Connection: connection, SelectedAt: time.Unix(0, stored.SelectedAt).UTC()})
+	}
+	for _, stored := range payload.Cooldowns {
+		connection, err := restoreConnection(stored.EndpointID, stored.Revision)
+		if err != nil || stored.Until == 0 {
+			return storedCheckpoint{}, errors.New("invalid decision cooldown")
+		}
+		value.Cooldowns = append(value.Cooldowns, selection.Cooldown{Connection: connection, Until: time.Unix(0, stored.Until).UTC()})
+	}
+	if err := value.Validate(); err != nil {
+		return storedCheckpoint{}, err
+	}
+	receipt, err := artifact.RestoreReceipt(payload.Receipt)
+	if err != nil {
+		return storedCheckpoint{}, err
+	}
+	return storedCheckpoint{state: value, receipt: receipt}, nil
+}
+
+func restoreConnection(rawID string, rawRevision []byte) (observation.ConnectionRef, error) {
+	id, err := endpoint.ParseID(rawID)
+	if err != nil {
+		return observation.ConnectionRef{}, err
+	}
+	revision, err := endpoint.RestoreRevision(rawRevision)
+	if err != nil {
+		return observation.ConnectionRef{}, err
+	}
+	return observation.RestoreConnectionRef(id, revision)
+}
+
+func safeCheckpointScope(value string) bool {
+	if len(value) == 0 || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '.' || character == '/' || character == '_' || character == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 type keyFields struct {

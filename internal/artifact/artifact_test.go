@@ -48,6 +48,19 @@ func TestCandidateValidationAndReceiptAreExact(t *testing.T) {
 	if _, ok := artifact.MatchesProtectedReceipt(second.Reveal(), receipt); ok {
 		t.Fatal("receipt matched different bytes")
 	}
+	protected, err := validated.Receipt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := artifact.RestoreReceipt(receipt)
+	if err != nil || !protected.Equal(restored) {
+		t.Fatal("protected receipt did not round-trip")
+	}
+	formatted := fmt.Sprintf("%v %+v %#v", protected, protected, protected)
+	encoded, marshalErr := json.Marshal(protected)
+	if strings.Contains(formatted+string(encoded)+fmt.Sprint(marshalErr), string(receipt)) {
+		t.Fatal("protected receipt formatting exposed persistence bytes")
+	}
 }
 
 func TestArtifactFormattingDoesNotLeak(t *testing.T) {

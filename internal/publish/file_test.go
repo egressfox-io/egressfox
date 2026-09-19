@@ -41,6 +41,14 @@ func TestFilePublicationReplaceNoOpAndPermissions(t *testing.T) {
 		t.Fatalf("replacement = %v, %v", result, err)
 	}
 	assertFile(t, target, []byte("second-secret-artifact"), 0o600)
+	current, exists, err := publisher.CurrentReceipt()
+	if err != nil || !exists {
+		t.Fatalf("current receipt: exists=%t err=%v", exists, err)
+	}
+	want, err := second.Receipt()
+	if err != nil || !current.Equal(want) {
+		t.Fatal("publisher current receipt does not identify LKG")
+	}
 	assertFile(t, publisher.previousPath(), []byte("first-secret-artifact"), 0o600)
 	if _, err := os.Stat(publisher.journalPath()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("journal remained after commit")

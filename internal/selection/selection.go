@@ -121,6 +121,49 @@ type State struct {
 	Cooldowns         []Cooldown
 }
 
+func (state State) String() string {
+	return fmt.Sprintf("selection state scope=%s members=%d cooldowns=%d context_revisions=<private>", state.Scope, len(state.Members), len(state.Cooldowns))
+}
+func (State) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("selection state JSON serialization is disabled")
+}
+
+func (state State) Validate() error {
+	if !safeScope(state.Scope) {
+		return errors.New("invalid selection state scope")
+	}
+	if _, err := NewContext(state.Context.Target, state.Context.Vantage, state.Context.Kind, state.Context.Profile); err != nil {
+		return err
+	}
+	zero := true
+	for _, value := range state.PolicyFingerprint {
+		zero = zero && value == 0
+	}
+	if zero {
+		return errors.New("invalid selection policy fingerprint")
+	}
+	seen := make(map[string]struct{}, len(state.Members))
+	for _, member := range state.Members {
+		if member.SelectedAt.IsZero() {
+			return errors.New("invalid selection member time")
+		}
+		key := refKey(member.Connection)
+		if _, ok := seen[key]; ok {
+			return errors.New("duplicate selection member")
+		}
+		seen[key] = struct{}{}
+	}
+	for _, cooldown := range state.Cooldowns {
+		if cooldown.Until.IsZero() {
+			return errors.New("invalid selection cooldown time")
+		}
+		if _, err := cooldown.Connection.Revision().RevealForPersistence(); err != nil {
+			return errors.New("invalid selection cooldown connection")
+		}
+	}
+	return nil
+}
+
 type Reason string
 
 const (

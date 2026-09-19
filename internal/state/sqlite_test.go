@@ -3,6 +3,7 @@ package state_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/egressfox-io/egressfox/internal/artifact"
 	"github.com/egressfox-io/egressfox/internal/endpoint"
 	"github.com/egressfox-io/egressfox/internal/observation"
+	"github.com/egressfox-io/egressfox/internal/selection"
 	"github.com/egressfox-io/egressfox/internal/state"
 )
 
@@ -68,6 +70,121 @@ func TestStoreInitializeReopenAndReplay(t *testing.T) {
 	if !reflect.DeepEqual(before, after) || after.Samples != 2 || after.Successes != 1 || !after.Fresh {
 		t.Fatalf("restart replay changed summary: before=%+v after=%+v", before, after)
 	}
+}
+
+type checkpointChecker struct{}
+
+func (checkpointChecker) Check(context.Context, artifact.Candidate) (artifact.Evidence, error) {
+	return artifact.Evidence{ValidatorID: "test/checkpoint"}, nil
+}
+
+func TestDecisionCheckpointCommitAndCrashRecovery(t *testing.T) {
+	t.Parallel()
+	directory := privateTempDir(t)
+	path := filepath.Join(directory, "history.db")
+	store, err := state.Open(path, state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 19, 16, 0, 0, 0, time.UTC)
+	key := testKey(t, "checkpoint-secret", "service", "https://example.com/", "host")
+	selectionContext, err := selection.NewContext(key.Target(), key.Vantage(), key.Kind(), key.Profile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := sha256.Sum256([]byte("policy"))
+	decisionState := selection.State{Scope: "gateway", Context: selectionContext, PolicyFingerprint: fingerprint,
+		Members: []selection.Member{{Connection: key.Connection(), SelectedAt: now}}}
+	first := checkpointReceipt(t, []byte("first-secret-artifact"))
+	second := checkpointReceipt(t, []byte("second-secret-artifact"))
+	if err := store.StageDecision(context.Background(), decisionState, first, now); err != nil {
+		t.Fatal(err)
+	}
+	if recovered, err := store.RecoverDecision(context.Background(), "gateway", artifact.Receipt{}, false); err != nil || recovered != nil {
+		t.Fatalf("unpublished pending checkpoint recovered: %v, %v", recovered, err)
+	}
+	if err := store.StageDecision(context.Background(), decisionState, first, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitDecision(context.Background(), "gateway", first); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.RecoverDecision(context.Background(), "gateway", first, true)
+	if err != nil || loaded == nil || !loaded.Members[0].Connection.Equal(key.Connection()) {
+		t.Fatalf("committed decision = %+v, %v", loaded, err)
+	}
+
+	next := decisionState
+	next.Members = []selection.Member{{Connection: key.Connection(), SelectedAt: now.Add(time.Minute)}}
+	if err := store.StageDecision(context.Background(), next, second, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = state.Open(path, state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	recovered, err := store.RecoverDecision(context.Background(), "gateway", second, true)
+	if err != nil || recovered == nil || !recovered.Members[0].SelectedAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("post-publication crash recovery = %+v, %v", recovered, err)
+	}
+	if mismatched, err := store.RecoverDecision(context.Background(), "gateway", first, true); err != nil || mismatched != nil {
+		t.Fatalf("mismatched LKG reused state: %+v, %v", mismatched, err)
+	}
+}
+
+func TestStoreMigratesSchemaOneToTwo(t *testing.T) {
+	t.Parallel()
+	directory := privateTempDir(t)
+	path := filepath.Join(directory, "history.db")
+	store, err := state.Open(path, state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`DROP TABLE selection_checkpoints`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`PRAGMA user_version=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := state.Open(path, state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	if count, err := migrated.Count(context.Background()); err != nil || count != 0 {
+		t.Fatalf("migrated count = %d, %v", count, err)
+	}
+}
+
+func checkpointReceipt(t testing.TB, content []byte) artifact.Receipt {
+	t.Helper()
+	candidate, err := artifact.NewCandidate(artifact.Mihomo11931, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validated, err := artifact.Validate(context.Background(), candidate, checkpointChecker{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := validated.Receipt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return receipt
 }
 
 func TestStoreSeparatesConnectionTargetAndVantage(t *testing.T) {
@@ -144,7 +261,7 @@ func TestStoreRejectsFutureSchemaAndUnsafePaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := database.Exec(`PRAGMA user_version=2`); err != nil {
+		if _, err := database.Exec(`PRAGMA user_version=3`); err != nil {
 			t.Fatal(err)
 		}
 		if err := database.Close(); err != nil {
@@ -173,7 +290,7 @@ func TestStoreRejectsFutureSchemaAndUnsafePaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := database.Exec(`PRAGMA user_version=1`); err != nil {
+		if _, err := database.Exec(`PRAGMA user_version=2`); err != nil {
 			t.Fatal(err)
 		}
 		if err := database.Close(); err != nil {

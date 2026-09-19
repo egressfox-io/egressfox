@@ -50,6 +50,28 @@ func NewFilePublisher(target string) (*FilePublisher, error) {
 
 func (p *FilePublisher) String() string { return "file publisher target=<redacted>" }
 
+// CurrentReceipt returns protected evidence for the currently owned LKG after
+// applying the same crash recovery and ownership checks as publication.
+func (p *FilePublisher) CurrentReceipt() (artifact.Receipt, bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.validateDirectory(); err != nil {
+		return artifact.Receipt{}, false, err
+	}
+	if err := p.recover(); err != nil {
+		return artifact.Receipt{}, false, err
+	}
+	_, encoded, exists, err := p.currentOwned()
+	if err != nil || !exists {
+		return artifact.Receipt{}, exists, err
+	}
+	receipt, err := artifact.RestoreReceipt(encoded)
+	if err != nil {
+		return artifact.Receipt{}, false, ownershipError("receipt_decode")
+	}
+	return receipt, true, nil
+}
+
 func (p *FilePublisher) Publish(ctx context.Context, validated artifact.Validated) (Result, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
