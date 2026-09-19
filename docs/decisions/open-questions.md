@@ -8,8 +8,6 @@ the agent/contributor undertaking the gated milestone owns bringing evidence.
 
 | ID | Question and decision evidence needed | Gate | Design owner |
 | --- | --- | --- | --- |
-| Q3 | Through-endpoint probe engine topology, vantage, endpoint attribution, remote DNS/network restrictions, target incident detection, budget defaults. Benchmark isolated prototypes and failure/load cases without adding proxy protocols. | M4 before probe execution | [Observations](../designs/observations-and-selection.md) |
-| Q4 | SQLite driver/CGO, schema/migrations, retention, observation ordering, transaction/durability mode, clock discontinuity, restart/backup policy. Measure expected observation throughput and test recovery. | M4 before persistence contract | [History](../designs/observations-and-selection.md) |
 | Q5 | Adaptive score definition, eligibility/freshness/confidence, hysteresis/residence/recovery/cooldown rules, emergency failure criteria and tuning. Compare against baselines on reproducible traces; no arbitrary production constants. | M5 | [Selection](../designs/observations-and-selection.md) |
 | Q7 | Kubernetes Secret generation/backup ownership and later runtime activation/reload/rollback acknowledgment. File publication is resolved by ADR 0008. | Secret at M6; reload P1 | [Publication](../designs/policy-rendering-publication.md) |
 | Q8 | CRD names/scope/fields/defaults, pool-to-gateway references, inline P0 routing evolution to EgressPolicy, ownership/deletion, status truth tables, Secret references and RBAC. Review concrete examples and upgrade scenarios before generation. | M6 API gate | [Kubernetes](../designs/kubernetes.md) |
@@ -30,3 +28,5 @@ revise priorities. It must not be implemented by casually increasing replicas.
 | Q2 | [ADR 0007](0007-safe-source-snapshots.md) defines bounded inline/HTTP acquisition, URI-list/Base64 formats, strict transactional snapshots, explicit partial/empty policy, stable source identity and disappearance semantics. |
 | Q6 | [ADR 0008](0008-engine-artifacts-and-file-publication.md) defines the minimal common gateway, pinned Mihomo/sing-box profiles, deterministic renderers and mandatory exact-byte native validation. Native composition remains Q10. |
 | Q7 (file) | [ADR 0008](0008-engine-artifacts-and-file-publication.md) defines protected journal/receipt recovery, no-op/LKG/ownership behavior and one-writer file publication. Secret publication remains M6; reload/activation rollback remains P1. |
+| Q3 | [ADR 0009](0009-bounded-probes-and-sqlite-evidence.md) defines isolated one-revision engine probes, target authorization, vantage and outcome attribution, execution-failure separation and scheduler budgets. |
+| Q4 | [ADR 0009](0009-bounded-probes-and-sqlite-evidence.md) defines the CGo-free SQLite driver, versioned schema, WAL/FULL single-writer durability, protected state, retention and deterministic summaries. |

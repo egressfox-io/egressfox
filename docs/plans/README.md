@@ -10,6 +10,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0002](0002-endpoint-identity.md) | Complete | M1 endpoint identity and provenance |
 | [0003](0003-source-inventory.md) | Complete | M2 safe source-to-inventory pipeline |
 | [0004](0004-validated-publication.md) | Complete | M3 validated engine artifacts and recoverable file publication |
+| [0005](0005-observations-history.md) | In progress | M4 bounded observations and persistent history |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

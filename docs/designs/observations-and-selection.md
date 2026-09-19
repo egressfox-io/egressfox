@@ -1,7 +1,7 @@
 # Observations, history, and selection
 
-Status: required behavioral properties and proposed design; algorithms, storage
-schema, probe execution, and metric instruments are not implemented.
+Status: accepted M4 observation, probe and history contract fixed by ADR 0009;
+adaptive selection and metric instruments are not implemented.
 
 ## Decisions and scope
 
@@ -52,10 +52,12 @@ this separate from the production gateway so probes cannot change user traffic.
 The execution adapter must prove which endpoint was used; no automatic fallback
 to another endpoint or direct connection may masquerade as success.
 
-Before choosing process-per-endpoint, batching in a reusable engine, or another
-topology, measure startup cost, concurrency isolation, credential lifetime,
-supported probe types, engine API exposure, and cancellation/cleanup behavior.
-This is Q3 and an M4 entry gate. Do not build protocol clients to bypass it.
+M4 chooses one isolated pinned engine process per endpoint/revision and request.
+It renders the M3 one-endpoint gateway, validates exact bytes, waits for a private
+loopback SOCKS listener, executes one authorized bounded HTTP request, and terminates
+and waits for the engine. Rendering, validation, process/readiness, resolution and
+authorization failures produce execution errors rather than endpoint observations.
+This deliberately favors attribution and cleanup over startup efficiency.
 
 Probe vantage matters: an operator Pod may have a different route than a gateway
 Pod or standalone host. P0 must declare its vantage and limits. Remote/distributed
@@ -79,10 +81,12 @@ engine-native health tests and EgressFox probes from multiplying load invisibly.
 ## Historical state
 
 [ADR 0004](../decisions/0004-sqlite-history.md) chooses SQLite for initial standalone
-persistence. Use a local file with controlled ownership, explicit migrations,
-transactional updates, and bounded retention. Evaluate the driver, CGO tradeoff,
-journal mode, busy handling, and backup/recovery with real write rates before M4.
-No driver or generic storage interface has been selected.
+persistence and [ADR 0009](../decisions/0009-bounded-probes-and-sqlite-evidence.md)
+fixes the M4 adapter: ncruces/go-sqlite3 v0.35.5, schema version 1, WAL with FULL
+synchronization, one connection/writer, explicit migration and transactional age,
+per-key and global retention. The database directory and files are a confidential
+same-host boundary. Unknown future schema versions and inaccessible/corrupt state
+fail instead of silently falling back to memory.
 
 Organize storage around real operations: persist an observation and its summary
 consistently, load a coherent decision snapshot, record selection transitions,
@@ -196,6 +200,6 @@ See [Prometheus naming guidance](https://prometheus.io/docs/practices/naming/).
 
 No production score weights, target availability guarantee, distributed probe
 fleet, predictive model, arbitrary user scoring code, or observability stack is
-implemented. Q3–Q5 in the [decision queue](../decisions/open-questions.md) gate
-probe topology, persistence semantics, and adaptive scoring. Reproducible replay
+implemented. Q5 in the [decision queue](../decisions/open-questions.md) gates
+adaptive scoring. Reproducible replay
 and traffic experiments are specified in the [test strategy](../development/testing.md).

@@ -14,6 +14,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0006](0006-versioned-endpoint-identity.md) | Versioned logical endpoint IDs and confidential connection revisions | Accepted |
 | [0007](0007-safe-source-snapshots.md) | Bounded source snapshots with transactional replacement | Accepted |
 | [0008](0008-engine-artifacts-and-file-publication.md) | Pinned engine artifacts and journaled file publication | Accepted |
+| [0009](0009-bounded-probes-and-sqlite-evidence.md) | Isolated engine probes and bounded SQLite evidence | Accepted |
 
 ## Adding a decision
 
