@@ -20,15 +20,6 @@ var (
 	ErrPublication = errors.New("artifact publication failed")
 )
 
-type Result struct {
-	Profile artifact.Profile
-	Changed bool
-}
-
-func (r Result) String() string {
-	return fmt.Sprintf("publication result profile=%s changed=%t", r.Profile, r.Changed)
-}
-
 type FilePublisher struct {
 	mu      sync.Mutex
 	target  string
@@ -52,7 +43,7 @@ func (p *FilePublisher) String() string { return "file publisher target=<redacte
 
 // CurrentReceipt returns protected evidence for the currently owned LKG after
 // applying the same crash recovery and ownership checks as publication.
-func (p *FilePublisher) CurrentReceipt() (artifact.Receipt, bool, error) {
+func (p *FilePublisher) CurrentReceipt(_ context.Context) (artifact.Receipt, bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := p.validateDirectory(); err != nil {
@@ -72,83 +63,83 @@ func (p *FilePublisher) CurrentReceipt() (artifact.Receipt, bool, error) {
 	return receipt, true, nil
 }
 
-func (p *FilePublisher) Publish(ctx context.Context, validated artifact.Validated) (Result, error) {
+func (p *FilePublisher) Publish(ctx context.Context, validated artifact.Validated) (artifact.Publication, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := p.validateDirectory(); err != nil {
-		return Result{}, err
+		return artifact.Publication{}, err
 	}
 	if err := p.recover(); err != nil {
-		return Result{}, err
+		return artifact.Publication{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return Result{}, publicationError("cancelled")
+		return artifact.Publication{}, publicationError("cancelled")
 	}
 
 	current, currentReceipt, exists, err := p.currentOwned()
 	if err != nil {
-		return Result{}, err
+		return artifact.Publication{}, err
 	}
 	desired := validated.Reveal()
 	desiredReceipt, err := validated.ProtectedReceipt()
 	if err != nil {
-		return Result{}, publicationError("receipt_encode")
+		return artifact.Publication{}, publicationError("receipt_encode")
 	}
 	if exists && bytes.Equal(current, desired) {
 		if profile, ok := artifact.MatchesProtectedReceipt(current, currentReceipt); ok && profile == validated.Profile() {
-			return Result{Profile: profile, Changed: false}, nil
+			return artifact.Publication{Profile: profile, Changed: false}, nil
 		}
-		return Result{}, ownershipError("receipt_mismatch")
+		return artifact.Publication{}, ownershipError("receipt_mismatch")
 	}
 
 	stage, err := p.stage("candidate", desired)
 	if err != nil {
-		return Result{}, publicationError("stage")
+		return artifact.Publication{}, publicationError("stage")
 	}
 	defer os.Remove(stage)
 	if exists {
 		backup, backupErr := p.stage("previous", current)
 		if backupErr != nil {
-			return Result{}, publicationError("backup_stage")
+			return artifact.Publication{}, publicationError("backup_stage")
 		}
 		defer os.Remove(backup)
 		if err := p.rename(backup, p.previousPath()); err != nil {
-			return Result{}, publicationError("backup_commit")
+			return artifact.Publication{}, publicationError("backup_commit")
 		}
 		if err := p.syncDir(filepath.Dir(p.target)); err != nil {
-			return Result{}, publicationError("backup_sync")
+			return artifact.Publication{}, publicationError("backup_sync")
 		}
 	}
 	if err := p.writeAtomic(p.journalPath(), desiredReceipt); err != nil {
-		return Result{}, publicationError("journal")
+		return artifact.Publication{}, publicationError("journal")
 	}
 	if err := ctx.Err(); err != nil {
 		_ = os.Remove(p.journalPath())
 		_ = p.syncDir(filepath.Dir(p.target))
-		return Result{}, publicationError("cancelled")
+		return artifact.Publication{}, publicationError("cancelled")
 	}
 	if err := p.rename(stage, p.target); err != nil {
 		_ = os.Remove(p.journalPath())
 		_ = p.syncDir(filepath.Dir(p.target))
-		return Result{}, publicationError("target_commit")
+		return artifact.Publication{}, publicationError("target_commit")
 	}
 	if err := p.syncDir(filepath.Dir(p.target)); err != nil {
-		return Result{}, p.rollback(exists, currentReceipt, "target_sync")
+		return artifact.Publication{}, p.rollback(exists, currentReceipt, "target_sync")
 	}
 	readback, err := readRegular(p.target, len(desired)+1)
 	if err != nil || !bytes.Equal(readback, desired) {
-		return Result{}, p.rollback(exists, currentReceipt, "readback")
+		return artifact.Publication{}, p.rollback(exists, currentReceipt, "readback")
 	}
 	if err := p.writeAtomic(p.receiptPath(), desiredReceipt); err != nil {
-		return Result{}, p.rollback(exists, currentReceipt, "receipt_commit")
+		return artifact.Publication{}, p.rollback(exists, currentReceipt, "receipt_commit")
 	}
 	if err := os.Remove(p.journalPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return Result{}, publicationError("journal_cleanup")
+		return artifact.Publication{}, publicationError("journal_cleanup")
 	}
 	if err := p.syncDir(filepath.Dir(p.target)); err != nil {
-		return Result{}, publicationError("receipt_sync")
+		return artifact.Publication{}, publicationError("receipt_sync")
 	}
-	return Result{Profile: validated.Profile(), Changed: true}, nil
+	return artifact.Publication{Profile: validated.Profile(), Changed: true}, nil
 }
 
 func (p *FilePublisher) validateDirectory() error {

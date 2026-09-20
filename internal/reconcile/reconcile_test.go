@@ -48,11 +48,11 @@ func (value *trackingDecisions) CommitDecision(context.Context, string, artifact
 
 type failingPublisher struct{}
 
-func (failingPublisher) CurrentReceipt() (artifact.Receipt, bool, error) {
+func (failingPublisher) CurrentReceipt(context.Context) (artifact.Receipt, bool, error) {
 	return artifact.Receipt{}, false, nil
 }
-func (failingPublisher) Publish(context.Context, artifact.Validated) (publish.Result, error) {
-	return publish.Result{}, errors.New("synthetic publication failure")
+func (failingPublisher) Publish(context.Context, artifact.Validated) (artifact.Publication, error) {
+	return artifact.Publication{}, errors.New("synthetic publication failure")
 }
 
 func TestStandaloneLoopBothRenderersRestartAndNoOp(t *testing.T) {

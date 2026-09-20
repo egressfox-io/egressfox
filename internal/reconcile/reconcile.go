@@ -15,7 +15,6 @@ import (
 	"github.com/egressfox-io/egressfox/internal/engine"
 	"github.com/egressfox-io/egressfox/internal/observation"
 	"github.com/egressfox-io/egressfox/internal/policy"
-	"github.com/egressfox-io/egressfox/internal/publish"
 	"github.com/egressfox-io/egressfox/internal/selection"
 )
 
@@ -30,8 +29,8 @@ type Decisions interface {
 }
 
 type Publisher interface {
-	CurrentReceipt() (artifact.Receipt, bool, error)
-	Publish(context.Context, artifact.Validated) (publish.Result, error)
+	CurrentReceipt(context.Context) (artifact.Receipt, bool, error)
+	Publish(context.Context, artifact.Validated) (artifact.Publication, error)
 }
 
 type Request struct {
@@ -91,7 +90,7 @@ func (reconciler *Reconciler) Reconcile(ctx context.Context, request Request) (R
 	if request.Renderer.Profile() != request.Context.Profile {
 		return Result{}, fail("profile", errors.New("renderer and evidence profiles differ"))
 	}
-	current, exists, err := reconciler.publisher.CurrentReceipt()
+	current, exists, err := reconciler.publisher.CurrentReceipt(ctx)
 	if err != nil {
 		return Result{}, fail("publisher_read", err)
 	}
@@ -165,7 +164,7 @@ func Apply(ctx context.Context, decisions Decisions, publisher Publisher, reques
 	if err != nil {
 		return Result{}, fail("publication", err)
 	}
-	current, exists, err := publisher.CurrentReceipt()
+	current, exists, err := publisher.CurrentReceipt(ctx)
 	if err != nil || !exists || !current.Equal(receipt) {
 		if err == nil {
 			err = errors.New("published receipt mismatch")

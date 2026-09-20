@@ -79,6 +79,16 @@ type Validated struct {
 	evidence   Evidence
 }
 
+// Publication is safe metadata about a durable publisher operation.
+type Publication struct {
+	Profile Profile
+	Changed bool
+}
+
+func (p Publication) String() string {
+	return fmt.Sprintf("publication result profile=%s changed=%t", p.Profile, p.Changed)
+}
+
 func Validate(ctx context.Context, candidate Candidate, checker Checker) (Validated, error) {
 	if checker == nil {
 		return Validated{}, errors.New("artifact validation requires a checker")

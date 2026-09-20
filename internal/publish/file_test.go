@@ -41,7 +41,7 @@ func TestFilePublicationReplaceNoOpAndPermissions(t *testing.T) {
 		t.Fatalf("replacement = %v, %v", result, err)
 	}
 	assertFile(t, target, []byte("second-secret-artifact"), 0o600)
-	current, exists, err := publisher.CurrentReceipt()
+	current, exists, err := publisher.CurrentReceipt(context.Background())
 	if err != nil || !exists {
 		t.Fatalf("current receipt: exists=%t err=%v", exists, err)
 	}
