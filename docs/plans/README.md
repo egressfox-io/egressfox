@@ -12,6 +12,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0004](0004-validated-publication.md) | Complete | M3 validated engine artifacts and recoverable file publication |
 | [0005](0005-observations-history.md) | Complete | M4 bounded observations and persistent history |
 | [0006](0006-adaptive-reconciliation.md) | Complete | M5 adaptive standalone reconciliation |
+| [0007](0007-kubernetes-operator.md) | Active | M6 Kubernetes BYO operator and Secret publication |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.
