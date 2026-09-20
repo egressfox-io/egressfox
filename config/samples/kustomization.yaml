@@ -1,0 +1,6 @@
+## Append samples of your project ##
+resources:
+- egressfox_v1alpha1_secrets.yaml
+- egressfox_v1alpha1_proxypool.yaml
+- egressfox_v1alpha1_egressgateway.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

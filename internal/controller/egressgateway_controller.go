@@ -32,6 +32,7 @@ type GatewayPipeline interface {
 // +kubebuilder:rbac:groups=egressfox.io,resources=egressgateways/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=egressfox.io,resources=proxypools,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 type EgressGatewayReconciler struct {
 	client.Client

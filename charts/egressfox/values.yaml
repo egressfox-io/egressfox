@@ -1,0 +1,16 @@
+image:
+  repository: ghcr.io/egressfox-io/egressfox
+  tag: "0.1.0"
+  digest: ""
+  pullPolicy: IfNotPresent
+
+state:
+  size: 1Gi
+  storageClassName: ""
+
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: "2", memory: 1Gi}
+
+metrics:
+  service: true

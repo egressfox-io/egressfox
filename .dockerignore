@@ -1,0 +1,8 @@
+.git
+.cache
+bin
+dist
+local
+state
+coverage.out
+*.test

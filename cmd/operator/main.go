@@ -41,7 +41,7 @@ func main() {
 	var leaderElect bool
 	flag.StringVar(&metricsAddress, "metrics-bind-address", ":8443", "HTTPS metrics bind address, or 0 to disable")
 	flag.StringVar(&healthAddress, "health-probe-bind-address", ":8081", "health and readiness bind address")
-	flag.StringVar(&statePath, "state-path", "/var/lib/egressfox/state.db", "protected SQLite state path")
+	flag.StringVar(&statePath, "state-path", "/var/lib/egressfox/private/state.db", "protected SQLite state path")
 	flag.StringVar(&mihomoBinary, "mihomo-binary", "/usr/local/bin/mihomo", "absolute Mihomo v1.19.31 binary path")
 	flag.StringVar(&singBoxBinary, "sing-box-binary", "/usr/local/bin/sing-box", "absolute sing-box v1.14.1 binary path")
 	flag.BoolVar(&leaderElect, "leader-elect", true, "use Kubernetes Lease leader election")

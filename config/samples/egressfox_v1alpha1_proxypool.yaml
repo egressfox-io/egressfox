@@ -1,0 +1,14 @@
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata:
+  name: sample
+spec:
+  sources:
+    - id: primary
+      secretRef: {name: sample-subscription, key: nodes}
+      format: URIList
+  probe:
+    targetSecretRef: {name: sample-target, key: url}
+    expectedStatus: 204
+  selection: {strategy: Adaptive, topN: 1}
+  refreshInterval: 5m
