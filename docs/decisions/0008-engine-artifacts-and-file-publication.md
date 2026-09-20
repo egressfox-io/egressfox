@@ -29,7 +29,9 @@ They generate collision-safe endpoint names from the safe logical endpoint ID pl
 deterministic ordinal for simultaneous credential revisions. Names and output order
 never use aliases or confidential revision bytes. Typed native structs are serialized
 with deterministic field and inventory ordering. Mihomo YAML uses the maintained
-`go.yaml.in/yaml/v3` library; sing-box uses the Go JSON encoder.
+`go.yaml.in/yaml/v3` library; sing-box uses the Go JSON encoder. The sing-box profile
+declares a local DNS server and makes it the default domain resolver because sing-box
+v1.14 requires an explicit resolver for outbound server domain names.
 
 Rendering produces a secret-bearing candidate artifact. Validation is a separate
 boundary and produces a distinct validated-artifact type bound to exact bytes,

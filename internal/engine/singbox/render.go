@@ -17,12 +17,20 @@ func (Renderer) Profile() artifact.Profile { return artifact.SingBox1141 }
 
 type configuration struct {
 	Log       logConfig   `json:"log"`
+	DNS       dnsConfig   `json:"dns"`
 	Inbounds  []inbound   `json:"inbounds"`
 	Outbounds []outbound  `json:"outbounds"`
 	Route     routeConfig `json:"route"`
 }
 type logConfig struct {
 	Disabled bool `json:"disabled"`
+}
+type dnsConfig struct {
+	Servers []dnsServer `json:"servers"`
+}
+type dnsServer struct {
+	Type string `json:"type"`
+	Tag  string `json:"tag"`
 }
 type inbound struct {
 	Type       string `json:"type"`
@@ -53,7 +61,8 @@ type transport struct {
 	Path string `json:"path"`
 }
 type routeConfig struct {
-	Final string `json:"final"`
+	Final                 string `json:"final"`
+	DefaultDomainResolver string `json:"default_domain_resolver"`
 }
 
 func (r Renderer) Render(gateway policy.Gateway) (artifact.Candidate, error) {
@@ -71,8 +80,10 @@ func (r Renderer) Render(gateway policy.Gateway) (artifact.Candidate, error) {
 	outbounds = append(outbounds, outbound{Type: "selector", Tag: "egressfox", Outbounds: names, Default: names[0]})
 	model := configuration{
 		Log:       logConfig{Disabled: true},
+		DNS:       dnsConfig{Servers: []dnsServer{{Type: "local", Tag: "local"}}},
 		Inbounds:  []inbound{{Type: "socks", Tag: "egressfox-in", Listen: gateway.Listener().Address(), ListenPort: gateway.Listener().Port()}},
-		Outbounds: outbounds, Route: routeConfig{Final: "egressfox"},
+		Outbounds: outbounds,
+		Route:     routeConfig{Final: "egressfox", DefaultDomainResolver: "local"},
 	}
 	var buffer bytes.Buffer
 	encoder := json.NewEncoder(&buffer)

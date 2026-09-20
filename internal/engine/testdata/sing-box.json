@@ -2,6 +2,14 @@
   "log": {
     "disabled": true
   },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
   "inbounds": [
     {
       "type": "socks",
@@ -52,6 +60,7 @@
     }
   ],
   "route": {
-    "final": "egressfox"
+    "final": "egressfox",
+    "default_domain_resolver": "local"
   }
 }
