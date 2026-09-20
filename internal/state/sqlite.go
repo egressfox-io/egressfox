@@ -246,6 +246,11 @@ func (store *Store) prune(ctx context.Context, transaction *sql.Tx, fields keyFi
 	if _, err := transaction.ExecContext(ctx, `DELETE FROM observations WHERE completed_at_ns < ?`, cutoff); err != nil {
 		return failure(ErrPersistence, contextCode(ctx, "retention_age"))
 	}
+	// Checkpoints are scoped by gateway UID in operator mode. Expiring inactive
+	// scopes bounds orphaned state without requiring a deletion finalizer.
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM selection_checkpoints WHERE updated_at_ns < ?`, cutoff); err != nil {
+		return failure(ErrPersistence, contextCode(ctx, "retention_checkpoints"))
+	}
 	arguments := fields.arguments()
 	arguments = append(arguments, store.retention.MaxPerKey)
 	if _, err := transaction.ExecContext(ctx, `

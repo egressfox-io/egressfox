@@ -1,0 +1,260 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: proxypools.egressfox.io
+spec:
+  group: egressfox.io
+  names:
+    kind: ProxyPool
+    listKind: ProxyPoolList
+    plural: proxypools
+    singular: proxypool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.acceptedEndpoints
+      name: Endpoints
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ProxyPool describes a bounded set of Secret-backed subscriptions.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ProxyPoolSpec defines source admission, probe authorization
+              and selection intent.
+            properties:
+              allowInsecureTLS:
+                description: AllowInsecureTLS admits endpoint records that disable
+                  certificate verification.
+                type: boolean
+              probe:
+                properties:
+                  allowHTTP:
+                    type: boolean
+                  allowPrivateEndpoints:
+                    type: boolean
+                  allowPrivateTargets:
+                    type: boolean
+                  expectedStatus:
+                    default: 204
+                    format: int32
+                    maximum: 599
+                    minimum: 100
+                    type: integer
+                  targetSecretRef:
+                    description: SecretKeyReference selects one key from a Secret
+                      in the resource namespace.
+                    properties:
+                      key:
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      name:
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  timeout:
+                    default: 5s
+                    type: string
+                    x-kubernetes-validations:
+                    - message: timeout must be between 100ms and 2m
+                      rule: duration(self) >= duration('100ms') && duration(self)
+                        <= duration('2m')
+                required:
+                - targetSecretRef
+                type: object
+              refreshInterval:
+                default: 5m
+                type: string
+                x-kubernetes-validations:
+                - message: refreshInterval must be between 30s and 24h
+                  rule: duration(self) >= duration('30s') && duration(self) <= duration('24h')
+              selection:
+                properties:
+                  strategy:
+                    default: Adaptive
+                    enum:
+                    - Static
+                    - LowestLatency
+                    - Adaptive
+                    type: string
+                  topN:
+                    default: 1
+                    format: int32
+                    maximum: 10000
+                    minimum: 1
+                    type: integer
+                type: object
+              sources:
+                items:
+                  properties:
+                    allowEmpty:
+                      description: AllowEmpty accepts an authoritative empty snapshot
+                        for this source.
+                      type: boolean
+                    allowPartial:
+                      description: AllowPartial commits accepted records when other
+                        records are rejected.
+                      type: boolean
+                    format:
+                      enum:
+                      - URIList
+                      - Base64URIList
+                      type: string
+                    id:
+                      description: ID is stable source provenance and must not contain
+                        a URL or credential.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z][a-z0-9.-]*$
+                      type: string
+                    secretRef:
+                      description: SecretKeyReference selects one key from a Secret
+                        in the resource namespace.
+                      properties:
+                        key:
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                        name:
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                  required:
+                  - format
+                  - id
+                  - secretRef
+                  type: object
+                maxItems: 32
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
+            required:
+            - probe
+            - sources
+            type: object
+          status:
+            description: ProxyPoolStatus contains safe, bounded aggregate state only.
+            properties:
+              acceptedEndpoints:
+                format: int32
+                type: integer
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastInventoryChangeTime:
+                description: |-
+                  LastInventoryChangeTime advances only when a successful admission changes
+                  the bounded inventory summary or observes a new spec generation.
+                format: date-time
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              rejectedRecords:
+                format: int32
+                type: integer
+              unsupportedRecords:
+                format: int32
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

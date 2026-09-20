@@ -252,6 +252,36 @@ func TestRetentionBoundsAgeKeyAndGlobalRows(t *testing.T) {
 	}
 }
 
+func TestRetentionExpiresInactiveDecisionScopes(t *testing.T) {
+	t.Parallel()
+	store := openTestStore(t, state.Retention{MaxAge: time.Minute, MaxPerKey: 8, MaxRows: 32})
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-2 * time.Minute)
+	key := testKey(t, "checkpoint-retention", "service", "https://example.com/", "host")
+	selectionContext, err := selection.NewContext(key.Target(), key.Vantage(), key.Kind(), key.Profile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := checkpointReceipt(t, []byte("retained-artifact"))
+	fingerprint := sha256.Sum256([]byte("policy"))
+	decision := selection.State{Scope: "k8s_deleted-gateway-uid", Context: selectionContext, PolicyFingerprint: fingerprint, EvaluatedAt: old,
+		Members: []selection.Member{{Connection: key.Connection(), SelectedAt: old}}}
+	if err := store.StageDecision(context.Background(), decision, receipt, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitDecision(context.Background(), decision.Scope, receipt); err != nil {
+		t.Fatal(err)
+	}
+	value := testObservation(t, key, now, time.Millisecond, observation.OutcomeSuccess, 204)
+	if err := store.Append(context.Background(), value, now); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := store.RecoverDecision(context.Background(), decision.Scope, receipt, true)
+	if err != nil || recovered != nil {
+		t.Fatalf("expired decision scope = %+v, %v", recovered, err)
+	}
+}
+
 func TestStoreRejectsFutureSchemaAndUnsafePaths(t *testing.T) {
 	t.Parallel()
 	t.Run("future schema", func(t *testing.T) {
