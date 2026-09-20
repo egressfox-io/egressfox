@@ -126,6 +126,10 @@ defines configuration test mode (`-t`, with configuration path `-f`); sing-box's
 the executable's version. Official release assets are opt-in test prerequisites,
 never downloaded by ordinary unit tests or retained in the repository.
 
+The sing-box v1.14.1 renderer declares a `local` DNS server and sets it as
+`route.default_domain_resolver`. This preserves DNS-host endpoint support now that
+sing-box v1.14 requires an explicit resolver for outbound server domain names.
+
 Engine validation may load external files, resolve names, or initialize resources.
 Treat the validator as a restricted child process: no shell, deadline, bounded
 sanitized stderr/stdout, private temporary files, controlled environment/filesystem,
@@ -227,12 +231,14 @@ replace. Reject unsafe symlink/path ownership. Retain the previous artifact
 securely before replacement, with a bounded retention/cleanup policy. Do not
 assume rename alone proves power-loss durability or cross-filesystem atomicity.
 
-**Kubernetes Secret (P0):** use a namespaced target with clear owner, explicit
-data keys, and optimistic concurrency. Never adopt/overwrite an unrelated Secret.
-A single-object update can replace a payload atomically at the API level; backup
-and receipt updates across objects are not transactional. Review mutable target
-plus retained previous Secret versus versioned immutable Secrets before M6. Check
-payload size below the API limit and fail before mutation; do not auto-shard output.
+**Kubernetes Secret (implemented M6):** the mutable target is type
+`egressfox.io/engine-config`, has the exact EgressGateway controller owner, and
+contains one engine config plus `.egressfox-receipt` in `data`. The receipt and
+configuration replace atomically in one resourceVersion-guarded API update. An
+unowned or differently typed object is rejected, identical bytes are a no-op, and
+owner-reference garbage collection implements Gateway deletion. There is no second
+backup Secret: the current owned object is the recoverable LKG. API-server durability
+and mounted-file propagation remain Kubernetes responsibilities.
 Mounted-file propagation and application reload are separate from API publication.
 
 Kubernetes documents [Secret handling and size limits](https://kubernetes.io/docs/concepts/configuration/secret/).
@@ -249,5 +255,5 @@ idempotency, authentication, acknowledgment, retry, and rollback contracts.
 No EgressFox runtime routing implementation, universal policy language, live engine
 reload or native merge engine exists here. M3 compatibility is limited to the exact
 profiles and common slice above. The [decision queue](../decisions/open-questions.md)
-retains Secret publication and activation/rollback under Q7 and native composition
-under Q10.
+retains activation/rollback under Q7 and native composition under Q10. Secret
+publication is resolved by ADR 0011.

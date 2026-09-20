@@ -8,7 +8,8 @@ now are listed in [workflow](workflow.md). M4 adds resolver/authorization, sched
 budget, through-engine observation, SQLite migration/restart/retention and summary
 tests. M5 adds pure strategy/scenario replay, permutation fuzzing, exact transition
 boundaries, SQLite checkpoint recovery and both-renderer standalone reconciliation.
-Do not claim M6 controller or cluster tests run before that milestone implements them.
+M6 provides fake-client, pinned Kubernetes 1.37 envtest and kind v0.33.0 layers.
+Run cluster tests explicitly; ordinary unit tests do not silently create a cluster.
 
 ## Layers and gates
 

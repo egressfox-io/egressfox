@@ -8,20 +8,16 @@ product is finished.
 
 ## Current state
 
-M0 (repository foundation) is complete as of 2026-09-18. M1 (endpoint identity
-and inventory primitives), M2 (safe source-to-inventory path), M3 (validated
-engine artifacts and recoverable file publication), and M4 (bounded observations
-and persistent history), and M5 (adaptive standalone reconciliation) are complete as
-of 2026-09-19. M6 has not started. There is no product executable, daemon, operator,
-CRD, Secret publisher, runtime activation integration or installation chart. The
-Kubernetes-independent pipeline now includes deterministic static/lowest/adaptive
-Top-N decisions, restart-stable anti-churn state and validated file/LKG publication
-through both renderers.
+M0–M5 are complete as of 2026-09-19. M6 (Kubernetes BYO operator and Secret
+delivery) is complete as of 2026-09-21. The repository now contains the complete P0
+control-plane path, generated alpha CRDs, a namespace-scoped operator, owned Secret
+publication and Helm delivery. There is still no product CLI, managed engine,
+activation acknowledgment, cross-namespace API or HA topology.
 
-**Next milestone: M6 — Kubernetes BYO operator and Secret delivery.** Resolve Q8/Q9
-and the Secret portion of Q7 before generating the API/scaffold. M5 supplies the
-Kubernetes-independent decision and reconciliation use case that controllers can
-call without moving endpoint, evidence, engine or publication semantics into CRDs.
+**Next horizon: P1, after release hardening.** Before a public runtime release,
+resolve Q12 and complete image provenance, signing/SBOM, license and supported-
+version evidence. P1 may then design managed runtimes, activation acknowledgment,
+richer policy and HA; none is implied by the M6 BYO operator.
 
 ## P0 milestones
 
@@ -61,5 +57,5 @@ datapath/fleet integration. The full [catalog](features.md) preserves these idea
 they are not authorization to build them during a P0 task.
 
 Dependencies may justify revising priorities through a design change. In particular,
-P1 HA cannot assume the P2 PostgreSQL adapter already exists; Q9 must resolve that
-relationship before implementation.
+P1 HA cannot assume the P2 PostgreSQL adapter already exists; it must supersede the
+single-active topology in ADR 0011 with a supported state and fencing design.

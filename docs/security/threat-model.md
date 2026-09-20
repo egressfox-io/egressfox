@@ -3,9 +3,11 @@
 Status: design requirements with M1 domain redaction, M2 bounded source controls,
 M3 secret-bearing artifact/native-validator/file-publication controls, M4 probe
 authorization/budget/history controls, and M5 revision/context-bound selection plus
-receipt-bound decision checkpoints implemented.
+receipt-bound decision checkpoints implemented. M6 adds same-namespace Secret
+references, owner-checked Secret publication, scoped RBAC, non-root containers and
+RWO-PVC single-active operation.
 Repository tooling provides read-only CI permissions, pinned Actions, and a
-vulnerability-check command. There is no network runtime to secure or supported
+vulnerability-check command. There is no managed data-plane runtime or supported
 production release. Reporting guidance is in [SECURITY.md](../../SECURITY.md).
 
 M2 HTTP acquisition permits HTTPS by default, requires explicit intent for HTTP and
@@ -98,8 +100,8 @@ artifacts. Stdout export is sensitive and opt-in; CI must not capture real confi
 Retained LKG generations and database/volume backups require the same protection
 as current output. Validate cleanup and deletion behavior before deployment.
 
-Future containers should be non-root, drop unnecessary capabilities, use a read-only
-root filesystem with explicit state/temp volumes, and expose only required ports.
+The M6 operator container is non-root, drops all capabilities, uses a read-only
+root filesystem with explicit state/temp volumes, and exposes only required ports.
 No NET_ADMIN, host networking, or privileged container is justified by P0.
 Source and validator binaries must not execute arbitrary hooks from subscriptions.
 
@@ -113,9 +115,10 @@ Identity fingerprint privacy is resolved by [ADR 0006](../decisions/0006-version
 public IDs exclude credentials and private connection revisions remain sensitive.
 Q3/Q4 probe and history choices are resolved by
 [ADR 0009](../decisions/0009-bounded-probes-and-sqlite-evidence.md), and Q5 selection
-by [ADR 0010](../decisions/0010-deterministic-adaptive-selection.md). Open issues include
-Secret publication and runtime activation/rollback (remaining
-Q7), and operator state/permissions/deletion (Q8–Q9). M3 validator and file recovery
+by [ADR 0010](../decisions/0010-deterministic-adaptive-selection.md). Secret publication
+and operator state/permissions/deletion are resolved by
+[ADR 0011](../decisions/0011-namespaced-byo-operator.md). Runtime activation/rollback
+remains under Q7. M3 validator and file recovery
 choices are resolved by [ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md). All open
 items are recorded in the [decision queue](../decisions/open-questions.md).
 

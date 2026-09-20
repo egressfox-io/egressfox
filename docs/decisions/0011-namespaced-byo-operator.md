@@ -20,18 +20,20 @@ API-server baseline; this is not a promise that every older cluster is supported
 ## Decision
 
 Introduce namespaced `ProxyPool` and `EgressGateway` resources in
-`controlplane.egressfox.io/v1alpha1`. A ProxyPool names a bounded list of same-
+`egressfox.io/v1alpha1`. A ProxyPool names a bounded list of same-
 namespace Secret keys containing explicit URI-list or Base64 URI-list snapshots.
 It also carries the probe target Secret reference and bounded selection settings.
 An EgressGateway names one pool, one pinned engine profile, a loopback SOCKS listener
 and an output Secret name. P0 has no EgressPolicy and no native engine fragments.
 
-The operator is installed for exactly one namespace. Its cache and Role are scoped
-to that namespace; source and target Secret references cannot cross it. The manager
-uses leader election, but the chart fixes replicas to one and uses one RWO PVC for
-the protected SQLite database. Lease election limits active work but is not storage
-fencing, so multi-replica/HA operation is unsupported. Reconciliation contexts and
-all child probe processes are cancelled when the elected manager stops.
+The operator is installed for exactly one namespace. Its cache and RoleBinding are
+scoped to that namespace; the generated ClusterRole is inert outside namespaces
+where an administrator binds it, and source and target Secret references cannot
+cross it. The manager uses leader election, but the chart fixes replicas to one and
+uses one RWO PVC for the protected SQLite database. Lease election limits active
+work but is not storage fencing, so multi-replica/HA operation is unsupported.
+Reconciliation contexts and all child probe processes are cancelled when the elected
+manager stops.
 
 ProxyPool reconciliation admits current Secret snapshots transactionally through
 the M2 pipeline and reports only safe bounded counts and Conditions. Immutable
@@ -49,10 +51,13 @@ artifact digests, endpoint IDs and credentials do not appear in metadata, status
 Events or logs.
 
 The publisher refuses an existing Secret unless it has the exact expected controller
-owner and managed type. It applies one resourceVersion-guarded replacement after
-validation, reads the object back, and exposes its receipt to the M5 checkpoint
-protocol. An identical configuration and receipt is a no-op. Kubernetes updates are
-atomic at the API-object level; durability is the API server's responsibility.
+owner and managed type. It rechecks the UID and resourceVersion of every source and
+target Secret plus the UID, generation and resourceVersion of the pool and gateway
+immediately before mutation. It then applies one resourceVersion-guarded replacement
+after validation, reads the object back, and exposes its receipt to the M5 checkpoint
+protocol. Output data is capped at 900 KiB, leaving headroom below the Kubernetes
+Secret limit. An identical configuration and receipt is a no-op. Kubernetes updates
+are atomic at the API-object level; durability is the API server's responsibility.
 There is no claim that a BYO engine consumed or activated the Secret.
 
 The output Secret follows ordinary owner-reference garbage collection when its
@@ -62,11 +67,17 @@ so tests verify ownership rather than pretending to verify GC. Referenced input
 Secrets and BYO workloads are never modified or deleted. Manual output deletion is
 repaired; manual mutation is replaced only after the next desired artifact passes
 validation. Collision and validation failures preserve the previous owned Secret.
+Decision checkpoints use the Gateway UID as their scope and inactive scopes expire
+under the same 30-day protected-store retention policy. Shared endpoint observations
+remain governed by their existing age/count limits, so pool deletion cannot erase
+evidence another gateway may still use.
 
 Controller watches use field indexes for Secret and pool references. Secret changes
 map only to referencing pools and gateways, pool changes map only to referencing
 gateways, and owned output Secret changes enqueue their owner. Reconciliation is
-bounded and idempotent. Status updates use standard Conditions and observedGeneration;
+bounded and idempotent. Periodic requeues add a stable UID-derived zero-to-ten-percent
+spread to avoid synchronized refreshes. Status updates use standard Conditions and
+observedGeneration;
 `Published=True` means the desired validated bytes are in the owned Secret, not that
 traffic is ready.
 

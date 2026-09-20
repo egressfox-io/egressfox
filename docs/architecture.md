@@ -1,6 +1,6 @@
 # Architecture and domain language
 
-Status: accepted boundaries with M1–M5 components implemented. The
+Status: accepted boundaries with M1–M6 components implemented. The
 [ADRs](decisions/README.md) record durable choices; detailed designs distinguish
 implemented behavior from future requirements.
 
@@ -62,8 +62,10 @@ implements M2, M3 is implemented by `internal/policy`, `internal/engine`,
 `internal/artifact`, and `internal/publish`, M4 is implemented by
 `internal/observation`, `internal/probe`, and `internal/state`, and M5 adds
 `internal/selection`, shared use-case composition in `internal/reconcile`, plus
-receipt-bound decision checkpoints in `internal/state`. `tools/checkdocs` is
-repository tooling; there is no product executable yet. The remaining paths are
+receipt-bound decision checkpoints in `internal/state`. M6 adds generated
+`api/v1alpha1`, thin `internal/controller` reconcilers, Kubernetes adapters in
+`internal/operator`, and `cmd/operator`. `tools/checkdocs` is repository tooling;
+there is no standalone product CLI yet. The remaining paths are
 placement guidance, **not directories to pre-create**. Introduce packages with their
 first real consumer; combine closely related code until a tested dependency boundary
 warrants splitting it.
@@ -78,11 +80,11 @@ warrants splitting it.
 | Eligibility, scoring, selection | `internal/selection` (implemented M5) | Deterministic inputs; no I/O or Kubernetes types |
 | Common routing and desired gateway model | `internal/policy` (implemented M3 slice) | No native engine maps in common semantics |
 | Engine configuration and validation | `internal/engine/mihomo`, `internal/engine/singbox`, `internal/artifact` (implemented M3 profiles) | Engine dependencies stay here; no publication side effects |
-| File and Secret publication | `internal/publish` (file implemented M3); Kubernetes adapter under `internal/operator` later | Consume validated artifacts; serialize writes per target |
+| File and Secret publication | `internal/publish` (file M3); Secret adapter in `internal/operator` (M6) | Consume validated artifacts; serialize writes per target |
 | Shared reconciliation/use cases | `internal/reconcile` (implemented M5 standalone slice) | Explicit consumers of adapters; no Kubernetes client dependency |
 | Standalone process composition | `cmd/egressfox` | Thin flags, lifecycle, dependency wiring |
 | Kubernetes API and reconcilers | Kubebuilder-generated `api/v1alpha1`, `internal/controller`; adapter helpers in `internal/operator` | Convert Kubernetes objects to core inputs; never invert this dependency |
-| Operator process | Kubebuilder-generated entry point | Preserve supported scaffold conventions unless a documented need arises |
+| Operator process | `cmd/operator` (implemented M6) | Preserve supported scaffold conventions unless a documented need arises |
 
 Do not introduce a shared `utils`, a public Go SDK, empty interfaces for every
 pipeline arrow, a plugin RPC protocol, or a distributed service for each stage.
@@ -137,16 +139,16 @@ adapter for desired input, scheduling signals, Secret access/output, ownership,
 and bounded status. The core must not know a namespace, CRD, Kubernetes Condition,
 or API server resource version.
 
-P0 operator topology and durable history recovery are gated by the
-[Kubernetes design](designs/kubernetes.md); SQLite's standalone acceptance does
-not authorize a shared SQLite file across operator replicas.
+P0 uses one namespace-scoped operator replica, leader election and one RWO-PVC-backed
+SQLite store as defined by [ADR 0011](decisions/0011-namespaced-byo-operator.md).
+It does not authorize shared SQLite or multiple replicas.
 
 ## Design navigation and non-goals
 
 - [Sources and endpoint identity](designs/endpoints-and-sources.md): untrusted input to inventory.
 - [Observations, history, selection, and observability](designs/observations-and-selection.md): evidence to decisions.
 - [Policy, renderers, and safe publication](designs/policy-rendering-publication.md): decisions to artifacts.
-- [Kubernetes](designs/kubernetes.md): proposed APIs and reconciliation ownership.
+- [Kubernetes](designs/kubernetes.md): implemented P0 APIs and reconciliation ownership.
 - [Threat model](security/threat-model.md): trust boundaries and required controls.
 
 Transparent networking, per-connection decisions, HA storage, and a public extension

@@ -13,7 +13,7 @@ contract, not a substitute for these documents. No original conversation is need
 | How should identity, normalization, provenance, and source refresh behave? | [Endpoints and sources](designs/endpoints-and-sources.md) |
 | How should probes, history, adaptation, explanation, and metrics work? | [Observations and selection](designs/observations-and-selection.md) |
 | How do policy, engine differences, validation, and LKG publication work? | [Policy, renderers, publication](designs/policy-rendering-publication.md) |
-| What is proposed for CRDs, ownership, reconciliation, and runtime modes? | [Kubernetes design](designs/kubernetes.md) |
+| How do CRDs, ownership, reconciliation, and runtime modes work? | [Kubernetes design](designs/kubernetes.md), [operator guide](operations/kubernetes.md) |
 | What is sensitive and which threat boundaries need controls? | [Threat model](security/threat-model.md), reporting in [SECURITY.md](../SECURITY.md) |
 | Which decisions are accepted and why? | [ADR index](decisions/README.md) |
 | What remains unresolved and when must it be settled? | [Decision queue](decisions/open-questions.md) |
@@ -32,9 +32,9 @@ contract, not a substitute for these documents. No original conversation is need
   the affected public/persistent contract.
 - **Open question**: unresolved, with a milestone gate in the decision queue.
 - **Implemented**: backed by code and validation evidence; current milestone status
-  is in the roadmap. This applies to repository tooling and the M1–M5 endpoint,
+  is in the roadmap. This applies to repository tooling and the M1–M6 endpoint,
   source, policy, engine artifact, local publication, observation, probe, history,
-  selection and standalone reconciliation domains.
+  selection, reconciliation, Kubernetes operator and Secret publication domains.
 - **Future/experimental**: cataloged beyond the current milestone; not current work.
 
 Priority and maturity are independent. P0 does not mean implemented; an accepted

@@ -1,29 +1,29 @@
 # Kubernetes API and operator
 
-Status: API proposal; no CRDs, controllers, generated manifests, or Helm chart.
+Status: M6 namespace-scoped P0 API, controllers, generated manifests and Helm chart
+implemented. [ADR 0011](../decisions/0011-namespaced-byo-operator.md) owns the
+concrete topology and Secret contract; later sections retain P1 design constraints.
 [ADR 0003](../decisions/0003-operator-tooling.md) accepts Kubebuilder/controller-runtime
 and an initial alpha API, while deferring generation until the M6 design gate.
 
 ## Responsibilities and relationships
 
-Propose namespaced `ProxyPool` and `EgressGateway` resources in
+M6 implements namespaced `ProxyPool` and `EgressGateway` resources in
 `egressfox.io/v1alpha1` for P0; `EgressPolicy` is P1. Names, field structures, and
 defaults are not frozen. Use the following relationships to evaluate an API;
 this table is not an installable schema.
 
 | Resource | Desired responsibility | Status responsibility | Must not own |
 | --- | --- | --- | --- |
-| ProxyPool | Source references, filters, probe profile, selection intent | Bounded inventory/eligibility/selection counts, refresh/probe freshness, Conditions | Gateway workload lifecycle or raw credentials/history |
-| EgressGateway | Pool reference, engine/version, minimal routing intent, publication target, runtime mode | Rendering/publication state, artifact revision reference, observed input revision, Conditions | Fetching/probing every source or mutating user-managed engines |
+| ProxyPool | Secret source references, admission flags, probe authorization, selection strategy/Top-N and refresh interval | Bounded accepted/rejected/unsupported counts, last inventory-change time, Conditions | Gateway workload lifecycle or raw credentials/history |
+| EgressGateway | Pool reference, pinned engine profile, loopback SOCKS listener and owned output Secret name | Bounded eligible/selected counts, last publication time, observedGeneration and Conditions | Fetching independently, exposing artifact revisions, or mutating user-managed engines |
 | EgressPolicy (P1) | Routing intent associated with a gateway | Acceptance/conflict status for that policy | A separate connection-level router |
 
-One pool can feed multiple gateways. P0 proposes one pool per gateway; multiple
-pools and standalone EgressPolicy composition belong to P1. P0 still needs useful
-routing: a constrained inline routing field on EgressGateway is the proposed home,
-using the same common model as standalone. Decide its evolution to EgressPolicy
-before generating fields; do not duplicate two competing schemas.
+One pool can feed multiple gateways. P0 uses one pool reference per gateway; multiple
+pools, routing rules and standalone EgressPolicy composition belong to P1. M6 renders
+the M3 minimal loopback SOCKS gateway only and does not expose a second routing model.
 
-P0 references are same-namespace by default, with explicit names and Secret keys;
+P0 references are same-namespace, with explicit names and Secret keys;
 cross-namespace grants and multi-tenancy are deferred. Source credentials belong
 in Secrets, not CR spec strings, annotations, Events, or status. Public source URLs
 still need a secret-reference option because paths/query parameters may hold tokens.
@@ -49,11 +49,11 @@ resource and define their truth tables before implementation. Missing/unknown
 conditions must not be treated as success. `Published=True` is not evidence of
 runtime activation; unmanaged gateway traffic readiness is unobservable by default.
 
-Status may aggregate discovered, valid, healthy, eligible, and selected counts,
-last successful refresh/probe times, observedGeneration, and a bounded artifact
-reference. Define what each count measures: records vs deduplicated endpoints,
-and health for which profile. Do not expose endpoint lists, credentials, secret-
-derived digests, free-form errors, or unbounded decision/history arrays.
+M6 Pool status reports deduplicated accepted endpoints plus rejected and unsupported
+source records. Gateway status reports eligible and selected endpoint counts. It
+also reports the last inventory-change/publication times. Neither status exposes an
+artifact reference. Do not expose endpoint lists, credentials, secret-derived
+digests, free-form errors, or unbounded decision/history arrays.
 
 `observedGeneration` indicates the spec generation a status/Condition evaluates;
 it does not imply successful reconciliation. A Secret update or new pool snapshot
@@ -129,10 +129,10 @@ Secret/Deployment based only on matching its name. Update only managed keys/fiel
 reject ownership collisions, and define release/retention semantics.
 
 Output deletion is consequential: retaining credentials and preserving connectivity
-pull in different directions. M6 must choose a documented deletion policy, tests,
-and bounded cleanup behavior. The proposed direction is explicit retention/removal
-for output Secrets, no deletion of referenced input Secrets, and no alteration of
-BYO workloads. Retained output must be clearly marked as unmanaged/stale.
+pull in different directions. M6 uses an ordinary Gateway controller OwnerReference.
+Gateway deletion therefore makes the Secret eligible for garbage collection; manual
+Secret deletion is repaired from a newly validated current generation. Referenced
+input Secrets and BYO workloads are never deleted or altered.
 
 Use owner references for ordinary owned Kubernetes resources. Add finalizers only
 for a real cleanup obligation the API server cannot fulfill, with retry limits,
@@ -170,19 +170,18 @@ generates a sample using Go 1.26, controller-runtime 0.25.0, and Kubernetes modu
 0.37.0. controller-runtime [compatibility guidance](https://github.com/kubernetes-sigs/controller-runtime#compatibility)
 ties its minor version to the Kubernetes libraries; its current release observed
 was 0.25.1. The [Kubebuilder compatibility policy](https://book.kubebuilder.io/versions_compatibility_supportability)
-recommends the generated dependency/tool set. Recheck at M6; do not combine
-independently chosen latest library versions.
+recommends the generated dependency/tool set. M6 retained this supported family.
 
-Once Q8–Q9 are resolved, use the actual pinned Kubebuilder CLI in a disposable
-directory to inspect the scaffold, then integrate deliberately into this module.
-Record commands, CLI version/checksum, generator versions, generated file ownership,
-and regeneration checks. Do not handwrite `PROJECT`, generated RBAC, deep-copy
-code, or CRD manifests imitating the tool. No Kubernetes support range is claimed
-until pinned envtest and real-cluster tests pass.
+M6 used checksum-verified Kubebuilder v4.16.0 in a disposable directory before
+integrating its namespace-scoped Go v4 scaffold. `PROJECT` records the CLI; generated
+deep-copy code, CRDs and RBAC are reproduced by `make generate-check` with
+controller-tools v0.22.0. Pinned Kubernetes 1.37 envtest and kind evidence define
+the initial support baseline.
 
 ## Non-goals and open questions
 
 No frozen YAML API, EgressPolicy in P0, multi-tenancy, automatic workload routing,
 transparent interception, or operator HA implementation. The
-[decision queue](../decisions/open-questions.md) owns Q8–Q9 (API, topology, deletion,
-RBAC, and state), with explicit M6/P1 gates.
+[ADR 0011](../decisions/0011-namespaced-byo-operator.md) owns the P0 API, topology,
+deletion, RBAC and state decisions. P1 requires a new decision before managed
+runtimes, cross-namespace use or HA.
