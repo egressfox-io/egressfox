@@ -1,0 +1,40 @@
+# Third-party notices
+
+EgressFox itself is licensed under Apache-2.0. Release artifacts also contain or
+describe third-party software. This inventory is informational and is not legal
+advice. The release SBOM is the machine-generated dependency inventory; this file
+records the separately bundled executables whose redistribution needs an explicit
+human-readable notice.
+
+## Bundled engine executables
+
+| Program | Exact version | Source and corresponding source | License |
+| --- | --- | --- | --- |
+| Mihomo | 1.19.31, tag `v1.19.31`, commit `ab405bad5beeeac8b003bb01f60f134f6df54471` | [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo/tree/ab405bad5beeeac8b003bb01f60f134f6df54471); release source archive `mihomo-1.19.31-source.tar.gz` | GPL-3.0-only; `mihomo-LICENSE` in the image and release license directory |
+| sing-box | 1.14.1, tag `v1.14.1`, commit `1ac1a339cb1223e9c70eae14c44411c75033c02d` | [SagerNet/sing-box](https://github.com/SagerNet/sing-box/tree/1ac1a339cb1223e9c70eae14c44411c75033c02d); release source archive `sing-box-1.14.1-source.tar.gz` | GPL-3.0-or-later plus the upstream no-derivative-name/association notice; `sing-box-LICENSE` and full GPLv3 text in the image and release license directory |
+
+The release process downloads the official binaries, source archives and license
+files only from URLs and SHA-256 values in [`release/manifest.json`](release/manifest.json).
+Checksum failure is fatal. EgressFox does not modify or link either executable; it
+invokes each as a separate program for validation and bounded probes. Their inclusion
+does not imply sponsorship or endorsement by MetaCubeX, SagerNet or their contributors.
+
+The exact source archives and license files are published beside every public
+EgressFox release that conveys these executables. A distributor mirroring an image
+or release must preserve the notices and ensure corresponding source remains
+available as required by the applicable license.
+
+## Other dependency classes
+
+- The operator binary's Go modules are recorded in its SPDX JSON SBOM. Module
+  versions are pinned by `go.mod`/`go.sum`; the SBOM generator may not identify every
+  license and its output still requires review.
+- The container image's OS packages and executable contents are recorded in the
+  image SPDX JSON SBOM. The digest-pinned Alpine base and exact installed package
+  versions in that SBOM define what was shipped.
+- Syft, Grype, Cosign, Helm, kind, envtest and controller-gen are release/build/test
+  tools, not files shipped in the operator image. Their versions and download
+  checksums are pinned in the repository.
+
+See the release guide for obtaining and verifying SBOMs, checksums, source archives,
+signatures and provenance.

@@ -47,7 +47,7 @@ will be recorded in ADR 0012 and the release guide.
   dependencies, CI, image, Helm, generated artifacts and existing security tooling.
 - [x] Research exact upstream licenses/releases and select a compliant redistribution
   model for Q12.
-- [ ] Add the engine/tool manifests, verification tests, notices/licenses and source
+- [x] Add the engine/tool manifests, verification tests, notices/licenses and source
   availability contract.
 - [ ] Add coherent version metadata, hardened multi-architecture image inputs and
   Helm/version consistency checks.
@@ -82,8 +82,15 @@ is installed and will be evaluated for the image dry run. Helm 4.1.1 and Cosign 
 installed, while Syft and Grype are not, so the dry-run tooling must bootstrap the
 checksum-pinned versions without registry credentials.
 
+ADR 0012 now resolves the repository-owned portion of Q12. The checked manifest
+binds both compiled profiles to exact official engine binaries, source archives and
+license files for linux/amd64 and linux/arm64, plus checksum-pinned Syft, Grype,
+Cosign and Helm downloads for supported developer/CI hosts. `releasectl` validates
+the contract and materializes only verified bounded artifacts. Unit tests cover the
+repository manifest, raw/gzip/tar extraction, checksum failure and traversal input.
+
 ## Resume and handoff
 
-Next, record ADR 0012 and introduce the machine-readable engine/tool sources of
-truth plus validation tests. Do not begin P1. On completion update this plan, its
+Next, integrate the manifest into multi-architecture image construction and add the
+single release-version flow. Do not begin P1. On completion update this plan, its
 index, Q12, the roadmap and the release acceptance evidence.

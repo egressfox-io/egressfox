@@ -17,6 +17,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0009](0009-bounded-probes-and-sqlite-evidence.md) | Isolated engine probes and bounded SQLite evidence | Accepted |
 | [0010](0010-deterministic-adaptive-selection.md) | Deterministic adaptive selection and publication checkpoints | Accepted |
 | [0011](0011-namespaced-byo-operator.md) | Namespace-scoped BYO operator and owned Secret publication | Accepted |
+| [0012](0012-release-distribution-and-provenance.md) | Engine redistribution, versioning, signing and provenance | Accepted |
 
 ## Adding a decision
 

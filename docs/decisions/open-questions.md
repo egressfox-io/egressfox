@@ -12,7 +12,6 @@ the agent/contributor undertaking the gated milestone owns bringing evidence.
 | Q7 | File and Kubernetes Secret publication are resolved by ADRs 0008 and 0011. Runtime activation/reload/rollback acknowledgment remains open. | Reload at P1 | [Publication](../designs/policy-rendering-publication.md) |
 | Q10 | Native escape-hatch merge/ownership rules, fragments/base composition, multiple policy precedence, unknown diversity domains and multi-source attribution. Specify unsupported/infeasible behavior. | P1 before those features | [Renderers](../designs/policy-rendering-publication.md) and [selection](../designs/observations-and-selection.md) |
 | Q11 | Stable CLI schema/exit behavior, explain authorization/redaction, rich Rust/Ratatui TUI value, Web UI interfaces. Start with actual operational use cases; no second workspace now. | CLI at M3/M5; UI later | [Feature catalog](../roadmap/features.md) |
-| Q12 | Private vulnerability channel, maintainer/release ownership, engine binary redistribution/license obligations, signing/SBOM and image provenance process. Existing Apache-2.0 license remains unchanged. | Before public runtime release or bundled engine distribution | [Security](../../SECURITY.md) |
 
 The known P1-HA/P2-PostgreSQL tension is deliberate: HA must either use a supported
 single-writer durable-state arrangement, choose another design, or explicitly
@@ -31,3 +30,4 @@ revise priorities. It must not be implemented by casually increasing replicas.
 | Q7 (Secret) | [ADR 0011](0011-namespaced-byo-operator.md) defines validated, owner-checked Secret publication, protected receipts, no-op/LKG behavior and owner-reference deletion. Runtime activation remains open. |
 | Q8 | [ADR 0011](0011-namespaced-byo-operator.md) defines the namespaced alpha resources, same-namespace Secret references, status boundaries, ownership and scoped RBAC. |
 | Q9 | [ADR 0011](0011-namespaced-byo-operator.md) defines one active namespace-scoped process, leader election, one RWO PVC, restart reconstruction and explicitly unsupported HA. |
+| Q12 | [ADR 0012](0012-release-distribution-and-provenance.md) permits exact unmodified engine redistribution with GPL notices/corresponding source, preserves Apache-2.0 for EgressFox, and defines protected keyless release signing, SBOM, provenance and private reporting boundaries. External repository settings remain required before publication. |
