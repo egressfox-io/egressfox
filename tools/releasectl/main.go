@@ -245,6 +245,9 @@ func copyOverlay(source, destination string) error {
 			return err
 		}
 		target := filepath.Join(destination, relative)
+		if strings.HasSuffix(target, ".overlay") {
+			target = strings.TrimSuffix(target, ".overlay")
+		}
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
