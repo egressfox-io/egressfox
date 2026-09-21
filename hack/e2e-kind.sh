@@ -61,7 +61,7 @@ spec:
         - name: sing-box
           image: $image
           imagePullPolicy: Never
-          command: [/usr/local/bin/sing-box, run, -c, /config/config.json]
+          command: [/usr/local/libexec/egressfox/egressfox-engine-s, run, -c, /config/config.json]
           volumeMounts: [{name: config, mountPath: /config, readOnly: true}]
       volumes: [{name: config, secret: {secretName: proxy-server}}]
 ---
@@ -143,7 +143,7 @@ spec:
     - name: engine
       image: $image
       imagePullPolicy: Never
-      command: [/usr/local/bin/sing-box, run, -c, /config/config.json]
+      command: [/usr/local/libexec/egressfox/egressfox-engine-s, run, -c, /config/config.json]
       volumeMounts: [{name: config, mountPath: /config, readOnly: true}]
     - name: client
       image: curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
