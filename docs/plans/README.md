@@ -15,6 +15,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0007](0007-kubernetes-operator.md) | Complete | M6 Kubernetes BYO operator and Secret publication |
 | [0008](0008-release-hardening.md) | Complete | First alpha release hardening and Q12 resolution |
 | [0009](0009-public-repository-polish.md) | Complete | First-public-push presentation, community files and hygiene |
+| [0010](0010-p1-product-roadmap.md) | In progress | P1 product objective, milestones, API gates and implementation order |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.
