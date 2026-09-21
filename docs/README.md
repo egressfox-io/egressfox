@@ -22,6 +22,7 @@ contract, not a substitute for these documents. No original conversation is need
 | How do I branch, build, validate, commit, and hand off? | [Workflow](development/workflow.md) |
 | Which tests and research experiments belong with a change? | [Testing](development/testing.md) |
 | How can another agent resume substantial work? | [Execution plans](plans/README.md) |
+| How is a release built, accepted, published, and verified? | [Release guide](operations/releasing.md) |
 
 ## Reading status correctly
 

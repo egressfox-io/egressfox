@@ -1,6 +1,7 @@
 image:
   repository: ghcr.io/egressfox-io/egressfox
-  tag: "0.1.0"
+  # Empty uses Chart.appVersion so release packaging has one version authority.
+  tag: ""
   digest: ""
   pullPolicy: IfNotPresent
 

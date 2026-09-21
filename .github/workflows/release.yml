@@ -1,0 +1,136 @@
+name: Release validation and publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing SemVer alpha tag (v0.x.y-alpha.n)
+        required: true
+        type: string
+      publish:
+        description: Publish only after protected-environment approval
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Non-publishing release validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ inputs.version }}
+      PUBLISH: ${{ inputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify selected ref and version
+        run: |
+          if [ "$PUBLISH" = true ]; then
+            test "$GITHUB_REF_TYPE" = tag
+            test "$GITHUB_REF_NAME" = "$VERSION"
+          fi
+      - run: make check
+      - run: make test-envtest
+      - run: make vuln
+      - run: make release-dry-run
+      - run: make e2e-kind
+
+  publish:
+    name: Publish signed release
+    if: ${{ inputs.publish == true }}
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version }}
+      IMAGE: ghcr.io/egressfox-io/egressfox
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Recheck trusted tag
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" = "$VERSION"
+          test -z "$(git status --porcelain)"
+      - name: Construct release files without registry writes
+        env:
+          RELEASE_SKIP_IMAGE: "1"
+        run: make release-dry-run
+      - name: Authenticate to GHCR
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build and push immutable multi-platform image
+        id: image
+        run: |
+          normalized=${VERSION#v}
+          revision=$(git rev-parse HEAD)
+          created=$(git show -s --format=%cI HEAD)
+          epoch=$(git show -s --format=%ct HEAD)
+          docker buildx build --platform linux/amd64,linux/arm64 --push \
+            --tag "$IMAGE:$normalized" \
+            --build-arg "VERSION=$normalized" --build-arg "REVISION=$revision" \
+            --build-arg "CREATED=$created" --build-arg "SOURCE_DATE_EPOCH=$epoch" \
+            --metadata-file dist/image-metadata.json .
+          digest=$(jq -r '."containerimage.digest"' dist/image-metadata.json)
+          test "${digest#sha256:}" != "$digest"
+          printf 'digest=%s\n' "$digest" >>"$GITHUB_OUTPUT"
+      - name: Generate and scan final image SBOM
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          normalized=${VERSION#v}
+          syft=$(find .cache/release-tools -type f -name 'syft-*' | head -1)
+          grype=$(find .cache/release-tools -type f -name 'grype-*' | head -1)
+          "$syft" scan "registry:$IMAGE@$DIGEST" -o "spdx-json=dist/release/egressfox-image-$normalized.spdx.json"
+          "$grype" "$IMAGE@$DIGEST" --fail-on high --output json --file "dist/reports/egressfox-image-$normalized.grype.json"
+          cd dist/release
+          find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | xargs sha256sum >SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Keylessly sign image and attach SBOM
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          normalized=${VERSION#v}
+          cosign=$(find .cache/release-tools -type f -name 'cosign-*' | head -1)
+          "$cosign" sign --yes "$IMAGE@$DIGEST"
+          "$cosign" attest --yes --type spdxjson \
+            --predicate "dist/release/egressfox-image-$normalized.spdx.json" "$IMAGE@$DIGEST"
+      - name: Attest image build provenance
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - name: Attest release files
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-path: dist/release/*
+      - name: Create prerelease and upload verified files
+        run: |
+          gh release view "$VERSION" >/dev/null 2>&1 || \
+            gh release create "$VERSION" --verify-tag --prerelease --generate-notes
+          gh release upload "$VERSION" dist/release/* --clobber

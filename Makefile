@@ -8,7 +8,7 @@ HELM ?= helm
 DOCKER ?= docker
 IMG ?= egressfox:dev
 
-.PHONY: help fmt fmt-check vet lint test test-envtest build generate manifests generate-check helm-check docker-build e2e-kind docs check vuln
+.PHONY: help fmt fmt-check vet lint test test-envtest build generate manifests generate-check helm-check docker-build e2e-kind docs check vuln release-validate release-dry-run
 
 help:
 	@printf '%s\n' \
@@ -22,7 +22,9 @@ help:
 	  'make e2e-kind   Run the required kind lifecycle and RBAC suite' \
 	  'make build      Compile all Go packages (tooling only at bootstrap)' \
 	  'make docs       Check repository Markdown links and local heading anchors' \
-	  'make vuln       Run pinned govulncheck (requires network access)'
+	  'make vuln       Run pinned govulncheck (requires network access)' \
+	  'make release-validate Validate release manifests, notices, and version flow' \
+	  'make release-dry-run Build and inspect release artifacts without publishing'
 
 fmt:
 	$(GOFMT) -w $$(git ls-files --cached --others --exclude-standard -- '*.go')
@@ -60,6 +62,12 @@ helm-check:
 docker-build:
 	$(DOCKER) build -t $(IMG) .
 
+release-validate:
+	$(GO) run ./tools/releasectl validate --root .
+
+release-dry-run: release-validate
+	./hack/release-dry-run.sh
+
 e2e-kind:
 	./hack/e2e-kind.sh
 
@@ -69,7 +77,7 @@ build:
 docs:
 	$(GO) run ./tools/checkdocs
 
-check: generate-check lint test build docs helm-check
+check: generate-check lint test build docs helm-check release-validate
 	git diff --check
 	git diff --cached --check
 

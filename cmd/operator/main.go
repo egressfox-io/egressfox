@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	egressv1alpha1 "github.com/egressfox-io/egressfox/api/v1alpha1"
+	"github.com/egressfox-io/egressfox/internal/buildinfo"
 	"github.com/egressfox-io/egressfox/internal/controller"
 	operatoradapter "github.com/egressfox-io/egressfox/internal/operator"
 	"github.com/egressfox-io/egressfox/internal/state"
@@ -38,16 +40,21 @@ func init() {
 
 func main() {
 	var metricsAddress, healthAddress, statePath, mihomoBinary, singBoxBinary string
-	var leaderElect bool
+	var leaderElect, showVersion bool
 	flag.StringVar(&metricsAddress, "metrics-bind-address", ":8443", "HTTPS metrics bind address, or 0 to disable")
 	flag.StringVar(&healthAddress, "health-probe-bind-address", ":8081", "health and readiness bind address")
 	flag.StringVar(&statePath, "state-path", "/var/lib/egressfox/private/state.db", "protected SQLite state path")
-	flag.StringVar(&mihomoBinary, "mihomo-binary", "/usr/local/bin/mihomo", "absolute Mihomo v1.19.31 binary path")
-	flag.StringVar(&singBoxBinary, "sing-box-binary", "/usr/local/bin/sing-box", "absolute sing-box v1.14.1 binary path")
+	flag.StringVar(&mihomoBinary, "mihomo-binary", "/usr/local/libexec/egressfox/mihomo", "absolute Mihomo-compatible v1.19.31 binary path")
+	flag.StringVar(&singBoxBinary, "sing-box-binary", "/usr/local/libexec/egressfox/egressfox-engine-s", "absolute sing-box-compatible v1.14.1 binary path")
 	flag.BoolVar(&leaderElect, "leader-elect", true, "use Kubernetes Lease leader election")
+	flag.BoolVar(&showVersion, "version", false, "print build and supported-engine versions, then exit")
 	logOptions := zap.Options{Development: false}
 	logOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
+	if showVersion {
+		fmt.Println(buildinfo.Current())
+		return
+	}
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&logOptions)))
 
 	namespace := strings.TrimSpace(os.Getenv("WATCH_NAMESPACE"))

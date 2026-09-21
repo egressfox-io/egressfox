@@ -1,6 +1,6 @@
 # Product and scope
 
-Status: product intent. No product capabilities are implemented at bootstrap.
+Status: product intent with the bounded P0 M1–M6 control-plane path implemented.
 The [feature catalog](roadmap/features.md) owns priority assignments; the
 [roadmap](roadmap/README.md) owns implementation order and completion status.
 
@@ -56,7 +56,7 @@ are CLI direction, not existing commands or a frozen command contract.
 The first Kubernetes experience publishes configuration for a runtime the user
 operates (BYO/unmanaged). Optional managed workloads are P1. Explicit application
 proxy settings are the initial connectivity model, conceptually
-`HTTPS_PROXY=http://egress-gateway.namespace.svc:8080`. No Service exists yet.
+`HTTPS_PROXY=http://egress-gateway.namespace.svc:8080`. No managed engine Service exists yet.
 
 ## Non-goals
 

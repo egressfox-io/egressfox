@@ -1,0 +1,180 @@
+# Release and verification guide
+
+Status: first-alpha release contract. No release is created by the commands in the
+dry-run section. [ADR 0012](../decisions/0012-release-distribution-and-provenance.md)
+owns the durable redistribution, versioning and trust-boundary decisions.
+
+## Supported release contract
+
+The initial public artifacts support exactly:
+
+| Component | Supported and tested | Meaning |
+| --- | --- | --- |
+| Mihomo | 1.19.31 / `egressfox.mihomo/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
+| sing-box | 1.14.1 / `egressfox.sing-box/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
+| Operator image | linux/amd64, linux/arm64 | Operator and source-built engine derivatives are compiled for both architectures |
+| Kubernetes | 1.37.0 | envtest and kind baseline; not a promise for every older or newer minor |
+| API | `egressfox.io/v1alpha1` | Alpha compatibility: review CRD diffs and release notes before every upgrade |
+
+SemVer tags use `v0.x.y-alpha.n`. The tag without `v` becomes the operator version,
+OCI version/tag, packaged Helm `version`, `appVersion`, and default image tag. The
+full tagged commit becomes binary/OCI revision metadata, and its commit timestamp is
+the build/OCI creation input. Release tooling rejects a non-alpha tag or abbreviated
+revision. Deploy by immutable image digest even though a human-readable tag exists.
+
+## Inputs and reproducibility
+
+`go.mod`, digest-pinned container bases, [`release/manifest.json`](../../release/manifest.json),
+and SHA-pinned Actions define the checked inputs. The manifest is the only authority
+for engine/tool versions, URLs, architectures and SHA-256 values. Engine checksum
+failure stops the build before extraction. The final image has no curl or tar; Alpine
+still supplies its BusyBox shell. It runs as UID/GID 65532, has a state volume and
+temporary volume, and remains compatible with a read-only root filesystem and all
+capabilities dropped by the chart.
+
+The operator Go binaries are built twice and compared during a dry run. This proves
+byte equality for the two invocations in that environment, not universal
+reproducibility across operating systems or future toolchains. OCI layer encoding,
+upstream downloads, Helm gzip headers, SBOM timestamps and vulnerability-database
+state can remain nondeterministic. The contract is reproducible inputs and commands;
+no byte-for-byte image or SLSA-level claim is made.
+
+Engine builds start from checksum-pinned source commits, apply the manifest's build
+revision, feature tags, dependency requirements and branding overlay, then emit a
+conspicuous change notice. Their resolved module files are included in the complete
+modified source archives. The official upstream binary hashes remain manifest
+evidence for compatibility research; those binaries are not release contents.
+
+The Alpine CA bundle is checksum/package-version pinned in a builder stage and copied
+into the final image, avoiding target-architecture package-manager execution. The
+Alpine repository serving that exact package and upstream release hosting remain
+external availability/trust boundaries. SBOMs describe observed output, not upstream
+integrity.
+
+## Non-publishing dry run
+
+Run from a clean tagged checkout for release evidence:
+
+```sh
+VERSION=v0.1.0-alpha.1 make release-dry-run
+```
+
+This bootstraps checksum-pinned Helm 4.3.0, Syft 1.52.0, Grype 0.119.0 and Cosign
+3.1.3 into the ignored `.cache` directory; validates the manifest/notices; builds
+linux/amd64 and linux/arm64 binaries twice; verifies the engine source inputs; builds
+both engine derivatives twice; creates modified source/license archives and SPDX JSON
+SBOMs; packages/renders Helm; builds a
+multi-platform OCI archive without registry credentials; scans release SBOMs/image;
+and emits a sorted `dist/release/SHA256SUMS`. Nothing is uploaded, signed or pushed.
+
+If no container service exists, use `RELEASE_SKIP_IMAGE=1` and record that image
+construction/SBOM/scan remain incomplete. If the vulnerability database is
+temporarily unavailable, `RELEASE_SKIP_VULN=1` records a skip marker rather than a
+false pass. Neither skip is acceptable in final release evidence. `DOCKER=podman`
+uses a temporary local Podman manifest instead of Docker Buildx.
+
+The workflow `.github/workflows/release.yml` exposes the same validation manually.
+With `publish=false` it can run from a branch and has read-only repository permission.
+With `publish=true`, the selected ref must be the exact existing version tag, the
+validation job must pass, and a maintainer must approve the protected `release`
+environment.
+
+## Produced artifacts
+
+The release file set contains two raw operator binaries, their SPDX JSON SBOMs, four
+engine-binary SPDX JSON SBOMs, the Helm package, complete modified engine source archives and
+license files, EgressFox's license, third-party notices, the final image SPDX JSON
+SBOM, and `SHA256SUMS`. Raw engine binaries are not separately published; they are
+inside the image. The OCI image is published as a multi-platform manifest and is
+identified by its registry digest, not by a checksum of the local dry-run OCI tar.
+
+Syft reports Go build dependencies, detectable bundled-engine Go packages and image
+OS/file contents. It can omit or misclassify license data, so the explicit engine
+notice/source process remains authoritative. Release/build tools are not shipped.
+
+`govulncheck` reports Go vulnerabilities with call-path reachability where known.
+Grype reports package/CVE presence for operator/engine SBOMs and the final image; it
+does not establish exploitability. High or critical findings fail release validation.
+No finding is silently ignored. An exception requires a reviewed repository record
+or VEX statement naming artifact/digest, vulnerability, applicability evidence,
+owner, expiry, remediation and compensating controls. Expired or unscoped exceptions
+are invalid.
+
+## Signing, provenance and publication
+
+The protected publication job pushes only `ghcr.io/egressfox-io/egressfox:<version>`
+and records its immutable digest. GitHub Actions OIDC obtains an ephemeral Sigstore
+identity; no private key or registry token is committed. Cosign signs the digest and
+attests its SPDX SBOM. GitHub's attestation action creates build provenance for the
+image and release files, binding their digests to repository, commit, workflow and
+event. The workflow then creates a prerelease for the existing tag and uploads the
+checked files. It never creates or pushes a Git tag.
+
+The workflow deliberately has no write permission at workflow or validation-job
+scope. Only the `publish` job, after the tag checks and protected-environment approval,
+receives `contents`, `packages`, `attestations` and OIDC write permissions. It is not
+reachable from pull-request execution. Pin updates remain reviewed changes;
+Dependabot never auto-merges them.
+
+## User verification
+
+Fetch artifacts from one release, then verify checksums and GitHub provenance:
+
+```sh
+sha256sum -c SHA256SUMS
+gh attestation verify ./egressfox-operator-0.1.0-alpha.1-linux-amd64 \
+  --repo egressfox-io/egressfox
+gh attestation verify oci://ghcr.io/egressfox-io/egressfox@sha256:REPLACE \
+  --repo egressfox-io/egressfox
+```
+
+Verify the image's Sigstore identity and SBOM attestation using the exact release
+workflow and tag identity:
+
+```sh
+cosign verify \
+  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.1' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  ghcr.io/egressfox-io/egressfox@sha256:REPLACE
+cosign verify-attestation --type spdxjson \
+  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.1' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  ghcr.io/egressfox-io/egressfox@sha256:REPLACE
+```
+
+Also inspect `helm show chart`, compare the chart/image version, review the SPDX
+SBOM and notices, and install using the verified digest. Signature validity alone
+does not establish trust: the repository and workflow identity must match.
+
+## First-release acceptance checklist
+
+- [ ] Tagged checkout and working tree are clean; tag/version/commit/timestamp agree.
+- [ ] `make generate`, `make manifests`, `make check`, `make test-envtest`,
+  `make vuln` and `git diff --check` pass.
+- [ ] kind install/upgrade/RBAC/traffic/LKG E2E passes on Kubernetes 1.37.0.
+- [ ] Both Linux operator binaries rebuild identically and report exact metadata.
+- [ ] Both input source archives, both licenses, all declared build inputs and the
+  reference upstream binary checksums match the manifest; modified-source notices were reviewed.
+- [ ] Multi-platform image build succeeds; OCI labels, non-root/read-only defaults,
+  embedded licenses and both engine versions are inspected.
+- [ ] Helm lint/package/render passes; chart/app/image versions and digest rendering
+  agree; generated CRDs match and upgrade/uninstall retention guidance is current.
+- [ ] Operator/engine/image SPDX SBOMs exist; `govulncheck` and Grype complete with
+  no unexplained release-blocking finding.
+- [ ] Sorted SHA-256 manifest verifies every file artifact.
+- [ ] In publish mode, image digest signature, SBOM attestation, image/file provenance
+  and verification commands pass for the expected repository/workflow identity.
+- [ ] SECURITY.md, support matrix, limitations, release notes and manual actions are
+  current; no P1 feature is advertised.
+- [ ] GitHub private vulnerability reporting and notifications are enabled, and the
+  protected `release` environment has required reviewers.
+
+## Manual maintainer actions
+
+Before the first public runtime release, an administrator must enable GitHub private
+vulnerability reporting under repository Settings → Security/Advanced Security,
+subscribe maintainers/security managers to security-alert notifications, and create
+the protected `release` environment with required reviewers and tag restrictions.
+These repository settings cannot be truthfully configured or verified from source.
+Maintainers must also review current vulnerability results, upstream license/source
+availability and the generated release notes before approving publication.

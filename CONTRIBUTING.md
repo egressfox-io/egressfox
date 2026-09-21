@@ -1,6 +1,6 @@
 # Contributing
 
-EgressFox is in early implementation with M1 endpoint identity complete. Start with
+EgressFox has completed the M1–M6 P0 implementation and is preparing an alpha release. Start with
 the [documentation map](docs/README.md) and the
 [next milestone](docs/roadmap/README.md). Planned capabilities are not implemented
 features. The existing [Apache-2.0 license](LICENSE) is unchanged.
@@ -18,6 +18,10 @@ and leave a clean reviewable branch. Do not automatically merge or rewrite histo
 
 Run `make check` and `make vuln` before handing off applicable changes, plus the
 feature-specific tests in the [testing strategy](docs/development/testing.md).
+Release-affecting changes also run `make release-validate` and the non-publishing
+dry run in the [release guide](docs/operations/releasing.md). Critical engine,
+Kubernetes, controller-runtime, base-image and release-tool pins require compatibility,
+license/SBOM and vulnerability review; Dependabot suggestions are never auto-merged.
 Explain the resulting behavior, validation evidence, compatibility impact, and
 remaining limitations in the pull request. Never submit real credentials,
 subscriptions, or generated operational configs as fixtures.

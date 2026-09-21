@@ -7,8 +7,8 @@ contract. [AGENTS.md](../../AGENTS.md) is its compact entry point for coding age
 
 Use macOS or Linux, Git, Make, and the Go version required by
 [go.mod](../../go.mod). Install Go from the official
-[download page](https://go.dev/dl/) and verify the published checksum. The bootstrap
-was validated with Go 1.27.1. A C compiler is needed for Go's race detector; GitHub's
+[download page](https://go.dev/dl/) and verify the published checksum. Release
+hardening was validated with Go 1.27.1. A C compiler is needed for Go's race detector; GitHub's
 Ubuntu runner includes one. No Kubernetes cluster, engine binary, Docker, Node,
 Python, or Rust installation is required for the current checks.
 
@@ -19,6 +19,7 @@ make help
 make fmt
 make check
 make vuln
+VERSION=v0.1.0-alpha.1 make release-dry-run
 ```
 
 | Command | Behavior today |
@@ -26,16 +27,20 @@ make vuln
 | `make fmt` | Format tracked and non-ignored new Go files with gofmt |
 | `make lint` | Non-mutating formatting check and `go vet ./...` |
 | `make test` | `go test -race -count=1 ./...`; covers repository tooling and the M1/M2 endpoint and source domains |
-| `make build` | `go build -o bin/ ./...`; builds the documentation tool, not an EgressFox application |
+| `make build` | `go build -o bin/ ./...`; builds the operator and repository tooling |
 | `make docs` | Offline repository-local Markdown file/heading-link checks |
 | `make check` | Lint, tests, build, docs, and unstaged/staged whitespace checks |
 | `make vuln` | Pinned govulncheck from Makefile; requires module/vulnerability database access |
+| `make release-validate` | Validate engine/tool metadata, notices and Helm image-version flow without network access |
+| `make release-dry-run` | Construct binaries, source/license files, SPDX SBOMs, image, Helm package, scans and checksums without publishing |
 
-The module has no external dependencies today, so there is no `go.sum`. The
+The module's direct and transitive dependencies are pinned by `go.mod`/`go.sum`. The
 versioned `go run ...@version` security tool does not add a product dependency.
 Caches use normal Go locations; constrained environments can set `GOCACHE` and
 `GOMODCACHE` to writable directories without editing the repository. Do not commit
-downloaded binaries, caches, credentials, or real configurations.
+downloaded binaries, caches, credentials, or real configurations. Release outputs
+belong under ignored `dist/`, and checksum-verified tools under ignored `.cache/`;
+do not commit either.
 
 `make check` works offline with the toolchain installed and, once dependencies are
 introduced, available in cache. `make vuln` is deliberately separate because its

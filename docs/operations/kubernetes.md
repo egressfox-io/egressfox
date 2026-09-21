@@ -6,10 +6,11 @@ creates, restarts, exposes or confirms activation of Mihomo/sing-box workloads.
 
 ## Install
 
-The image contains Mihomo v1.19.31 and sing-box v1.14.1 for native validation and
-isolated probes. Public release provenance remains gated by Q12. Build a development
-image with `make docker-build IMG=...`, push it to a trusted registry, and install
-with an immutable digest when possible:
+The image contains checksum-verified, source-built Mihomo v1.19.31 and sing-box-compatible v1.14.1
+for native validation and isolated probes under the notice/source contract in
+[ADR 0012](../decisions/0012-release-distribution-and-provenance.md). Build a
+development image with `make docker-build IMG=...`; approved releases follow the
+[release guide](releasing.md). Install with a verified immutable digest:
 
 ```sh
 helm upgrade --install egressfox charts/egressfox \
@@ -23,6 +24,11 @@ namespace-limited manager/leader bindings and authenticated HTTPS metrics. CRDs 
 installed from `crds/`; Helm does not upgrade or delete them automatically. Review
 generated CRD diffs and apply compatible upgrades before upgrading a release. The
 PVC has Helm's `keep` annotation and requires explicit administrator cleanup.
+Helm also preserves CRDs on uninstall and does not upgrade files from `crds/`.
+Administrators must apply reviewed compatible CRD updates before the chart upgrade;
+uninstalling the release leaves CR instances/CRDs and the kept PVC until deliberately
+removed. Alpha APIs can make compatible schema additions, but no conversion webhook
+or automatic migration exists.
 
 The initial support claim is Kubernetes 1.37.0 with controller-runtime v0.25.1.
 `make test-envtest` uses checksum-pinned 1.37.0 API-server assets and `make e2e-kind`

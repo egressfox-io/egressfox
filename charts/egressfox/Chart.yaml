@@ -5,3 +5,8 @@ type: application
 version: 0.1.0
 appVersion: "0.1.0"
 kubeVersion: ">=1.37.0-0"
+home: https://github.com/egressfox-io/egressfox
+sources:
+  - https://github.com/egressfox-io/egressfox
+annotations:
+  artifacthub.io/license: Apache-2.0
