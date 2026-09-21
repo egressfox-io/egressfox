@@ -20,8 +20,8 @@ Create the next numbered Markdown file using [the template](template.md). Keep i
 here as its status changes; no empty active/completed directory hierarchy is needed.
 Record the branch, baseline, scope, design gates, checkpoints, tests/results, actual
 decisions and remaining work. Use dates and commit IDs where useful; a final commit
-need not embed its own impossible-to-know hash. Preserve enough context to resume
-without a conversation transcript.
+need not embed its own impossible-to-know hash. Preserve enough context for another
+contributor to resume without private task context.
 
 Before a checkpoint commit, update the plan with evidence and next steps. On
 completion, mark it complete, update this index and milestone status, and leave

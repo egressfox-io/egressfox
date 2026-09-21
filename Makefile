@@ -20,7 +20,7 @@ help:
 	  'make generate   Regenerate Kubernetes deepcopy code and CRDs/RBAC' \
 	  'make helm-check Lint and render the Helm chart for Kubernetes 1.37' \
 	  'make e2e-kind   Run the required kind lifecycle and RBAC suite' \
-	  'make build      Compile all Go packages (tooling only at bootstrap)' \
+	  'make build      Compile the operator and repository tools' \
 	  'make docs       Check repository Markdown links and local heading anchors' \
 	  'make vuln       Run pinned govulncheck (requires network access)' \
 	  'make release-validate Validate release manifests, notices, and version flow' \

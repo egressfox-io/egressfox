@@ -1,8 +1,9 @@
 # Feature catalog
 
 This is the authoritative scope/priority catalog. **Every product feature below is
-unimplemented at bootstrap.** Priorities express intent, not promises, API fields,
-or permission to implement future work. [Milestones](README.md) group executable
+unimplemented unless the roadmap marks it complete.** Priorities express intent,
+not promises, API fields, or permission to implement future work.
+[Milestones](README.md) group executable
 work; designs define semantics. Update this catalog when scope changes deliberately.
 
 ## P0 — Core identity and first usable product

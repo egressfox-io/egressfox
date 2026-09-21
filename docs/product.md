@@ -41,8 +41,8 @@ Control-plane selection and engine-local selection must remain distinguishable.
 
 ## Initial product boundary
 
-P0 is a sequence of implementation milestones, not the scope of this bootstrap.
-It ends with a standalone reconciliation path and a Kubernetes operator for
+P0 is a sequence of completed implementation milestones. It ends with a standalone
+reconciliation path and a Kubernetes operator for
 user-managed runtimes, using both target renderers, historical adaptive selection,
 file/Secret publication, and basic observability. Protocol and routing support
 will be explicitly bounded and tested; P0 does not promise every upstream feature.
@@ -65,7 +65,7 @@ proxy settings are the initial connectivity model, conceptually
   routing, eBPF, sidecar injection, or TProxy automation in P0.
 - A universal abstraction covering every feature of every engine.
 - A multi-tenant or highly available distributed control plane in P0.
-- A Rust workspace or a rich TUI during bootstrap; language/UI choice remains open.
+- A Rust workspace or a rich TUI in P0; language/UI choice remains open.
 - A thesis-specific production architecture or unmeasured claims of adaptation quality.
 
 ## What success should look like

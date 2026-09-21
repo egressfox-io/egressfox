@@ -1,29 +1,102 @@
-# Contributing
+# Contributing to EgressFox
 
-EgressFox has completed the M1–M6 P0 implementation and is preparing an alpha release. Start with
-the [documentation map](docs/README.md) and the
-[next milestone](docs/roadmap/README.md). Planned capabilities are not implemented
-features. The existing [Apache-2.0 license](LICENSE) is unchanged.
+EgressFox is a pre-release project with a deliberately narrow P0 contract. Changes
+are welcome, especially when they improve correctness, security, documentation, or
+operational clarity without silently broadening supported behavior.
 
-For a small fix, make the change and its relevant checks directly on a task branch.
-For a substantial change, read the owning design, resolve its blocking questions,
-and write a short repository [execution plan](docs/plans/README.md). Architecture,
-CRDs/public APIs, security boundaries, persistent state, and renderer semantics
-need deliberate design/compatibility consideration alongside code.
+Before starting substantial work, read the [documentation map](docs/README.md),
+[architecture](docs/architecture.md), and [roadmap](docs/roadmap/README.md). Use the
+owning design and ADRs for the area you intend to change. Planned capabilities are
+not implemented features.
 
-The [development workflow](docs/development/workflow.md) is authoritative for
-branching, agent-owned commits, emoji Conventional Commits, setup, and definition
-of done. Agents must create dedicated branches, validate and commit their work,
-and leave a clean reviewable branch. Do not automatically merge or rewrite history.
+## Development prerequisites
 
-Run `make check` and `make vuln` before handing off applicable changes, plus the
-feature-specific tests in the [testing strategy](docs/development/testing.md).
-Release-affecting changes also run `make release-validate` and the non-publishing
-dry run in the [release guide](docs/operations/releasing.md). Critical engine,
-Kubernetes, controller-runtime, base-image and release-tool pins require compatibility,
-license/SBOM and vulnerability review; Dependabot suggestions are never auto-merged.
-Explain the resulting behavior, validation evidence, compatibility impact, and
-remaining limitations in the pull request. Never submit real credentials,
-subscriptions, or generated operational configs as fixtures.
+- Git and Make.
+- The Go version in [go.mod](go.mod) — currently 1.27.1.
+- A C compiler for race-enabled tests.
+- Helm for chart linting and rendering.
+- Network access for vulnerability scans and first-time tool/module downloads.
+- Docker and `kubectl` only for the kind end-to-end suite.
 
-For sensitive findings, follow [security reporting](SECURITY.md).
+Run `make help` for the maintained command list.
+
+## Workflow
+
+1. Create a focused branch from the current `main`; do not work directly on it.
+2. Read the authoritative design and compatibility constraints for your change.
+3. For architectural, milestone, or multi-session work, add an
+   [execution plan](docs/plans/README.md).
+4. Keep behavior, tests, and relevant documentation in the same coherent change.
+5. Use the repository's emoji + Conventional Commit format, for example:
+
+   ```text
+   🐛 fix(renderer): reject unsupported routing strategy
+   ```
+
+6. Open a pull request explaining the problem, behavior, validation, compatibility
+   impact, security implications, and remaining limitations.
+
+Architecture, CRDs and public APIs, persistent state, security boundaries, renderer
+semantics, and supported-version changes require explicit compatibility review. Do
+not add speculative interfaces, placeholder packages, or P1 behavior as a shortcut.
+The detailed Git contract is in the [development workflow](docs/development/workflow.md).
+
+## Validation
+
+For documentation-only changes:
+
+```sh
+make docs
+git diff --check
+```
+
+For normal code or repository changes:
+
+```sh
+make check
+make vuln
+```
+
+Add the relevant integration layer when the change affects it:
+
+```sh
+make test-envtest       # Kubernetes API/controller behavior
+make e2e-kind           # real cluster, Helm, RBAC and controlled traffic
+make release-validate   # release manifest/version/notice consistency
+```
+
+Release-affecting work also runs the non-publishing dry run documented in the
+[release guide](docs/operations/releasing.md). Never describe an unavailable or
+skipped check as passing.
+
+## Generated files
+
+API and RBAC changes must regenerate and commit their owned outputs:
+
+```sh
+make generate
+make manifests
+make generate-check
+```
+
+Review generated CRD differences as API changes. Do not hand-edit generated
+deep-copy code, generated CRDs, or generated RBAC in isolation.
+
+## Security and test data
+
+Never commit real subscription URLs, proxy URIs, credentials, Kubernetes Secret
+contents, generated engine configuration, private endpoint revisions, or local
+state databases. Tests use clearly synthetic credentials and reserved example
+domains. Follow [SECURITY.md](SECURITY.md) for sensitive findings rather than
+opening a public issue.
+
+Critical engine, Kubernetes, controller-runtime, base-image, and release-tool
+updates require compatibility tests plus license, SBOM, and vulnerability review.
+Automated dependency proposals are never merged without review.
+
+## Community expectations
+
+Be specific, respectful, and patient. The project currently has no guaranteed
+support or response SLA. A formal Code of Conduct will be added when maintainers
+establish a real moderation contact and enforcement process; none is invented in
+this repository today.

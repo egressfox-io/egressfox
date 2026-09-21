@@ -4,7 +4,7 @@ This is the authoritative queue of unresolved architectural choices. An open ite
 is not permission to improvise a default in public API or persistent data. Resolve
 it in the linked design and task plan before its gate; use an ADR only if the result
 is durable enough to warrant one. No individual maintainers are assigned yet;
-the agent/contributor undertaking the gated milestone owns bringing evidence.
+the contributor undertaking the gated milestone owns bringing evidence.
 
 | ID | Question and decision evidence needed | Gate | Design owner |
 | --- | --- | --- | --- |

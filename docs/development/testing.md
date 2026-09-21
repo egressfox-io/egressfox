@@ -120,4 +120,4 @@ traffic experiment measures system effects. Do both before claiming superiority.
 
 The harness must call production policy/selection through ordinary boundaries,
 without turning the runtime into a thesis simulator. No experimental improvement
-or availability claim exists at bootstrap.
+or availability claim currently exists.

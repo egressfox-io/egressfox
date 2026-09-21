@@ -1,8 +1,19 @@
 # Documentation map
 
-Start with [product and scope](product.md), then [architecture and terminology](architecture.md),
-then the owning design for your task. [AGENTS.md](../AGENTS.md) is the operating
-contract, not a substitute for these documents. No original conversation is needed.
+Start with [product and scope](product.md), then [architecture and terminology](architecture.md).
+Operators can go directly to the Kubernetes or release guides; contributors should
+read the owning design and accepted decisions for the area they plan to change.
+
+## Common paths
+
+| Goal | Start here |
+| --- | --- |
+| Understand the product boundary | [Product](product.md) and [architecture](architecture.md) |
+| Evaluate or operate the Kubernetes integration | [Kubernetes operator guide](operations/kubernetes.md) and [samples](../config/samples/README.md) |
+| Verify a release or supported version | [Release guide](operations/releasing.md) |
+| Report or assess security concerns | [Security policy](../SECURITY.md) and [threat model](security/threat-model.md) |
+| Contribute a change | [Contributing](../CONTRIBUTING.md), [workflow](development/workflow.md), and [testing](development/testing.md) |
+| Configure the public GitHub repository | [Repository settings](operations/github-repository.md) |
 
 ## Sources of truth
 
@@ -21,7 +32,7 @@ contract, not a substitute for these documents. No original conversation is need
 | Which ideas are P0 vs future scope? | [Feature catalog](roadmap/features.md) |
 | How do I branch, build, validate, commit, and hand off? | [Workflow](development/workflow.md) |
 | Which tests and research experiments belong with a change? | [Testing](development/testing.md) |
-| How can another agent resume substantial work? | [Execution plans](plans/README.md) |
+| How is substantial work planned and resumed? | [Execution plans](plans/README.md) |
 | How is a release built, accepted, published, and verified? | [Release guide](operations/releasing.md) |
 
 ## Reading status correctly
@@ -44,8 +55,8 @@ resource fields, metrics, and package paths are not supported interfaces today.
 
 ## Maintaining the map
 
-Update the owning document rather than copying specifications into README,
-AGENTS, or plans. Summaries should link back here. If behavior changes a durable
+Update the owning document rather than copying specifications into the README or
+execution plans. Summaries should link back here. If behavior changes a durable
 decision, update/supersede its ADR and the current design together. If authoritative
 documents conflict, resolve the conflict explicitly before coding affected behavior.
 
@@ -53,7 +64,5 @@ Upstream findings are linked near the decisions they informed, with the research
 date/version where relevant. Recheck version-sensitive details before implementation;
 an upstream release existing does not make it supported by EgressFox.
 
-The root agent map follows official [Codex AGENTS.md guidance](https://learn.chatgpt.com/docs/agent-configuration/agents-md):
-repository instructions are concise and discoverable, with deeper docs linked by
-task. Add nested instructions only when local operating rules genuinely differ;
-none are needed at foundation stage.
+`AGENTS.md` contains concise repository instructions for automated coding tools; it
+does not replace the human contribution guide or the authoritative project docs.

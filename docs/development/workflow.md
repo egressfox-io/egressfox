@@ -1,7 +1,8 @@
 # Development workflow
 
 This is the authoritative Git, contribution, tooling, and definition-of-done
-contract. [AGENTS.md](../../AGENTS.md) is its compact entry point for coding agents.
+contract for repository work. [CONTRIBUTING.md](../../CONTRIBUTING.md) is the human
+entry point; [AGENTS.md](../../AGENTS.md) adds constraints for automated coding tools.
 
 ## Setup and commands
 
@@ -26,7 +27,7 @@ VERSION=v0.1.0-alpha.1 make release-dry-run
 | --- | --- |
 | `make fmt` | Format tracked and non-ignored new Go files with gofmt |
 | `make lint` | Non-mutating formatting check and `go vet ./...` |
-| `make test` | `go test -race -count=1 ./...`; covers repository tooling and the M1/M2 endpoint and source domains |
+| `make test` | `go test -race -count=1 ./...`; covers repository tooling and all current Go domains |
 | `make build` | `go build -o bin/ ./...`; builds the operator and repository tooling |
 | `make docs` | Offline repository-local Markdown file/heading-link checks |
 | `make check` | Lint, tests, build, docs, and unstaged/staged whitespace checks |
@@ -48,15 +49,15 @@ database access is online. Network failure is not a successful vulnerability sca
 
 ## Permanent Git contract
 
-Agents actively manage Git and **commit their own completed work**. Do not leave
-a finished task as a large working-tree diff for the user to commit.
+Contributors own their completed commits. Do not leave a finished task as a large,
+unreviewed working-tree diff for someone else to sort out.
 
 1. Inspect branch, status, recent history, repository instructions, and the relevant
    design. Preserve all pre-existing user changes; never stage unrelated files.
 2. Create a dedicated descriptive branch for each coherent task. Substantial work
    must never happen directly on `main`. Examples: `feat/endpoint-model`,
    `feat/probe-engine`, `fix/renderer-validation`, `docs/security-model`,
-   `refactor/selection-engine`, `chore/repository-bootstrap`. When resuming the same
+   `refactor/selection-engine`, `chore/repository-maintenance`. When resuming the same
    task, verify its branch and plan rather than creating needless replacement branches.
 3. For work spanning components, architectural changes, a milestone, or multiple
    sessions, create/update an [execution plan](../plans/README.md) before implementation.
@@ -87,8 +88,8 @@ Use Conventional Commits with semantic emojis:
 ```
 
 The type remains authoritative; the emoji is a visual signal. Describe the actual
-engineering change, never `update`, `changes`, `work`, `WIP`, `fix stuff`, or
-`codex changes`. Use an imperative, specific description and a body when rationale
+engineering change, never `update`, `changes`, `work`, `WIP`, or `fix stuff`. Use an
+imperative, specific description and a body when rationale
 or compatibility impact is not obvious.
 
 | Change | Preferred signal and example |
@@ -141,8 +142,8 @@ Do not switch to `pull_request_target` to execute untrusted code with privileges
 The workflow is configured here; a remote run/branch-protection setting is not
 claimed by local validation.
 
-[Dependabot](../../.github/dependabot.yml) covers Actions and future Go module
-dependencies. Review updates, preserve compatible Kubernetes version sets, and run
+[Dependabot](../../.github/dependabot.yml) covers Actions, Go modules, and the
+Dockerfile. Review updates, preserve compatible Kubernetes version sets, and run
 the same checks. The Go toolchain requirement in go.mod and scanner pin in Makefile
 need deliberate review; a bot configuration alone is not an update guarantee.
 Add richer linting, release scanning/signing, and generated-file checks only when

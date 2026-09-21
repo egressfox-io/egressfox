@@ -1,115 +1,203 @@
 # EgressFox
 
-**A control plane for reliable, policy-driven proxy/VPN egress.**
+**Adaptive egress control plane for reliable external connectivity.**
 
-EgressFox is being built to discover, monitor, evaluate, and select external
-endpoints, then continuously produce the desired configuration for Mihomo and
-sing-box. It aims to replace fragile static endpoint lists with decisions based
-on policy, destination-aware observations, and historical network behavior.
+[![Repository checks](https://github.com/egressfox-io/egressfox/actions/workflows/check.yml/badge.svg)](https://github.com/egressfox-io/egressfox/actions/workflows/check.yml)
+[![Go 1.27.1](https://img.shields.io/badge/Go-1.27.1-00ADD8?logo=go&logoColor=white)](go.mod)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-> **EgressFox decides what configuration should exist. Mihomo or sing-box decides
-> how traffic flows through it.**
+EgressFox ingests external proxy endpoint sources, measures destination-specific
+connectivity, retains historical evidence, selects a stable usable set, and renders
+validated desired configuration for Mihomo or sing-box. Its Kubernetes operator
+publishes that configuration for a runtime you manage.
 
-**Status: pre-release alpha; P0 milestones M1–M6 implemented.** The repository contains the bounded
-path from source admission through identity, native probes, SQLite evidence,
-deterministic adaptive selection, validated Mihomo/sing-box artifacts, recoverable
-file publication, and a namespace-scoped Kubernetes BYO operator with owned Secret
-output plus a non-publishing release construction and verification path. Runtime
-activation is deliberately unobserved; there is no managed gateway workload or
-product CLI. Project domain: `egressfox.io`.
+> **Pre-release alpha.** The P0 control-plane path and release machinery are
+> implemented, but no public release or production-support commitment exists yet.
+
+## Why EgressFox?
+
+External integrations sometimes depend on gateways that rotate credentials,
+disappear, slow down, flap, or fail only for particular destinations. A static list
+cannot distinguish stale evidence from a confirmed failure, and manually replacing
+endpoints makes behavior difficult to reproduce.
+
+EgressFox turns endpoint descriptions into revision-aware evidence and deterministic
+selection decisions. It applies stability controls before publishing a new,
+engine-native configuration, while preserving the last known good output when a
+candidate is invalid.
+
+Mihomo and sing-box remain the data plane: they implement protocols and move traffic.
+EgressFox is the control plane that decides which validated configuration should
+exist.
+
+## How it works
 
 ```mermaid
 flowchart LR
-    S[Endpoint sources] --> E[EgressFox control plane]
-    P[User policy] --> E
-    H[Destination observations and history] --> E
-    E --> C[Validated desired configuration]
-    C --> D[Mihomo or sing-box data plane]
-    A[Applications] --> D
-    D --> T[External destinations]
+    S[URI and Base64 URI-list sources] --> N[Normalize and deduplicate]
+    N --> P[Probe through pinned engines]
+    P --> H[Historical evidence]
+    H --> A[Adaptive selection]
+    A --> R[Render for Mihomo or sing-box]
+    R --> V[Native validation]
+    V --> L[Last-known-good publication]
+    L --> D[User-managed data plane]
+    K[Kubernetes operator] --> S
+    K --> L
 ```
 
-## Why EgressFox
+The core endpoint, observation, selection, rendering, and reconciliation packages do
+not depend on Kubernetes. The operator adapts same-namespace Secrets and alpha CRDs
+to that core and publishes an owned Secret; it does not create or reload an engine
+workload.
 
-An endpoint can work for one destination and fail for another. Providers disappear,
-latency changes, endpoints flap, and seemingly diverse gateways share failure
-domains. EgressFox is intended to make endpoint selection reproducible and stable
-while allowing prompt replacement after confirmed failure.
+## Current capabilities
 
-Use cases include resilient third-party API access, multi-provider redundancy,
-regional integration testing, geo-aware egress, centralized Kubernetes egress,
-and hybrid/multi-cloud networking. EgressFox will configure existing engines;
-proxy protocols, connection forwarding, balancing, and packet handling remain
-the engines' responsibility.
-
-## What exists and what is planned
-
-| Stage | Contents |
+| Area | Implemented P0 contract |
 | --- | --- |
-| Present | M1–M6 core pipeline, both pinned renderers, file/Secret publication, SQLite history/selection, namespace-scoped BYO operator, generated CRDs, Helm and integration tests |
-| Release hardening | Exact engine/source/license manifest, multi-architecture image, SBOM/scans, checksums, protected keyless signing/provenance workflow and private-reporting setup instructions |
-| Later or experimental | Managed engines, richer policy/diversity and explain tooling, additional outputs, HA, PostgreSQL, UIs, and advanced networking integrations |
+| Endpoints | VLESS and Trojan over TCP or WebSocket, with bounded TLS/SNI options |
+| Sources | URI lists and Base64 URI lists; bounded HTTP acquisition in the core and same-namespace Secret ingestion in Kubernetes |
+| Evidence | Revision- and destination-specific probes, bounded scheduling, SQLite history and freshness-aware summaries |
+| Selection | Static, lowest-latency, and deterministic adaptive Top-N strategies with residence, hysteresis, cooldown and emergency replacement |
+| Rendering | Exact Mihomo 1.19.31 and sing-box-compatible 1.14.1 profiles with native validation |
+| Publication | Recoverable file output in the core; owner-checked Kubernetes Secret output with last-known-good preservation |
+| Kubernetes | Namespace-scoped `egressfox.io/v1alpha1` operator, Helm chart, scoped RBAC, retained RWO state PVC |
+| Release path | linux/amd64 and linux/arm64 builds, SPDX SBOMs, vulnerability gates, checksums, keyless signing and provenance workflow |
 
-The supported engine profiles are exactly **Mihomo 1.19.31** and **sing-box
-1.14.1**. The implemented endpoint slice is VLESS and Trojan over TCP or WebSocket,
-with ordinary TLS options, admitted from URI-list or Base64 URI-list sources. Other
-versions and protocols may exist upstream but are not supported. Kubernetes 1.37.0
-is the tested cluster baseline.
+Versions or protocols not listed above may work upstream but are unsupported by
+EgressFox until their renderer and native compatibility profile are tested.
 
-Kubernetes is an integration over the same core as standalone mode. The current
-experience is BYO: EgressFox publishes a credential-bearing configuration Secret,
-and the user owns the engine workload, Secret mount and reload. Connectivity uses
-explicit application proxy settings. Transparent interception,
-TProxy automation, and eBPF integration are future research areas.
+## Intentionally not implemented
 
-## Install the BYO operator
+- Managed Mihomo or sing-box Deployments, Services, reloads, or activation
+  acknowledgement.
+- Transparent interception, TProxy automation, eBPF integration, sidecar injection,
+  or arbitrary workload routing.
+- Rich routing composition, native escape hatches, additional proxy protocols, or
+  cross-namespace references.
+- Highly available operators, shared SQLite, a Web UI, or a general product CLI.
 
-No public release is assumed by this repository state. For an approved alpha, verify
-the image digest, signatures/provenance, SBOM and chart checksums using the
-[release guide](docs/operations/releasing.md), then install one release per namespace:
+See the [roadmap](docs/roadmap/README.md) for later horizons. Planned work is not a
+current compatibility promise.
 
-```sh
-helm upgrade --install egressfox ./egressfox-0.1.0-alpha.1.tgz \
-  --namespace egressfox --create-namespace \
-  --set image.repository=ghcr.io/egressfox-io/egressfox \
-  --set image.digest=sha256:REPLACE_WITH_VERIFIED_DIGEST
-```
+## Evaluate locally
 
-Create same-namespace input Secrets and the sample `ProxyPool`/`EgressGateway`
-resources under [`config/samples`](config/samples). The operator publishes an owned
-Secret containing `config.yaml` or `config.json`; it does not create or confirm a
-running proxy. CRDs and the retained state PVC require explicit lifecycle review.
-
-## Start here
-
-- [Documentation map](docs/README.md) — authoritative product, architecture, and design sources.
-- [Implementation roadmap](docs/roadmap/README.md) — milestone outcomes and later horizons.
-- [Kubernetes operator guide](docs/operations/kubernetes.md) — installation, APIs,
-  ownership, security and recovery.
-- [Release and verification guide](docs/operations/releasing.md) — support matrix,
-  artifacts, dry run, SBOM/scans, signing/provenance and acceptance checklist.
-- [Contributing](CONTRIBUTING.md) — branch, design, test, and commit expectations.
-- [Agent instructions](AGENTS.md) — compact navigation and operating contract.
-- [Security](SECURITY.md) — reporting limitations and threat-model entry point.
-
-## Check the foundation
-
-Install Git, Make, and the Go version pinned in [go.mod](go.mod); race tests also
-require a C compiler. See [setup and workflow](docs/development/workflow.md).
+There is no public image or chart download yet. To inspect the code and run the
+normal repository gate, install Git, Make, Go 1.27.1, Helm, and a C compiler:
 
 ```sh
+git clone https://github.com/egressfox-io/egressfox.git
+cd egressfox
 make check
-make vuln
-VERSION=v0.1.0-alpha.1 make release-dry-run
 ```
 
-The first two validate generation drift, all Go domains, documentation, Helm and Go
-vulnerability reachability. The dry run builds and scans release artifacts without
-publishing. `make test-envtest` and `make e2e-kind` run Kubernetes integration
-layers. Vulnerability, release and integration setup commands need network access.
+To exercise the complete Kubernetes flow, also install Docker and `kubectl`, then
+run:
+
+```sh
+make test-envtest
+make e2e-kind
+```
+
+The kind test creates an isolated Kubernetes 1.37.0 cluster, installs the chart,
+checks namespace-scoped RBAC, proxies controlled traffic through the bundled
+sing-box-compatible engine, verifies restart and last-known-good behavior, and
+deletes the cluster when complete.
+
+After the first approved alpha is published, use the verified image digest and Helm
+package described in the [release guide](docs/operations/releasing.md). Do not deploy
+an invented `latest` tag.
+
+## Kubernetes model
+
+The operator watches one namespace. A `ProxyPool` reads endpoint and probe-target
+Secrets; an `EgressGateway` selects an exact engine profile and names its output
+Secret:
+
+```yaml
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata:
+  name: external-api
+spec:
+  sources:
+    - id: primary
+      secretRef: {name: endpoint-subscription, key: nodes}
+      format: URIList
+  probe:
+    targetSecretRef: {name: external-api-probe, key: url}
+    expectedStatus: 204
+  selection: {strategy: Adaptive, topN: 2}
+  refreshInterval: 5m
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata:
+  name: external-api
+spec:
+  poolRef: {name: external-api}
+  engine: SingBox
+  listener: {address: 127.0.0.1, port: 1080}
+  outputSecretName: external-api-engine-config
+```
+
+The referenced Secrets contain credentials and must be created through your secret
+management workflow. The operator writes validated `config.yaml` or `config.json`
+bytes, but the user-managed engine workload is responsible for mounting and loading
+them. See the [sanitized samples](config/samples/README.md) and the
+[operator guide](docs/operations/kubernetes.md).
+
+## Adaptive selection
+
+“Adaptive” here is a deterministic policy, not machine learning. Decisions use a
+bounded historical window for the exact endpoint revision, destination, probe
+profile, and execution vantage. Hard eligibility is applied before scoring;
+residence, improvement thresholds, cooldown, and recovery evidence reduce churn
+without preventing emergency replacement of a failing incumbent.
+
+The algorithm and replay guarantees are specified in
+[ADR 0010](docs/decisions/0010-deterministic-adaptive-selection.md).
+
+## Security model
+
+EgressFox treats subscriptions, endpoint credentials, generated configuration, and
+private revisions as sensitive. Untrusted inputs are bounded, network targets are
+authorized before dialing, diagnostics are credential-safe, generated artifacts are
+natively validated, and invalid candidates never displace the last-known-good
+output. The operator runs non-root with namespace-scoped RBAC and owner-checked
+Secret publication.
+
+Read [SECURITY.md](SECURITY.md) before reporting a sensitive issue and see the
+[threat model](docs/security/threat-model.md) for residual risks.
+
+## Project status and roadmap
+
+P0 milestones M1–M6 and post-M6 release hardening are complete. The current API is
+`v1alpha1`, Kubernetes 1.37.0 is the tested baseline, and the project is not
+production-certified. The next unit of work is P1 design; no P1 feature is implied
+by the current repository.
+
+## Documentation
+
+| Topic | Start here |
+| --- | --- |
+| Product boundaries and architecture | [Product](docs/product.md) · [Architecture](docs/architecture.md) |
+| Kubernetes installation and operation | [Operator guide](docs/operations/kubernetes.md) |
+| Supported versions and release verification | [Release guide](docs/operations/releasing.md) |
+| Security | [Security policy](SECURITY.md) · [Threat model](docs/security/threat-model.md) |
+| Decisions and roadmap | [ADR index](docs/decisions/README.md) · [Roadmap](docs/roadmap/README.md) |
+| Development | [Contributing](CONTRIBUTING.md) · [Testing](docs/development/testing.md) |
+
+The complete curated index is in [docs/README.md](docs/README.md).
+
+## Contributing and support
+
+Contributions are welcome while the project is alpha. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md); use [SUPPORT.md](SUPPORT.md) to choose the right
+place for bugs, proposals, questions, or security reports.
 
 ## License
 
-EgressFox retains the repository's existing [Apache License 2.0](LICENSE). Bundled
-source-built engine derivatives retain their GPL terms and complete modified source
-is released with them; see [third-party notices](THIRD_PARTY_NOTICES.md).
+EgressFox is licensed under [Apache-2.0](LICENSE). Source-built engine derivatives
+inside release images remain subject to their upstream GPL terms and corresponding-
+source requirements; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
