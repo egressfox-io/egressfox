@@ -111,6 +111,7 @@ for engine in mihomo sing-box; do
 done
 
 $go_command run ./tools/releasectl fetch-licenses --output-dir "$artifact_dir"
+cp "$artifact_dir/mihomo-LICENSE" "$artifact_dir/GPL-3.0.txt"
 cp LICENSE "$artifact_dir/EGRESSFOX-LICENSE"
 cp THIRD_PARTY_NOTICES.md "$artifact_dir/THIRD_PARTY_NOTICES.md"
 

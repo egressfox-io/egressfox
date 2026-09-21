@@ -39,6 +39,7 @@ RUN apk add --no-cache ca-certificates=20260909-r0
 COPY --from=build /out/releasectl /usr/local/bin/releasectl
 COPY release/manifest.json /release/manifest.json
 RUN releasectl fetch-licenses --manifest /release/manifest.json --output-dir /release/licenses && \
+    cp /release/licenses/mihomo-LICENSE /release/licenses/GPL-3.0.txt && \
     mkdir -p /release/state && chown 65532:65532 /release/state
 
 FROM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
