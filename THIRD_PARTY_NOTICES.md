@@ -32,9 +32,9 @@ available as required by the applicable license.
 - The operator binary's Go modules are recorded in its SPDX JSON SBOM. Module
   versions are pinned by `go.mod`/`go.sum`; the SBOM generator may not identify every
   license and its output still requires review.
-- The container image's OS packages and executable contents are recorded in the
-  image SPDX JSON SBOM. The digest-pinned Alpine base and exact installed package
-  versions in that SBOM define what was shipped.
+- The container image's executable and data-file contents are recorded in the image
+  SPDX JSON SBOM. The final `scratch` image contains no OS package manager or OS
+  packages; its CA bundle is copied from a pinned build-stage package.
 - Syft, Grype, Cosign, Helm, kind, envtest and controller-gen are release/build/test
   tools, not files shipped in the operator image. Their versions and download
   checksums are pinned in the repository.

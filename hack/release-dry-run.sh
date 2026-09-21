@@ -163,7 +163,7 @@ if [ "${RELEASE_SKIP_IMAGE:-0}" != 1 ]; then
   fi
   "$syft" scan "oci-archive:$image_archive" -o "spdx-json=$artifact_dir/egressfox-image-$normalized.spdx.json"
   if [ "${RELEASE_SKIP_VULN:-0}" != 1 ]; then
-    GRYPE_DB_CACHE_DIR=$work_dir/grype-db GRYPE_DB_AUTO_UPDATE=false "$grype" \
+    GRYPE_DB_CACHE_DIR=$release_root/.cache/grype-db GRYPE_DB_AUTO_UPDATE=false "$grype" \
       "sbom:$artifact_dir/egressfox-image-$normalized.spdx.json" --fail-on high --output json \
       --file "$report_dir/egressfox-image-$normalized.grype.json"
   fi

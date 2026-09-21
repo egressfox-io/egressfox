@@ -27,10 +27,10 @@ revision. Deploy by immutable image digest even though a human-readable tag exis
 `go.mod`, digest-pinned container bases, [`release/manifest.json`](../../release/manifest.json),
 and SHA-pinned Actions define the checked inputs. The manifest is the only authority
 for engine/tool versions, URLs, architectures and SHA-256 values. Engine checksum
-failure stops the build before extraction. The final image has no curl or tar; Alpine
-still supplies its BusyBox shell. It runs as UID/GID 65532, has a state volume and
-temporary volume, and remains compatible with a read-only root filesystem and all
-capabilities dropped by the chart.
+failure stops the build before extraction. The final `scratch` image has no shell,
+package manager, curl, tar or OS packages. It runs as UID/GID 65532, has a state
+volume and temporary volume, and remains compatible with a read-only root filesystem
+and all capabilities dropped by the chart.
 
 The operator Go binaries are built twice and compared during a dry run. This proves
 byte equality for the two invocations in that environment, not universal
