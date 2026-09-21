@@ -38,13 +38,24 @@ type Release struct {
 }
 
 type Engine struct {
-	Name        string              `json:"name"`
-	Version     string              `json:"version"`
-	Profile     string              `json:"profile"`
-	License     string              `json:"license"`
-	Source      Source              `json:"source"`
-	LicenseFile Download            `json:"licenseFile"`
-	Assets      map[string]Download `json:"assets"`
+	Name           string              `json:"name"`
+	Version        string              `json:"version"`
+	Profile        string              `json:"profile"`
+	License        string              `json:"license"`
+	Build          EngineBuild         `json:"build"`
+	Source         Source              `json:"source"`
+	LicenseFile    Download            `json:"licenseFile"`
+	UpstreamAssets map[string]Download `json:"upstreamAssets"`
+}
+
+type EngineBuild struct {
+	Revision            int      `json:"revision"`
+	GoVersion           string   `json:"goVersion"`
+	Package             string   `json:"package"`
+	BinaryName          string   `json:"binaryName"`
+	OverlayDirectory    string   `json:"overlayDirectory"`
+	Tags                []string `json:"tags"`
+	DependencyOverrides []string `json:"dependencyOverrides"`
 }
 
 type Source struct {
@@ -118,6 +129,18 @@ func (manifest Manifest) Validate() error {
 		if engine.Version != profile.Version || engine.Profile != profile.RendererSchema || engine.License == "" {
 			return fmt.Errorf("engine %s does not match the compiled compatibility profile", engine.Name)
 		}
+		if engine.Build.Revision != 1 || engine.Build.GoVersion != "1.27.1" || engine.Build.Package == "" ||
+			!safeArchivePath(engine.Build.BinaryName) || strings.Contains(engine.Build.BinaryName, "/") ||
+			(engine.Build.OverlayDirectory != "" && !safeArchivePath(engine.Build.OverlayDirectory)) ||
+			!slices.IsSorted(engine.Build.DependencyOverrides) {
+			return fmt.Errorf("engine %s has an invalid build contract", engine.Name)
+		}
+		for _, override := range engine.Build.DependencyOverrides {
+			parts := strings.Split(override, "@")
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+				return fmt.Errorf("engine %s has invalid dependency override %q", engine.Name, override)
+			}
+		}
 		if !validHTTPS(engine.Source.Repository) || engine.Source.Tag == "" || !validCommit(engine.Source.Commit) {
 			return fmt.Errorf("engine %s has invalid source provenance", engine.Name)
 		}
@@ -128,7 +151,7 @@ func (manifest Manifest) Validate() error {
 			return fmt.Errorf("engine %s license: %w", engine.Name, err)
 		}
 		for _, platform := range manifest.Release.Platforms {
-			download, ok := engine.Assets[platform]
+			download, ok := engine.UpstreamAssets[platform]
 			if !ok {
 				return fmt.Errorf("engine %s is missing %s", engine.Name, platform)
 			}
@@ -136,7 +159,7 @@ func (manifest Manifest) Validate() error {
 				return fmt.Errorf("engine %s %s: %w", engine.Name, platform, err)
 			}
 		}
-		if len(engine.Assets) != len(manifest.Release.Platforms) {
+		if len(engine.UpstreamAssets) != len(manifest.Release.Platforms) {
 			return fmt.Errorf("engine %s advertises an unsupported platform", engine.Name)
 		}
 	}
@@ -204,7 +227,8 @@ func validCommit(value string) bool {
 }
 
 func safeArchivePath(value string) bool {
-	return value != "" && !strings.HasPrefix(value, "/") && path.Clean(value) == value && !strings.HasPrefix(value, "../")
+	trimmed := strings.TrimSuffix(value, "/")
+	return trimmed != "" && !strings.HasPrefix(trimmed, "/") && path.Clean(trimmed) == trimmed && !strings.HasPrefix(trimmed, "../")
 }
 
 func (manifest Manifest) Engine(name string) (Engine, error) {
@@ -245,6 +269,9 @@ func Fetch(ctx context.Context, client *http.Client, download Download, output s
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s: unexpected HTTP status %d", download.FileName, response.StatusCode)
 	}
+	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
+		return fmt.Errorf("create download directory: %w", err)
+	}
 	temporary, err := os.CreateTemp(filepath.Dir(output), ".egressfox-download-*")
 	if err != nil {
 		return fmt.Errorf("create temporary download: %w", err)
@@ -268,6 +295,100 @@ func Fetch(ctx context.Context, client *http.Client, download Download, output s
 	}
 	if err := materialize(temporaryName, download, output, mode); err != nil {
 		return err
+	}
+	return nil
+}
+
+func ExtractSourceArchive(archiveName, output string) error {
+	if err := os.Mkdir(output, 0o755); err != nil {
+		return fmt.Errorf("create source directory: %w", err)
+	}
+	file, err := os.Open(archiveName)
+	if err != nil {
+		return fmt.Errorf("open source archive: %w", err)
+	}
+	defer file.Close()
+	compressed, err := gzip.NewReader(file)
+	if err != nil {
+		return fmt.Errorf("open source gzip stream: %w", err)
+	}
+	defer compressed.Close()
+	reader := tar.NewReader(compressed)
+	var root string
+	var files int
+	var total int64
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read source archive: %w", err)
+		}
+		if header.Typeflag == tar.TypeXGlobalHeader || header.Typeflag == tar.TypeXHeader {
+			continue
+		}
+		name := strings.TrimSuffix(header.Name, "/")
+		if !safeArchivePath(name) {
+			return errors.New("source archive contains an unsafe path")
+		}
+		parts := strings.SplitN(name, "/", 2)
+		if root == "" {
+			root = parts[0]
+		}
+		if parts[0] != root {
+			return errors.New("source archive has multiple roots")
+		}
+		if len(parts) == 1 {
+			if header.Typeflag != tar.TypeDir && !(strings.HasSuffix(header.Name, "/") && header.Size == 0) {
+				return fmt.Errorf("source archive root is not a directory: type=%d name=%q size=%d", header.Typeflag, header.Name, header.Size)
+			}
+			continue
+		}
+		relative := parts[1]
+		if !safeArchivePath(relative) {
+			return errors.New("source archive contains an unsafe relative path")
+		}
+		target := filepath.Join(output, filepath.FromSlash(relative))
+		files++
+		if files > 50_000 {
+			return errors.New("source archive contains too many entries")
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return fmt.Errorf("create source directory: %w", err)
+			}
+		case tar.TypeReg:
+			total += header.Size
+			if header.Size < 0 || header.Size > 256<<20 || total > 1<<30 {
+				return errors.New("source archive exceeds size limits")
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return fmt.Errorf("create source parent: %w", err)
+			}
+			mode := os.FileMode(0o644)
+			if header.Mode&0o111 != 0 {
+				mode = 0o755
+			}
+			outputFile, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+			if err != nil {
+				return fmt.Errorf("create source file: %w", err)
+			}
+			_, copyErr := io.CopyN(outputFile, reader, header.Size)
+			closeErr := outputFile.Close()
+			if copyErr != nil {
+				return fmt.Errorf("extract source file: %w", copyErr)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("close source file: %w", closeErr)
+			}
+		default:
+			return fmt.Errorf("source archive contains unsupported entry type %d", header.Typeflag)
+		}
+	}
+	if root == "" || files == 0 {
+		return errors.New("source archive is empty")
 	}
 	return nil
 }

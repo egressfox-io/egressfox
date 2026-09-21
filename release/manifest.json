@@ -10,6 +10,21 @@
       "version": "1.19.31",
       "profile": "egressfox.mihomo/v1",
       "license": "GPL-3.0-only",
+      "build": {
+        "revision": 1,
+        "goVersion": "1.27.1",
+        "package": ".",
+        "binaryName": "mihomo",
+        "overlayDirectory": "",
+        "tags": ["with_gvisor"],
+        "dependencyOverrides": [
+          "github.com/insomniacslk/dhcp@v0.0.0-20260719225207-c76316d4aa82",
+          "github.com/klauspost/compress@v1.18.7",
+          "golang.org/x/crypto@v0.56.0",
+          "golang.org/x/net@v0.56.0",
+          "golang.org/x/text@v0.39.0"
+        ]
+      },
       "source": {
         "repository": "https://github.com/MetaCubeX/mihomo",
         "tag": "v1.19.31",
@@ -27,7 +42,7 @@
         "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
         "format": "raw"
       },
-      "assets": {
+      "upstreamAssets": {
         "linux/amd64": {
           "fileName": "mihomo-linux-amd64-v1.19.31.gz",
           "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v1.19.31.gz",
@@ -47,6 +62,22 @@
       "version": "1.14.1",
       "profile": "egressfox.sing-box/v1",
       "license": "GPL-3.0-or-later",
+      "build": {
+        "revision": 1,
+        "goVersion": "1.27.1",
+        "package": "./cmd/sing-box",
+        "binaryName": "egressfox-engine-s",
+        "overlayDirectory": "release/overlays/sing-box",
+        "tags": [],
+        "dependencyOverrides": [
+          "github.com/go-chi/chi/v5@v5.3.0",
+          "github.com/go-jose/go-jose/v4@v4.1.4",
+          "github.com/insomniacslk/dhcp@v0.0.0-20260719225207-c76316d4aa82",
+          "golang.org/x/crypto@v0.56.0",
+          "golang.org/x/mod@v0.40.0",
+          "google.golang.org/grpc@v1.83.2"
+        ]
+      },
       "source": {
         "repository": "https://github.com/SagerNet/sing-box",
         "tag": "v1.14.1",
@@ -64,7 +95,7 @@
         "sha256": "650d5e3b99a446fb38e820fa87a49562e0c79eab868fff58618ac487a58e554c",
         "format": "raw"
       },
-      "assets": {
+      "upstreamAssets": {
         "linux/amd64": {
           "fileName": "sing-box-1.14.1-linux-amd64-musl.tar.gz",
           "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.1/sing-box-1.14.1-linux-amd64-musl.tar.gz",

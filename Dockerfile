@@ -1,37 +1,66 @@
-# syntax=docker/dockerfile:1.7
-FROM golang:1.27.1-alpine3.23@sha256:96a6b037cd95ee2d72dc63fec59ad8250110fe795111d783d97aa980ec59ec32 AS build
+ARG BUILDPLATFORM
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine3.23@sha256:96a6b037cd95ee2d72dc63fec59ad8250110fe795111d783d97aa980ec59ec32 AS build
+ARG VERSION=0.0.0-dev
+ARG REVISION=unknown
+ARG CREATED=unknown
+ARG SOURCE_DATE_EPOCH=0
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY api ./api
 COPY cmd ./cmd
 COPY internal ./internal
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -ldflags="-s -w" -o /out/egressfox-operator ./cmd/operator
+COPY tools/releasectl ./tools/releasectl
+COPY release ./release
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false \
+    -ldflags="-s -w -X github.com/egressfox-io/egressfox/internal/buildinfo.version=${VERSION} -X github.com/egressfox-io/egressfox/internal/buildinfo.revision=${REVISION} -X github.com/egressfox-io/egressfox/internal/buildinfo.created=${CREATED}" \
+    -o /out/egressfox-operator ./cmd/operator
+RUN CGO_ENABLED=0 GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false -ldflags="-s -w" -o /out/releasectl ./tools/releasectl
 
-FROM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS engines
-ARG TARGETARCH=amd64
-ARG MIHOMO_VERSION=1.19.31
-ARG SING_BOX_VERSION=1.14.1
-RUN apk add --no-cache ca-certificates curl tar
-RUN set -eu; \
-    case "$TARGETARCH" in \
-      amd64) mihomo_sha=d5e74bbddbdfff49a1aef7775bf5911da59f0d7196ed509a0ac914b3653dd5f1; sing_sha=b907365b154e4a7e3e40be15c2cd83433c0fa65c7dc736bdb1b5face2afe4501 ;; \
-      arm64) mihomo_sha=9e0f11afbf38426b8bd88fdc594678f8161c57eccb4e1b77acb12b493904f1d4; sing_sha=d94fc9704372ca2fa2854e54c20b406e4b8779b5ccdd0c557da90ea9344e9631 ;; \
-      *) echo "unsupported architecture" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL -o /tmp/mihomo.gz "https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/mihomo-linux-${TARGETARCH}-v${MIHOMO_VERSION}.gz"; \
-    echo "$mihomo_sha  /tmp/mihomo.gz" | sha256sum -c -; \
-    gunzip -c /tmp/mihomo.gz > /usr/local/bin/mihomo; chmod 0555 /usr/local/bin/mihomo; \
-    curl -fsSL -o /tmp/sing-box.tar.gz "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${TARGETARCH}-musl.tar.gz"; \
-    echo "$sing_sha  /tmp/sing-box.tar.gz" | sha256sum -c -; \
-    mkdir /tmp/sing-box; tar -xzf /tmp/sing-box.tar.gz -C /tmp/sing-box --strip-components=1; \
-    install -m 0555 /tmp/sing-box/sing-box /usr/local/bin/sing-box
+FROM build AS engine-build
+ARG TARGETARCH
+RUN /out/releasectl prepare-engine-source --manifest /src/release/manifest.json --engine mihomo --output-dir /engine-src/mihomo && \
+    /out/releasectl prepare-engine-source --manifest /src/release/manifest.json --engine sing-box --output-dir /engine-src/sing-box
+RUN for dependency in $(/out/releasectl overrides --manifest /src/release/manifest.json --engine mihomo); do cd /engine-src/mihomo && go mod edit -require="$dependency"; done && \
+    cd /engine-src/mihomo && go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false -tags=with_gvisor \
+      -ldflags="-s -w -buildid= -X github.com/metacubex/mihomo/constant.Version=1.19.31" -o /out/mihomo .
+RUN for dependency in $(/out/releasectl overrides --manifest /src/release/manifest.json --engine sing-box); do cd /engine-src/sing-box && go mod edit -require="$dependency"; done && \
+    cd /engine-src/sing-box && go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false \
+      -ldflags="-s -w -buildid= -X github.com/sagernet/sing-box/constant.Version=1.14.1" -o /out/egressfox-engine-s ./cmd/sing-box
+
+FROM --platform=$BUILDPLATFORM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS materials
+RUN apk add --no-cache ca-certificates=20260909-r0
+COPY --from=build /out/releasectl /usr/local/bin/releasectl
+COPY release/manifest.json /release/manifest.json
+RUN releasectl fetch-licenses --manifest /release/manifest.json --output-dir /release/licenses && \
+    mkdir -p /release/state && chown 65532:65532 /release/state
 
 FROM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
-RUN apk add --no-cache ca-certificates && mkdir -p /var/lib/egressfox && chown 65532:65532 /var/lib/egressfox
+ARG VERSION=0.0.0-dev
+ARG REVISION=unknown
+ARG CREATED=unknown
+LABEL org.opencontainers.image.title="EgressFox operator" \
+      org.opencontainers.image.description="Namespace-scoped control plane for desired Mihomo and sing-box configuration" \
+      org.opencontainers.image.source="https://github.com/egressfox-io/egressfox" \
+      org.opencontainers.image.url="https://github.com/egressfox-io/egressfox" \
+      org.opencontainers.image.documentation="https://github.com/egressfox-io/egressfox/tree/${REVISION}/docs" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      org.opencontainers.image.licenses="Apache-2.0 AND GPL-3.0-only AND GPL-3.0-or-later"
 COPY --from=build /out/egressfox-operator /usr/local/bin/egressfox-operator
-COPY --from=engines /usr/local/bin/mihomo /usr/local/bin/mihomo
-COPY --from=engines /usr/local/bin/sing-box /usr/local/bin/sing-box
+COPY --from=engine-build /out/mihomo /usr/local/libexec/egressfox/mihomo
+COPY --from=engine-build /out/egressfox-engine-s /usr/local/libexec/egressfox/egressfox-engine-s
+COPY --from=materials /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=materials /release/state /var/lib/egressfox
+COPY --from=materials /release/licenses/ /usr/share/licenses/egressfox/third-party/
+COPY LICENSE /usr/share/licenses/egressfox/LICENSE
+COPY THIRD_PARTY_NOTICES.md /usr/share/licenses/egressfox/THIRD_PARTY_NOTICES.md
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/egressfox-operator"]

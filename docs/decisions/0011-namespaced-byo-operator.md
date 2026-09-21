@@ -81,10 +81,10 @@ observedGeneration;
 `Published=True` means the desired validated bytes are in the owned Secret, not that
 traffic is ready.
 
-The image includes the exact Mihomo v1.19.31 and sing-box v1.14.1 binaries required
-by ADR 0008. Downloads are version- and checksum-pinned per platform. Q12 still gates
-public redistribution and release provenance; development images are not a public
-runtime release.
+The image includes exact-profile engine binaries required by ADR 0008. ADR 0012
+supersedes the original development packaging: release binaries are built from
+checksum-pinned Mihomo v1.19.31 and sing-box v1.14.1 sources with recorded changes,
+not copied from the upstream release assets.
 
 ## Alternatives
 

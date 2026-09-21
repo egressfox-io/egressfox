@@ -10,16 +10,19 @@ human-readable notice.
 
 | Program | Exact version | Source and corresponding source | License |
 | --- | --- | --- | --- |
-| Mihomo | 1.19.31, tag `v1.19.31`, commit `ab405bad5beeeac8b003bb01f60f134f6df54471` | [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo/tree/ab405bad5beeeac8b003bb01f60f134f6df54471); release source archive `mihomo-1.19.31-source.tar.gz` | GPL-3.0-only; `mihomo-LICENSE` in the image and release license directory |
-| sing-box | 1.14.1, tag `v1.14.1`, commit `1ac1a339cb1223e9c70eae14c44411c75033c02d` | [SagerNet/sing-box](https://github.com/SagerNet/sing-box/tree/1ac1a339cb1223e9c70eae14c44411c75033c02d); release source archive `sing-box-1.14.1-source.tar.gz` | GPL-3.0-or-later plus the upstream no-derivative-name/association notice; `sing-box-LICENSE` and full GPLv3 text in the image and release license directory |
+| Mihomo derivative | 1.19.31, build revision 1, tag `v1.19.31`, commit `ab405bad5beeeac8b003bb01f60f134f6df54471` | [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo/tree/ab405bad5beeeac8b003bb01f60f134f6df54471); complete release source `mihomo-1.19.31-egressfox.1-source.tar.gz`; pinned input `mihomo-1.19.31-source.tar.gz` | GPL-3.0-only; `mihomo-LICENSE` in the image and release license directory |
+| EgressFox Engine S, derived from sing-box | compatible with 1.14.1, build revision 1, tag `v1.14.1`, commit `1ac1a339cb1223e9c70eae14c44411c75033c02d` | [SagerNet/sing-box](https://github.com/SagerNet/sing-box/tree/1ac1a339cb1223e9c70eae14c44411c75033c02d); complete release source `sing-box-1.14.1-egressfox.1-source.tar.gz`; pinned input `sing-box-1.14.1-source.tar.gz` | GPL-3.0-or-later plus the upstream no-derivative-name/association condition; `sing-box-LICENSE` and full GPLv3 text in the image and release license directory |
 
-The release process downloads the official binaries, source archives and license
-files only from URLs and SHA-256 values in [`release/manifest.json`](release/manifest.json).
-Checksum failure is fatal. EgressFox does not modify or link either executable; it
-invokes each as a separate program for validation and bounded probes. Their inclusion
-does not imply sponsorship or endorsement by MetaCubeX, SagerNet or their contributors.
+The release process downloads exact source archives and license files only from URLs
+and SHA-256 values in [`release/manifest.json`](release/manifest.json), then builds
+the separate executables using its recorded Go version, minimum dependency requirements and
+feature tags. Checksum, overlay, build or scan failure is fatal. Complete modified
+source includes `EGRESSFOX-CHANGES.md` and the resulting module files. Inclusion and
+factual compatibility statements do not imply sponsorship or endorsement by
+MetaCubeX, SagerNet or their contributors. In particular, EgressFox Engine S is not
+named sing-box and is not associated with the upstream application.
 
-The exact source archives and license files are published beside every public
+The complete build source archives and license files are published beside every public
 EgressFox release that conveys these executables. A distributor mirroring an image
 or release must preserve the notices and ensure corresponding source remains
 available as required by the applicable license.

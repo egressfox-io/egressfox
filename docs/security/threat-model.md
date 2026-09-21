@@ -6,9 +6,11 @@ authorization/budget/history controls, and M5 revision/context-bound selection p
 receipt-bound decision checkpoints implemented. M6 adds same-namespace Secret
 references, owner-checked Secret publication, scoped RBAC, non-root containers and
 RWO-PVC single-active operation.
-Repository tooling provides read-only CI permissions, pinned Actions, and a
-vulnerability-check command. There is no managed data-plane runtime or supported
-production release. Reporting guidance is in [SECURITY.md](../../SECURITY.md).
+Release tooling adds a centralized checksum manifest, exact engine/source/license
+artifacts, SPDX SBOMs, image/package scanning, keyless signing and provenance.
+Ordinary CI is read-only; publication is tag-bound and protected-environment gated.
+There is no managed data-plane runtime or production stability claim. Reporting
+guidance is in [SECURITY.md](../../SECURITY.md).
 
 M2 HTTP acquisition permits HTTPS by default, requires explicit intent for HTTP and
 non-public destinations, checks resolved addresses on the actual dial path, disables
@@ -66,6 +68,11 @@ Trust boundaries:
 | Kubernetes Secret exposure/excessive RBAC | Same-namespace explicit references, scoped reads/watches and writes, no raw values in status; no broad list/watch if not required; test negative authorization paths |
 | Engine control API or proxy listener exposed | Bind probe control interfaces privately, authenticate where applicable, do not create an open proxy; keep control and application listeners distinct |
 | Dependency/build compromise | Review new dependencies, pin Actions and tool versions, checksum downloaded executables, `govulncheck`, scoped CI permissions; image scanning/signing/SBOM before release pipeline |
+| Compromised upstream engine release or checksum drift | Review exact tag/license/commit, pin source and reference-asset SHA-256 in one manifest, fail closed before extraction, build from source, retain release SBOM/source evidence; residual risk remains if upstream source and release account were compromised together before review |
+| Malicious Go dependency or dependency confusion | `go.mod`/`go.sum`, controlled module proxy/sum database behavior, code review, `govulncheck`, binary SBOM and no dynamic plugin loading; checksums establish identity rather than trustworthiness |
+| Base-image/package mutation | Pin OCI base digest and CA package version, copy only the needed CA bundle into the final layer, generate/scan final-image SBOM and review digest changes |
+| Compromised GitHub Action or untrusted pull request seeking credentials | Full Action commit SHAs, `persist-credentials: false`, read-only PR/validation permissions, no PR release job, exact-tag check, protected `release` environment and job-local write/OIDC permissions |
+| Registry, signing identity or release-workflow compromise | Verify immutable digest plus expected repository/workflow/tag certificate identity and provenance; protected reviewers and transparency records limit but do not eliminate maintainer/GitHub compromise |
 
 Redirect policy covers every hop by rejecting redirects. Internal endpoint/target use
 is legitimate, so private-network exceptions are independent explicit trusted intent.
@@ -121,6 +128,14 @@ and operator state/permissions/deletion are resolved by
 remains under Q7. M3 validator and file recovery
 choices are resolved by [ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md). All open
 items are recorded in the [decision queue](../decisions/open-questions.md).
+
+Release redistribution and supply-chain boundaries are resolved by
+[ADR 0012](../decisions/0012-release-distribution-and-provenance.md). Signatures and
+attestations prove which workflow identity produced bytes; they do not prove the
+source, dependencies, vulnerability database, GitHub or Sigstore were benign.
+Generated SBOM/license detection can be incomplete. GitHub private reporting and
+protected-environment settings remain externally configured controls that must be
+checked before publication.
 
 Configuration validation cannot prove an endpoint is trustworthy, a destination
 will remain available, or a runtime actually loaded the artifact. Operators remain

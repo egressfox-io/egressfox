@@ -23,21 +23,32 @@ derivative work. This record is an engineering compliance decision, not legal ad
 
 ## Decision
 
-Release images may include the official, unmodified Mihomo 1.19.31 and sing-box
-1.14.1 Linux executables. They are separate processes, not linked with or modified
-into EgressFox, so the image is treated as an aggregate: EgressFox remains
-Apache-2.0 and each engine retains its upstream terms. Static versus dynamic linking
-to EgressFox is therefore inapplicable. Packaging the unchanged binaries in a
-container is still conveyance and does not remove their notice or source obligations.
+Release images include EgressFox-built derivatives of Mihomo 1.19.31 and sing-box
+1.14.1 from the exact tagged sources. They remain separate processes and are not
+linked into EgressFox, so the image is treated as an aggregate: EgressFox remains
+Apache-2.0 and each engine derivative remains under its upstream GPL terms. Static
+versus dynamic linking to EgressFox is therefore inapplicable. Container packaging
+is still conveyance and does not remove notice or corresponding-source obligations.
+
+The initially considered official binaries are checksum-pinned in the manifest as
+upstream evidence, but are not shipped: source and binary vulnerability review found
+reachable high/critical findings in both exact releases, and Mihomo's amd64 artifact
+also targets GOAMD64 v3 rather than baseline amd64. Release builds use Go 1.27.1,
+the minimal required feature set and explicit minimum dependency requirements recorded in
+the manifest. Source-mode `govulncheck` and final-image Grype scanning are release
+gates. The sing-box derivative is distributed as `egressfox-engine-s`; its command
+branding is replaced and release material expressly disclaims upstream association
+to honor the additional name/association condition. The upstream name is used only
+for factual source attribution and compatibility identification.
 
 Every release that conveys the engines must include their exact upstream license
-files, the full GPLv3 terms, clear factual attribution without endorsement, and the
-exact source archives beside the other release assets. Source tags, commit hashes,
-download URLs, archive layouts and SHA-256 values live in one reviewed machine-
-readable manifest. The build fails closed on any mismatch. Modified or rebuilt
-engine executables require a new license/build-source review and conspicuous change
-notice before redistribution. Factual engine names identify compatibility only;
-no trademark or endorsement right is claimed.
+files, full GPLv3 terms, clear factual attribution without endorsement, and complete
+corresponding source for the actual binaries beside the other release assets. That
+source includes the applied branding overlay, resolved `go.mod`/`go.sum`, dependency
+requirements and a conspicuous `EGRESSFOX-CHANGES.md`. Source tags, commits, archive
+SHA-256 values, build revision, feature tags and replacements live in one reviewed
+machine-readable manifest. A source checksum mismatch or patch/build/scan failure is
+fatal. No trademark or endorsement right is claimed.
 
 The initial tested and supported profiles are exactly Mihomo 1.19.31 and sing-box
 1.14.1 on linux/amd64 and linux/arm64. Exact native validation rejects other
@@ -52,7 +63,7 @@ the commit timestamp supplies `SOURCE_DATE_EPOCH`/OCI creation time. Immutable O
 digest, rather than a mutable tag, is the deployment identity. The release tooling
 rejects version/revision disagreement.
 
-Release construction produces linux/amd64 and linux/arm64 operator archives, a
+Release construction produces linux/amd64 and linux/arm64 operator binaries, a
 multi-platform OCI image, a Helm package, SPDX JSON SBOMs, engine source/license
 archives and a sorted SHA-256 manifest. Syft, Grype, Cosign and Helm are version-
 and-checksum pinned. `govulncheck` covers reachable Go call paths; Grype evaluates
@@ -79,7 +90,8 @@ publish.
 
 ## Alternatives
 
-Downloading engines at operator startup would avoid EgressFox conveyance but adds a
+Shipping the vulnerable official executables would avoid source modifications but
+failed the release security gate. Downloading engines at operator startup would add a
 runtime network dependency, writable executable path and upstream availability
 trust at a sensitive boundary. User-provided binaries preserve licensing separation
 but make the released operator image incomplete for mandatory validation/probes.
@@ -89,8 +101,8 @@ the GitHub-hosted first-release trust model.
 
 ## Consequences
 
-Release assets are larger because exact source and license material accompanies the
-binaries. Engine upgrades must update one manifest and repeat license, checksum,
+Release assets are larger because complete modified source and license material
+accompanies the binaries. Engine upgrades must update one manifest and repeat license, checksum,
 native, traffic and architecture review. Generated SBOM/license metadata supplements
 rather than replaces the explicit engine notices. Base repositories, vulnerability
 databases, GitHub OIDC/Sigstore and upstream release accounts remain documented

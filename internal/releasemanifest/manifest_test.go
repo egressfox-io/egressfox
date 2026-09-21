@@ -51,7 +51,7 @@ func TestFetchMaterializesSupportedFormats(t *testing.T) {
 			want := []byte("verified executable")
 			archive := test.archive(want)
 			digest := sha256.Sum256(archive)
-			output := filepath.Join(t.TempDir(), "tool")
+			output := filepath.Join(t.TempDir(), "nested", "tool")
 			download := Download{FileName: "tool", URL: "https://fixtures.invalid/tool", SHA256: hex.EncodeToString(digest[:]), Format: test.format, BinaryPath: test.binaryPath}
 			if err := Fetch(context.Background(), fixtureClient(archive), download, output, true); err != nil {
 				t.Fatal(err)
@@ -83,6 +83,39 @@ func TestArchiveRejectsUnsafePaths(t *testing.T) {
 	}
 }
 
+func TestExtractSourceArchive(t *testing.T) {
+	archiveName := filepath.Join(t.TempDir(), "source.tar.gz")
+	archiveBytes := sourceTarGzipBytes(t, []tar.Header{
+		{Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader},
+		{Name: "project/", Typeflag: tar.TypeDir, Mode: 0o755},
+		{Name: "project/go.mod", Typeflag: tar.TypeReg, Mode: 0o644, Size: 12},
+	}, []byte("module test\n"))
+	if err := os.WriteFile(archiveName, archiveBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "source")
+	if err := ExtractSourceArchive(archiveName, output); err != nil {
+		t.Fatal(err)
+	}
+	if content, err := os.ReadFile(filepath.Join(output, "go.mod")); err != nil || string(content) != "module test\n" {
+		t.Fatalf("extracted content = %q, err=%v", content, err)
+	}
+}
+
+func TestExtractSourceArchiveRejectsTraversal(t *testing.T) {
+	archiveName := filepath.Join(t.TempDir(), "source.tar.gz")
+	archiveBytes := sourceTarGzipBytes(t, []tar.Header{
+		{Name: "project/", Typeflag: tar.TypeDir, Mode: 0o755},
+		{Name: "project/../outside", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1},
+	}, []byte("x"))
+	if err := os.WriteFile(archiveName, archiveBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExtractSourceArchive(archiveName, filepath.Join(t.TempDir(), "source")); err == nil {
+		t.Fatal("source traversal archive succeeded")
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -111,5 +144,29 @@ func tarGzipBytes(value []byte) []byte {
 	_, _ = archive.Write(value)
 	_ = archive.Close()
 	_ = compressed.Close()
+	return output.Bytes()
+}
+
+func sourceTarGzipBytes(t *testing.T, headers []tar.Header, value []byte) []byte {
+	t.Helper()
+	var output bytes.Buffer
+	compressed := gzip.NewWriter(&output)
+	archive := tar.NewWriter(compressed)
+	for _, header := range headers {
+		if err := archive.WriteHeader(&header); err != nil {
+			t.Fatal(err)
+		}
+		if header.Typeflag == tar.TypeReg {
+			if _, err := archive.Write(value); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := compressed.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return output.Bytes()
 }
