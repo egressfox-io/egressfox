@@ -29,6 +29,7 @@ read the owning design and accepted decisions for the area they plan to change.
 | Which decisions are accepted and why? | [ADR index](decisions/README.md) |
 | What remains unresolved and when must it be settled? | [Decision queue](decisions/open-questions.md) |
 | What should be implemented next and how is completion measured? | [Roadmap](roadmap/README.md) |
+| What is the P1 objective and milestone sequence? | [P1 roadmap](roadmap/p1.md) |
 | Which ideas are P0 vs future scope? | [Feature catalog](roadmap/features.md) |
 | How do I branch, build, validate, commit, and hand off? | [Workflow](development/workflow.md) |
 | Which tests and research experiments belong with a change? | [Testing](development/testing.md) |

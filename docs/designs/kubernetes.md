@@ -158,6 +158,27 @@ iptables/nftables, or admission permissions for a configuration-only operator.
 Non-root execution, read-only root filesystem with dedicated writable state/temp
 volumes, dropped capabilities, resource bounds, and secure TLS are planned defaults.
 
+### P1 API and runtime direction
+
+The [P1 roadmap](../roadmap/p1.md) is authoritative for sequencing. M7 adds an
+explicit managed runtime mode while omission remains the existing BYO behavior. It
+owns a single-replica engine Deployment, authenticated SOCKS ClusterIP Service and
+revision-bound generation Secret; it does not adopt user workloads. Exact fields,
+client credential ownership, image authority, Secret retention and deletion are Q13
+and require an ADR before CRD generation.
+
+Managed status separates `Published`, `Activated` and `RuntimeReady`. The common
+first activation path is a fresh engine process in a changed Pod template, not an
+engine-specific live reload. Readiness establishes process/listener availability
+for the exact Pod generation, not destination traffic health. BYO activation stays
+unknown.
+
+M9 evolves `ProxyPool` toward bounded named probe/selection profiles over one source
+inventory while preserving the current fields as a legacy/default profile. M10 adds
+`EgressPolicy` for routing intent only: a Gateway references at most one policy, and
+the policy has no workload selector. Q15 and Q16 own exact migration and schema
+choices. Cross-namespace grants, operator HA and transparent attachment are not P1.
+
 Helm is P0 delivery work after generated API/controller behavior exists, not an
 empty chart now. Chart upgrades must explicitly manage CRD evolution; validate a
 clean install, upgrade, deletion/retention behavior, and RBAC in kind. Keep generated
@@ -184,4 +205,5 @@ No frozen YAML API, EgressPolicy in P0, multi-tenancy, automatic workload routin
 transparent interception, or operator HA implementation. The
 [ADR 0011](../decisions/0011-namespaced-byo-operator.md) owns the P0 API, topology,
 deletion, RBAC and state decisions. P1 requires a new decision before managed
-runtimes, cross-namespace use or HA.
+runtimes. Q15/Q16 gate profile/policy APIs; cross-namespace use and HA are deferred
+beyond the committed P1 path.

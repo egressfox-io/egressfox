@@ -1,6 +1,7 @@
 # Architecture and domain language
 
-Status: accepted boundaries with M1–M6 components implemented. The
+Status: accepted boundaries with M1–M6 components implemented and P1 sequencing
+designed. No P1 product behavior is implemented. The
 [ADRs](decisions/README.md) record durable choices; detailed designs distinguish
 implemented behavior from future requirements.
 
@@ -154,3 +155,8 @@ It does not authorize shared SQLite or multiple replicas.
 Transparent networking, per-connection decisions, HA storage, and a public extension
 SDK are not part of this foundation. Track unresolved details in the
 [decision queue](decisions/open-questions.md) rather than making them implicit in code.
+
+The [P1 roadmap](roadmap/p1.md) preserves these boundaries while adding managed
+process ownership around an existing engine, not a new data plane. It orders runtime
+activation before resilient sources, target-aware selection, routing composition,
+metrics and explainability so later APIs consume explicit lifecycle/evidence states.

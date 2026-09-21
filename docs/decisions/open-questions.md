@@ -9,13 +9,18 @@ the contributor undertaking the gated milestone owns bringing evidence.
 | ID | Question and decision evidence needed | Gate | Design owner |
 | --- | --- | --- | --- |
 | Q5 | Resolved by [ADR 0010](0010-deterministic-adaptive-selection.md): common hard eligibility, Wilson-adjusted latency, deterministic Top-N, residence/hysteresis and failure cooldown/recovery with receipt-bound restart state. Defaults remain evaluation inputs rather than universal optimality claims. | Resolved in M5 | [Selection](../designs/observations-and-selection.md) |
-| Q7 | File and Kubernetes Secret publication are resolved by ADRs 0008 and 0011. Runtime activation/reload/rollback acknowledgment remains open. | Reload at P1 | [Publication](../designs/policy-rendering-publication.md) |
+| Q7 | File and Kubernetes Secret publication are resolved by ADRs 0008 and 0011. For M7, define exact-generation managed activation, readiness and failed-rollout/LKG semantics. Restart-based rollout is the common first path; engine-specific live reload remains optional. | M7 before managed runtime | [Publication](../designs/policy-rendering-publication.md) and [P1 roadmap](../roadmap/p1.md) |
 | Q10 | Native escape-hatch merge/ownership rules, fragments/base composition, multiple policy precedence, unknown diversity domains and multi-source attribution. Specify unsupported/infeasible behavior. | P1 before those features | [Renderers](../designs/policy-rendering-publication.md) and [selection](../designs/observations-and-selection.md) |
 | Q11 | Stable CLI schema/exit behavior, explain authorization/redaction, rich Rust/Ratatui TUI value, Web UI interfaces. Start with actual operational use cases; no second workspace now. | CLI at M3/M5; UI later | [Feature catalog](../roadmap/features.md) |
+| Q13 | Managed runtime API union, inbound client authentication, Pod-network listener constraints, trusted image authority, owned resource set, immutable generation-Secret retention, rollout/deletion behavior and safe activation/status identity. | M7 before CRD/code | [Kubernetes](../designs/kubernetes.md), [publication](../designs/policy-rendering-publication.md) and [P1 roadmap](../roadmap/p1.md) |
+| Q14 | HTTP source union, conditional-validator/cache identity, protected cache schema, fallback expiry, retry/backoff budget and status semantics. | M8 before persistent cache/API | [Sources](../designs/endpoints-and-sources.md) and [P1 roadmap](../roadmap/p1.md) |
+| Q15 | Named target-profile identity, mapping from legacy `probe`/`selection`, bounded status, inventory-by-profile scheduler budget and profile lifecycle cleanup. | M9 before CRD/code | [Selection](../designs/observations-and-selection.md), [Kubernetes](../designs/kubernetes.md) and [P1 roadmap](../roadmap/p1.md) |
+| Q16 | Exact common routing matches/actions for the pinned engines, ordered-rule/DNS semantics, profile references, explicit final behavior, infeasible groups and legacy implicit-policy migration. | M10 before EgressPolicy CRD | [Renderers](../designs/policy-rendering-publication.md), [Kubernetes](../designs/kubernetes.md) and [P1 roadmap](../roadmap/p1.md) |
+| Q17 | Bounded latest-decision report, opt-in disclosure, deterministic truncation, authorization/RBAC, CLI machine-output versioning and status-size budget. | M12 before explanation API/CLI | [Selection](../designs/observations-and-selection.md), [Kubernetes](../designs/kubernetes.md) and [P1 roadmap](../roadmap/p1.md) |
 
-The known P1-HA/P2-PostgreSQL tension is deliberate: HA must either use a supported
-single-writer durable-state arrangement, choose another design, or explicitly
-revise priorities. It must not be implemented by casually increasing replicas.
+Operator HA and PostgreSQL are now both deferred beyond the committed P1 path. A
+future HA design must choose supported durable state and fencing; it must not be
+implemented by casually increasing replicas or sharing SQLite.
 
 ## Resolved gates
 

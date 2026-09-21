@@ -143,12 +143,13 @@ standalone fragment syntax alone is insufficient. Record the base revision.
 
 ### Native escape hatches and composition
 
-P1 may allow explicitly engine-scoped native additions and user base configurations.
+Future work may allow explicitly engine-scoped native additions and user base configurations.
 They need a documented merge/ownership policy: reject reserved-field collisions,
 duplicate tags, unsafe listeners/hooks, and attempts to override validated routing
 or credentials without explicit permitted semantics. No opaque arbitrary deep merge.
 Validate the final composition, not just EgressFox's generated portion. This path
-does not grant subscription content authority over output configuration.
+does not grant subscription content authority over output configuration. Native
+composition is deferred beyond the committed P1 path.
 
 ## Publication state and LKG
 
@@ -175,6 +176,21 @@ Use distinct concepts: candidate, validated, published, and activated. P0 LKG me
 the last successfully published, validated artifact plus its provenance. In BYO
 mode activation remains unknown; a publication Condition must not claim traffic
 readiness. Future reload/activation adapters can report a separate acknowledgment.
+
+P1 M7 makes that acknowledgment concrete only for an operator-managed runtime. The
+first common path binds a fresh process Pod to an immutable generation Secret and
+uses engine listener readiness plus completed Deployment rollout as activation
+evidence. It does not enable Mihomo's control API or assume sing-box `SIGHUP` has the
+same semantics. The previous ready generation and its Secret remain until the new
+generation activates; Q7/Q13 must define failure, retention and deletion precisely.
+BYO mode remains publication-only.
+
+P1 M10 expands the common model only after Q16 proves a bounded ordered rule/action
+intersection for both exact engine versions. One Gateway references at most one
+EgressPolicy, so policy precedence is explicit rather than a merge. The initial
+target is named profile groups, ordered domain/CIDR/TCP-port matching and explicit
+profile/direct/block final behavior; exact version tests may narrow, but never
+silently approximate, that set.
 
 Conceptual transition:
 

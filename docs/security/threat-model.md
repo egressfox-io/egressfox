@@ -12,6 +12,10 @@ Ordinary CI is read-only; publication is tag-bound and protected-environment gat
 There is no managed data-plane runtime or production stability claim. Reporting
 guidance is in [SECURITY.md](../../SECURITY.md).
 
+The [P1 roadmap](../roadmap/p1.md) is design, not an implemented control. Its first
+milestone introduces a new authenticated proxy-listener and managed-workload trust
+boundary only after Q7/Q13 resolve exact-generation activation and ownership.
+
 M2 HTTP acquisition permits HTTPS by default, requires explicit intent for HTTP and
 non-public destinations, checks resolved addresses on the actual dial path, disables
 environment proxy use, limits same-origin redirects, time and bytes, and exposes only
@@ -73,6 +77,25 @@ Trust boundaries:
 | Base-image/package mutation | Pin OCI base digest and CA package version, copy only the needed CA bundle into the final layer, generate/scan final-image SBOM and review digest changes |
 | Compromised GitHub Action or untrusted pull request seeking credentials | Full Action commit SHAs, `persist-credentials: false`, read-only PR/validation permissions, no PR release job, exact-tag check, protected `release` environment and job-local write/OIDC permissions |
 | Registry, signing identity or release-workflow compromise | Verify immutable digest plus expected repository/workflow/tag certificate identity and provenance; protected reviewers and transparency records limit but do not eliminate maintainer/GitHub compromise |
+
+## P1 design gates
+
+The following controls are required by the P1 milestone that introduces each new
+boundary; they must not be described as present before that implementation ships.
+
+| Planned boundary | Required control before shipment |
+| --- | --- |
+| Managed proxy Service | Secret-backed client authentication, ClusterIP only, CNI-dependent NetworkPolicy as defense in depth, no engine control API exposure, non-root/read-only/drop-all container and exact owner collision checks |
+| Generation activation | Immutable revision-bound config input, protected receipt binding, old-ready generation retention during failed rollout, bounded cleanup and separate Published/Activated/RuntimeReady states |
+| Durable HTTP source cache | Preserve P0 SSRF/redirect/auth rules on retries, private bounded cache, validator/auth identity separation, explicit expiry and no failure-to-empty conversion |
+| Multiple target profiles | Independent target authorization and scheduler budgets; adding one target grants no rights to another and cannot create an unbounded inventory/profile product |
+| EgressPolicy routing | Explicit direct/block/final behavior, ordered rules, no empty-pool direct fallback, exact engine capability rejection and no subscription-supplied rules/hooks |
+| Metrics and explanations | Bounded enum labels, no endpoint/resource/URL labels, authorized opt-in decision detail, deterministic truncation and credential canaries across text/JSON/status |
+
+Managed runtime readiness can prove only that the exact process generation is ready
+on its proxy listener. It is not proof of arbitrary destination reachability,
+application success or high availability. A single replica plus PDB would not change
+that limitation; runtime replicas and operator HA are outside the committed P1 path.
 
 Redirect policy covers every hop by rejecting redirects. Internal endpoint/target use
 is legitimate, so private-network exceptions are independent explicit trusted intent.

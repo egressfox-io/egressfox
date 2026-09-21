@@ -251,6 +251,20 @@ must be visible. Selection must not keep an endpoint indefinitely simply because
 its source failed to refresh. Last-known-good *source content* and last-known-good
 *published configuration* are separate objects and policies.
 
+### P1 resilient refresh direction
+
+P1 M8 exposes the existing HTTP acquisition path to Kubernetes through a validated
+source union whose URL and sensitive headers remain same-namespace Secret references.
+It adds conditional requests, bounded retry/backoff and a protected durable content
+cache. Q14 must define validator/cache identity, expiry, restart recovery and status
+before schema or persistence changes. A 304 can reuse only a matching usable cache;
+cache fallback is time-bounded and cannot turn failure into an empty snapshot.
+
+File, environment, ConfigMap and Vault adapters are not in the committed P1 path.
+Subscription quota/expiry remains optional attributed metadata, never trusted
+selection policy. Structured engine-native input formats and protocol expansion need
+separate demand and semantic review.
+
 An M2 committed snapshot is the complete current contribution of one source. A
 successful replacement removes relationships absent from that source while an
 endpoint contributed by another committed source remains. A failed attempt changes

@@ -8,8 +8,9 @@ contracts implemented under ADRs 0009 and 0010. Prometheus export remains future
 Health is evidence about an endpoint reaching a destination from a particular
 vantage at a particular time. A single global `healthy` boolean loses that meaning.
 P0 includes destination-aware measurement and adaptive selection with history;
-P1 expands to multiple profiles and destination-specific selection policies.
-P0 can start with one explicit profile per pool while retaining these dimensions.
+P1 M9 exposes multiple named profiles and destination-specific selection policies
+over one shared inventory. P0 uses one explicit profile per pool while retaining
+the dimensions M9 needs.
 
 EgressFox selects desired pool membership or a preferred endpoint. The engine
 still makes every connection-level routing/balancing decision. A small advantage
@@ -186,10 +187,15 @@ Avoid two competing optimization loops: EgressFox may manage pool membership whi
 an explicitly requested engine URL-test group picks active members. Explain which
 loop made a switch; do not attribute every data-plane failover to EgressFox.
 
-P1 diversity adds constraints such as `maxNodes: 6`, `maxPerCountry: 2`,
+Possible future diversity adds constraints such as `maxNodes: 6`, `maxPerCountry: 2`,
 `maxPerASN: 1`, `maxPerSource: 3`. These are illustrative. Define whether limits
 are hard, how unknown/multi-source values count, and what an infeasible result
 means before selecting an optimization algorithm. Never silently relax constraints.
+
+The committed P1 path does not schedule diversity. Source provenance exists today,
+but country/ASN/provider enrichment does not, and one endpoint may have multiple
+sources. A source-only constraint remains an optional P1 candidate after Q10 resolves
+attribution and M9 establishes named profiles; geography/ASN diversity is later work.
 
 ## Explainability and observability
 
@@ -223,6 +229,9 @@ Default labels should be bounded enums such as engine, stage, result, and reason
 No endpoint IDs, raw hosts, URIs, destinations, external IPs, content digests, or
 arbitrary error messages as labels. Even pool/source labels need a budget and
 series-removal policy. Authenticated diagnostics can provide per-endpoint detail.
+P1 M11 implements the bounded metrics adapter; M12 may expose only the latest
+deterministically truncated decision report through an authorized Kubernetes-native
+boundary after Q17. It does not store observation history in CR status.
 See [Prometheus naming guidance](https://prometheus.io/docs/practices/naming/).
 
 ## Non-goals and open questions
