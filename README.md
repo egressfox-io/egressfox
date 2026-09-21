@@ -174,8 +174,9 @@ Read [SECURITY.md](SECURITY.md) before reporting a sensitive issue and see the
 
 P0 milestones M1–M6 and post-M6 release hardening are complete. The current API is
 `v1alpha1`, Kubernetes 1.37.0 is the tested baseline, and the project is not
-production-certified. The next unit of work is P1 design; no P1 feature is implied
-by the current repository.
+production-certified. P1 is now designed as six bounded milestones; M7 managed
+gateway/activation is the next implementation unit. No P1 feature is implemented or
+implied by the current repository. See the [P1 roadmap](docs/roadmap/p1.md).
 
 ## Documentation
 

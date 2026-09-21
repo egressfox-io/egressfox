@@ -26,22 +26,27 @@ The first slices have explicit supported protocols/formats. No broad protocol li
 is an implicit promise of support. P0 holds transactional source state through a
 failed refresh but does not include the complete P1 HTTP caching/fallback system.
 
-## P1 — Strong v1.0 experience
+## P1 — Self-contained namespace egress service
 
-| ID | Capability group | Key dependency or caution |
+The [P1 roadmap](p1.md) is the authoritative implementation order. These must-have
+capabilities form one product path rather than independent feature bids.
+
+| ID | Capability group | Milestone |
 | --- | --- | --- |
-| P1-01 | Managed Mihomo and managed sing-box workloads | Runtime ownership, secure images/listeners, reload/activation and rollout semantics |
-| P1-02 | EgressPolicy, multiple pools and explicit policy composition | Resolve gateway/policy precedence and alpha API evolution |
-| P1-03 | Multiple probe profiles, destination-aware scoring and diversity-aware selection | Preserve health dimensions; define unknown/multi-source failure-domain attribution |
-| P1-04 | Vault, credential-free ConfigMap and generic HTTP/webhook outputs | Each target needs idempotency, auth, acknowledgment and LKG semantics |
-| P1-05 | Reload hooks and runtime activation reporting | Published is not activated; interruption/rollback handling |
-| P1-06 | ServiceMonitor and Grafana dashboard | Bounded metrics and an actually supported monitoring contract |
-| P1-07 | Source caching, ETag/Last-Modified, last-known-good source fallback | Correct source revision, auth scope, freshness, eviction and empty-response rules |
-| P1-08 | Subscription quota/expiry metadata | Treat provider assertions as attributed data, not blindly trusted policy |
-| P1-09 | Explainability CLI, dry-run and configuration diff | Compact P0 reasons; redact secret-bearing changes and secure detailed diagnostics |
-| P1-10 | Renderer capability matrix/discovery, native escape hatch and base-config composition | Tested version-specific semantics and reserved-field ownership |
-| P1-11 | Operator HA | Q9: supported state recovery and write fencing; not merely replica count |
-| P1-12 | Strong runnable examples and operational documentation | Examples follow real supported features and test environments |
+| P1-01 | Managed single-replica Mihomo/sing-box SOCKS workload and ClusterIP Service, with BYO preserved | M7 |
+| P1-02 | Exact-generation activation and runtime-readiness evidence distinct from publication | M7 |
+| P1-03 | Secret-referenced HTTP source refresh with validators, bounded retry and protected LKG cache | M8 |
+| P1-04 | Multiple named target/probe/selection profiles over one shared source inventory | M9 |
+| P1-05 | One bounded EgressPolicy per gateway with ordered common routing and explicit final behavior | M10 |
+| P1-06 | Low-cardinality lifecycle metrics, optional ServiceMonitor and supported dashboard/alerts | M11 |
+| P1-07 | Go explainability CLI over a bounded authorized decision report | M12 |
+| P1-08 | Managed-path examples, upgrade/recovery guidance and both-engine acceptance scenarios | M7–M12 |
+
+Optional P1 candidates are not scheduled milestones: engine-specific live reload,
+managed data-plane replicas/PDB/topology, source-provenance diversity, one
+demand-backed protocol slice and attributed subscription quota/expiry display. They
+require a roadmap revision after the must-have path demonstrates the need and fixes
+their API/security contract.
 
 ## P2 — Advanced product
 
@@ -53,7 +58,10 @@ failed refresh but does not include the complete P1 HTTP caching/fallback system
 | P2-04 | kubectl plugin and Web UI | Stable authenticated interfaces; no UI stack now |
 | P2-05 | Advanced rollout strategies | Activation evidence and controlled traffic tests |
 | P2-06 | Sidecar/transparent proxy experiments | Separate networking/security design; explicit proxy remains initial model |
-| P2-07 | OpenTelemetry and additional outputs | Proven use case, cardinality/secrecy and target-specific guarantees |
+| P2-07 | OpenTelemetry, Vault and additional source/output adapters | Proven use case, secrecy and target-specific idempotency/acknowledgment guarantees |
+| P2-08 | Operator HA and shared durable state | Real write fencing/recovery; no shared SQLite or replica-count shortcut |
+| P2-09 | Cross-namespace references | Explicit grant/reference model and scoped Secret authorization |
+| P2-10 | Engine-native composition and base-config escape hatch | Reserved-field ownership, safe merge and final native validation |
 
 ## P3 — Future platform exploration
 
@@ -84,7 +92,7 @@ with a concrete use case:
 - Output modes: complete configs, provider/proxy fragments, outbound fragments,
   sensitive stdout export, and future output adapters.
 - CLI ideas: validate, fetch, nodes, probe, score, explain, render, diff, run; a
-  Rust/Ratatui rich CLI/TUI is undecided and does not justify a workspace today.
+  Rust/Ratatui rich CLI/TUI is deferred and does not justify a workspace today.
 
 The [product document](../product.md) owns the thesis purpose. Experimental static,
 lowest-latency and adaptive comparisons are enabled by P0 testability, without

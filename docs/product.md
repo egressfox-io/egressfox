@@ -54,18 +54,33 @@ as `validate`, `fetch`, `nodes`, `probe`, `score`, `explain`, `render`, and `dif
 are CLI direction, not existing commands or a frozen command contract.
 
 The first Kubernetes experience publishes configuration for a runtime the user
-operates (BYO/unmanaged). Optional managed workloads are P1. Explicit application
-proxy settings are the initial connectivity model, conceptually
-`HTTPS_PROXY=http://egress-gateway.namespace.svc:8080`. No managed engine Service exists yet.
+operates (BYO/unmanaged). Managed workloads are P1. Explicit application proxy
+settings are the initial connectivity model, conceptually
+`ALL_PROXY=socks5://egress-gateway.namespace.svc:1080`. No managed engine Service exists yet.
+
+## P1 product direction
+
+The authoritative [P1 roadmap](roadmap/p1.md) turns the completed BYO control plane
+into a self-contained, namespace-scoped egress Service without changing which side
+owns the data plane. Its must-have path adds a managed authenticated SOCKS runtime,
+exact-generation activation evidence, resilient managed source refresh,
+target-aware selection profiles, bounded routing policy, operational metrics and a
+redacted explanation surface.
+
+P1 intentionally chooses product completeness over feature count. BYO remains a
+supported mode, `EgressPolicy` expresses engine-executed routing rather than workload
+attachment, and readiness never becomes a claim that arbitrary destination traffic
+works. Operator HA, transparent routing, cross-namespace references, Vault, generic
+outputs, native deep merge, broad protocols and a Web UI remain later work.
 
 ## Non-goals
 
 - A new proxy/VPN implementation, packet router, or connection balancer.
 - Transparent interception, Cilium integration, admission-driven workload
-  routing, eBPF, sidecar injection, or TProxy automation in P0.
+  routing, eBPF, sidecar injection, or TProxy automation in P0 or the committed P1 path.
 - A universal abstraction covering every feature of every engine.
-- A multi-tenant or highly available distributed control plane in P0.
-- A Rust workspace or a rich TUI in P0; language/UI choice remains open.
+- A multi-tenant or highly available distributed control plane in P0 or P1.
+- A Rust workspace or a rich TUI in P0 or the committed P1 path.
 - A thesis-specific production architecture or unmeasured claims of adaptation quality.
 
 ## What success should look like

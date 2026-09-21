@@ -16,10 +16,12 @@ SBOMs, vulnerability gates, keyless signing/provenance design and a non-publishi
 dry run. There is still no product CLI, managed engine, activation acknowledgment,
 cross-namespace API or HA topology.
 
-**Next horizon: P1 design.** P1 may design managed runtimes, activation
-acknowledgment, richer policy and HA; none is implied by the M6 BYO operator or the
-release machinery. A public alpha is a separate maintainer decision and requires
-the protected repository settings in the release guide.
+**Next implementation horizon: P1 M7.** The authoritative
+[P1 product roadmap](p1.md) now orders managed runtime/activation, resilient source
+refresh, target-aware selection, bounded routing policy, observability and
+explainability. No P1 behavior is implemented yet. A public alpha is a separate
+maintainer decision and requires the protected repository settings in the release
+guide.
 
 ## P0 milestones
 
@@ -50,14 +52,15 @@ implemented for shipped paths, a supported version matrix, a private security
 reporting process, dependency/license review, and honest operational limits.
 No dates or quality claims are inferred from this milestone sequence.
 
-## Later horizons
+## P1 and later horizons
 
-P1 develops managed runtimes, richer policy/composition/destination/diversity
-features, operational tooling, additional outputs, and HA once its state design is
-resolved. P2 adds advanced storage/UI/customization/rollout ideas. P3 explores deeper
-datapath/fleet integration. The full [catalog](features.md) preserves these ideas;
-they are not authorization to build them during a P0 task.
+The [P1 product roadmap](p1.md) is the single authority for its objective, six
+milestones, dependencies, scope tiers and exit criteria. The full
+[catalog](features.md) preserves optional and later ideas without turning them into
+implicit milestones.
 
-Dependencies may justify revising priorities through a design change. In particular,
-P1 HA cannot assume the P2 PostgreSQL adapter already exists; it must supersede the
-single-active topology in ADR 0011 with a supported state and fencing design.
+P2 holds advanced storage, operator HA, cross-namespace grants, native composition,
+additional output systems and richer UI/customization. P3 explores transparent
+datapath and fleet integration. Operator HA cannot assume leader election or a
+shared SQLite file is sufficient; it must supersede the single-active topology in
+ADR 0011 with supported durable state and fencing.
