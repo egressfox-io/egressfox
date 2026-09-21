@@ -1,6 +1,6 @@
 # Release hardening and supply-chain readiness
 
-Status: in progress. Prepared/started: 2026-09-21.
+Status: complete. Prepared/completed: 2026-09-21.
 Branch/baseline: `chore/release-hardening` from `0a198fd`.
 
 ## Objective and boundaries
@@ -20,15 +20,15 @@ settings, or use a live signing identity.
 ## Decisions and entry gates
 
 Q12 research uses the exact Mihomo v1.19.31 and sing-box v1.14.1 repository tags,
-license files and official immutable release metadata. Both programs permit
-redistribution under GPLv3 terms; sing-box uses GPL-3.0-or-later and additionally
-prohibits derivative works from using its name or implying association without
-consent. EgressFox will redistribute the official, checksum-verified, unmodified
-executables as independent programs in an aggregate container. It will preserve
-notices, provide full license text and clear corresponding-source access, publish
-the exact tagged source archives with release assets, avoid endorsement claims, and
-leave the EgressFox operator under Apache-2.0. This is a conservative engineering
-reading of the cited license text, not legal advice.
+license files and immutable release metadata. Both programs permit redistribution
+under GPLv3 terms; sing-box uses GPL-3.0-or-later and additionally prohibits a
+derivative from using its name or implying association without consent. Initial
+scans found reachable high/critical findings in the official binaries, so release
+images instead build reviewed derivatives from the pinned sources and fixed module
+requirements. The sing-box derivative is branded `egressfox-engine-s` and disclaims
+association. Releases carry licenses, notices and complete modified source including
+resolved module files and conspicuous changes. EgressFox remains Apache-2.0. This is
+an engineering compliance decision based on the cited text, not legal advice.
 
 The initial release contract is SemVer prerelease tags, exact Mihomo 1.19.31 and
 sing-box 1.14.1 profiles, Kubernetes 1.37.0, and linux/amd64 plus linux/arm64. One
@@ -39,7 +39,7 @@ separate trusted manually approved/tag-bound job; ordinary CI remains read-only.
 Pinned release tools are Syft 1.52.0 (SPDX JSON), Grype 0.119.0, Cosign 3.1.3 and
 Helm 4.3.0. Keyless GitHub OIDC signing and GitHub/Sigstore attestations avoid
 repository-held private keys. No SLSA level is claimed. Exact decisions and evidence
-will be recorded in ADR 0012 and the release guide.
+are recorded in ADR 0012 and the release guide.
 
 ## Checkpoints
 
@@ -49,14 +49,14 @@ will be recorded in ADR 0012 and the release guide.
   model for Q12.
 - [x] Add the engine/tool manifests, verification tests, notices/licenses and source
   availability contract.
-- [ ] Add coherent version metadata, hardened multi-architecture image inputs and
+- [x] Add coherent version metadata, hardened multi-architecture image inputs and
   Helm/version consistency checks.
-- [ ] Add dry-run release construction, SBOMs, scans, checksums and acceptance checks.
-- [ ] Add trusted release signing/provenance workflow with least privilege and no
+- [x] Add dry-run release construction, SBOMs, scans, checksums and acceptance checks.
+- [x] Add trusted release signing/provenance workflow with least privilege and no
   publication during validation.
-- [ ] Update security/reporting, threat model, README, operations, roadmap, ADRs and
+- [x] Update security/reporting, threat model, README, operations, roadmap, ADRs and
   maintainer/user verification documentation.
-- [ ] Run all repository, native, Kubernetes and release validations available in
+- [x] Run all repository, native, Kubernetes and release validations available in
   this environment; record precise limitations; commit atomic checkpoints and leave
   the branch clean.
 
@@ -83,14 +83,34 @@ installed, while Syft and Grype are not, so the dry-run tooling must bootstrap t
 checksum-pinned versions without registry credentials.
 
 ADR 0012 now resolves the repository-owned portion of Q12. The checked manifest
-binds both compiled profiles to exact official engine binaries, source archives and
-license files for linux/amd64 and linux/arm64, plus checksum-pinned Syft, Grype,
+binds both compiled profiles to exact source archives, license files, build revisions,
+module requirements, feature tags, branding overlays and reference official artifacts,
+plus checksum-pinned Syft, Grype,
 Cosign and Helm downloads for supported developer/CI hosts. `releasectl` validates
 the contract and materializes only verified bounded artifacts. Unit tests cover the
 repository manifest, raw/gzip/tar extraction, checksum failure and traversal input.
 
 ## Resume and handoff
 
-Next, integrate the manifest into multi-architecture image construction and add the
-single release-version flow. Do not begin P1. On completion update this plan, its
-index, Q12, the roadmap and the release acceptance evidence.
+The complete Docker Buildx dry run passed for linux/amd64 and linux/arm64. It produced
+byte-identical repeated operator/engine builds, complete modified engine source,
+SPDX JSON SBOMs, a Helm package, a multi-platform OCI archive and a verified sorted
+SHA-256 manifest. Source-mode `govulncheck`, six artifact Grype reports and the final
+image Grype report passed the high/critical gate. An initial final-image scan exposed
+an Alpine zlib finding; the release image now uses `scratch`, contains no OS packages,
+and the repeated final-image scan reports zero high/critical findings. The pinned
+Alpine stage remains only to supply the CA bundle and license material.
+
+Validation completed with `make fmt`, `make generate`, `make manifests`,
+`make helm-check`, `make check`, `make test-envtest`, `make vuln`,
+`VERSION=v0.1.0-alpha.1 make release-dry-run`, `make e2e-kind` and
+`git diff --check`. The envtest controller suite, Kubernetes 1.37.0 kind traffic/RBAC/
+restart/LKG/Helm lifecycle test and both supported architecture builds passed. The
+repository scan reported no reachable Go vulnerabilities; it separately disclosed
+one imported-module finding with no called vulnerable symbol. No live signing,
+attestation, registry push, tag or release was performed.
+
+External maintainer actions remain intentionally manual: enable GitHub private
+vulnerability reporting, protect the `release` environment with required reviewers,
+restrict release tag creation, and confirm the GHCR package visibility/retention
+policy before the first publication. P1 remains unstarted.

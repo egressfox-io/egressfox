@@ -13,7 +13,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0005](0005-observations-history.md) | Complete | M4 bounded observations and persistent history |
 | [0006](0006-adaptive-reconciliation.md) | Complete | M5 adaptive standalone reconciliation |
 | [0007](0007-kubernetes-operator.md) | Complete | M6 Kubernetes BYO operator and Secret publication |
-| [0008](0008-release-hardening.md) | In progress | First alpha release hardening and Q12 resolution |
+| [0008](0008-release-hardening.md) | Complete | First alpha release hardening and Q12 resolution |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

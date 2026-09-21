@@ -9,15 +9,17 @@ product is finished.
 ## Current state
 
 M0–M5 are complete as of 2026-09-19. M6 (Kubernetes BYO operator and Secret
-delivery) is complete as of 2026-09-21. The repository now contains the complete P0
-control-plane path, generated alpha CRDs, a namespace-scoped operator, owned Secret
-publication and Helm delivery. There is still no product CLI, managed engine,
-activation acknowledgment, cross-namespace API or HA topology.
+delivery) and the post-M6 release-hardening milestone are complete as of 2026-09-21.
+The repository now contains the complete P0 control-plane path and a deliberate
+first-alpha release process with Q12 resolved, exact source/checksum provenance,
+SBOMs, vulnerability gates, keyless signing/provenance design and a non-publishing
+dry run. There is still no product CLI, managed engine, activation acknowledgment,
+cross-namespace API or HA topology.
 
-**Next horizon: P1, after release hardening.** Before a public runtime release,
-resolve Q12 and complete image provenance, signing/SBOM, license and supported-
-version evidence. P1 may then design managed runtimes, activation acknowledgment,
-richer policy and HA; none is implied by the M6 BYO operator.
+**Next horizon: P1 design.** P1 may design managed runtimes, activation
+acknowledgment, richer policy and HA; none is implied by the M6 BYO operator or the
+release machinery. A public alpha is a separate maintainer decision and requires
+the protected repository settings in the release guide.
 
 ## P0 milestones
 
