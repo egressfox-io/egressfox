@@ -1,0 +1,48 @@
+name: Usage question
+description: Ask a focused, non-sensitive question about documented behavior
+title: "question: "
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search the documentation and existing issues first. This project is maintained on a best-effort basis and does not provide a response SLA.
+
+        For vulnerabilities, use SECURITY.md. Never paste subscriptions, proxy URIs, credentials, Secret contents, private revisions, or generated configuration.
+  - type: input
+    id: version
+    attributes:
+      label: EgressFox version or commit
+      placeholder: Full commit, tag, or not yet installed
+    validations:
+      required: true
+  - type: dropdown
+    id: context
+    attributes:
+      label: Context
+      options:
+        - Kubernetes operator
+        - Core behavior
+        - Release verification
+        - Contributing or development
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Include the outcome you are trying to achieve and sanitized context.
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: Documentation and steps already tried
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: This question contains no credentials, subscriptions, Secret contents, private revisions, or generated configuration.
+          required: true

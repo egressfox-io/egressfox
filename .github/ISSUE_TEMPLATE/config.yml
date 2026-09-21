@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/egressfox-io/egressfox/security/advisories/new
+    about: Report sensitive vulnerabilities privately; do not disclose details in a public issue.
+  - name: Support and issue routing
+    url: https://github.com/egressfox-io/egressfox/blob/main/SUPPORT.md
+    about: Choose the correct path for bugs, proposals, questions, and security reports.

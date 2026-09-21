@@ -1,0 +1,62 @@
+name: Feature request
+description: Propose a user-facing capability or design change
+title: "proposal: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the operational problem first. Roadmap items are directions, not commitments, and P1 work requires design review before implementation.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What cannot be done safely or reliably with the current documented behavior?
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Desired behavior
+      description: Describe the observable outcome without requiring a particular internal implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include operational workarounds or existing engine capabilities where relevant.
+  - type: dropdown
+    id: context
+    attributes:
+      label: Deployment context
+      options:
+        - Kubernetes BYO operator
+        - Kubernetes managed-runtime proposal
+        - Kubernetes-independent core
+        - Release or supply-chain tooling
+        - Documentation or developer experience
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: Could this affect CRDs, persisted state, engine profiles, or published artifacts?
+      options:
+        - No known compatibility impact
+        - API or CRD
+        - Persistent state
+        - Engine profile or rendered configuration
+        - Release artifact or installation contract
+        - Unknown
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: This proposal contains no credentials, subscriptions, Secret contents, or generated configuration.
+          required: true

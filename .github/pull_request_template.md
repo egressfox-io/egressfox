@@ -1,14 +1,20 @@
-## Change
+## What changed
 
-Describe the problem and resulting behavior. Link the task plan/design when relevant.
-Distinguish working functionality from documentation of planned functionality.
+Describe the problem and the resulting behavior. Link the owning issue, design, ADR,
+or execution plan when relevant. Distinguish implemented behavior from future work.
 
 ## Validation
 
-List commands and outcomes, including applicable tests and any unavailable checks.
+List exact commands and outcomes. Explain any skipped or unavailable check.
 
-## Compatibility and risks
+## Impact
 
-Describe API, persistence, renderer, security, or operational impact; use “none”
-when appropriate. Confirm task-owned changes are committed and the branch is ready
-for review. Do not include credentials or generated operational configuration.
+Describe documentation, API/CRD, persistence, renderer, release, and security impact;
+use “none” where appropriate. Call out generated files that changed.
+
+## Review checklist
+
+- [ ] Tests and documentation match the behavior.
+- [ ] Generated artifacts are current where applicable.
+- [ ] No credentials, subscriptions, Secret contents, private revisions, or generated operational configuration are included.
+- [ ] Compatibility and security implications are stated above.

@@ -5,6 +5,14 @@
 /coverage.out
 *.test
 .DS_Store
+/*.zip
+/.idea/
+/.vscode/
+*.swp
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
 
 # Local credentials and runtime state. Keep synthetic fixtures in testdata.
 /.env

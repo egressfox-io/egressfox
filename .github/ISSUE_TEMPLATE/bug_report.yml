@@ -1,0 +1,82 @@
+name: Bug report
+description: Report a reproducible, non-sensitive EgressFox defect
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve EgressFox. Security vulnerabilities do not belong in public issues; use the private process in SECURITY.md.
+
+        Never paste subscription URLs, proxy URIs, credentials, Secret contents, confidential revisions, or generated engine configuration.
+  - type: input
+    id: version
+    attributes:
+      label: EgressFox version or commit
+      description: Use an exact tag, full commit, or image digest.
+      placeholder: v0.1.0-alpha.1 or full commit/digest
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - Kubernetes operator
+        - Core package or test harness
+        - Release tooling
+        - Documentation or examples
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine profile
+      options:
+        - Not applicable
+        - Mihomo 1.19.31
+        - sing-box-compatible 1.14.1
+        - Unsupported or unknown
+    validations:
+      required: true
+  - type: input
+    id: kubernetes
+    attributes:
+      label: Kubernetes version
+      description: Required for operator issues; include the distribution when relevant.
+      placeholder: Kubernetes 1.37.0, kind 0.33.0
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest sanitized sequence that reproduces the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Include safe logs, Conditions, or command output. Remove all credentials and generated configuration.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed subscription URLs, proxy URIs, credentials, Secret contents, private revisions, and generated configuration.
+          required: true
+        - label: This report is not a sensitive security vulnerability.
+          required: true

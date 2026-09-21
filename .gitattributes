@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+
+api/v1alpha1/zz_generated.deepcopy.go linguist-generated=true
+config/crd/bases/*.yaml linguist-generated=true
+charts/egressfox/crds/*.yaml linguist-generated=true
