@@ -37,6 +37,11 @@ type inbound struct {
 	Tag        string `json:"tag"`
 	Listen     string `json:"listen"`
 	ListenPort uint16 `json:"listen_port"`
+	Users      []user `json:"users,omitempty"`
+}
+type user struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 type outbound struct {
 	Type       string     `json:"type"`
@@ -78,10 +83,14 @@ func (r Renderer) Render(gateway policy.Gateway) (artifact.Candidate, error) {
 		names = append(names, item.Name)
 	}
 	outbounds = append(outbounds, outbound{Type: "selector", Tag: "egressfox", Outbounds: names, Default: names[0]})
+	inboundModel := inbound{Type: "socks", Tag: "egressfox-in", Listen: gateway.Listener().Address(), ListenPort: gateway.Listener().Port()}
+	if gateway.Listener().Managed() {
+		inboundModel.Users = []user{{Username: gateway.Listener().Username(), Password: gateway.Listener().Password()}}
+	}
 	model := configuration{
 		Log:       logConfig{Disabled: true},
 		DNS:       dnsConfig{Servers: []dnsServer{{Type: "local", Tag: "local"}}},
-		Inbounds:  []inbound{{Type: "socks", Tag: "egressfox-in", Listen: gateway.Listener().Address(), ListenPort: gateway.Listener().Port()}},
+		Inbounds:  []inbound{inboundModel},
 		Outbounds: outbounds,
 		Route:     routeConfig{Final: "egressfox", DefaultDomainResolver: "local"},
 	}

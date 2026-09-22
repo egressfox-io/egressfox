@@ -16,14 +16,15 @@ type Renderer struct{}
 func (Renderer) Profile() artifact.Profile { return artifact.Mihomo11931 }
 
 type configuration struct {
-	SOCKSPort   uint16       `yaml:"socks-port"`
-	BindAddress string       `yaml:"bind-address"`
-	AllowLAN    bool         `yaml:"allow-lan"`
-	Mode        string       `yaml:"mode"`
-	LogLevel    string       `yaml:"log-level"`
-	Proxies     []proxy      `yaml:"proxies"`
-	Groups      []proxyGroup `yaml:"proxy-groups"`
-	Rules       []string     `yaml:"rules"`
+	SOCKSPort      uint16       `yaml:"socks-port"`
+	BindAddress    string       `yaml:"bind-address"`
+	AllowLAN       bool         `yaml:"allow-lan"`
+	Authentication []string     `yaml:"authentication,omitempty"`
+	Mode           string       `yaml:"mode"`
+	LogLevel       string       `yaml:"log-level"`
+	Proxies        []proxy      `yaml:"proxies"`
+	Groups         []proxyGroup `yaml:"proxy-groups"`
+	Rules          []string     `yaml:"rules"`
 }
 
 type proxy struct {
@@ -64,9 +65,12 @@ func (r Renderer) Render(gateway policy.Gateway) (artifact.Candidate, error) {
 	}
 	model := configuration{
 		SOCKSPort: gateway.Listener().Port(), BindAddress: gateway.Listener().Address(),
-		AllowLAN: false, Mode: "rule", LogLevel: "silent", Proxies: proxies,
+		AllowLAN: gateway.Listener().Managed(), Mode: "rule", LogLevel: "silent", Proxies: proxies,
 		Groups: []proxyGroup{{Name: "egressfox", Type: "select", Proxies: names}},
 		Rules:  []string{"MATCH,egressfox"},
+	}
+	if gateway.Listener().Managed() {
+		model.Authentication = []string{gateway.Listener().Username() + ":" + gateway.Listener().Password()}
 	}
 	content, err := yaml.Marshal(model)
 	if err != nil {
