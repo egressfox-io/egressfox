@@ -53,4 +53,22 @@ Release evidence reviewed: `release/manifest.json` currently plans
 `v0.1.0-dev.1`. Completed plans record dry-runs for `v0.1.0-alpha.1`,
 `v0.2.0-alpha.1`, and `v0.1.0-dev.1`; the records state that no release was
 published, and the release guide says tags are created only for publication. The
-current validation and commit record will be added after final review.
+initial changelog checkpoint is committed as `e88a83d`.
+
+Validation on 2026-09-23:
+
+- `GOCACHE=/private/tmp/egressfox-go-cache make fmt` — passed.
+- `GOCACHE=/private/tmp/egressfox-go-cache go test -count=1 ./tools/changelogcheck`
+  — passed, including table-driven policy cases and temporary-repository tests.
+- `GOCACHE=/private/tmp/egressfox-go-cache make docs` — passed.
+- `GOCACHE=/private/tmp/egressfox-go-cache make check` — passed, including
+  generation drift, formatting, vet, race tests, builds, documentation checks,
+  Helm lint/render, release validation, and whitespace checks. A sandboxed first
+  attempt denied loopback binds used by existing tests; the full rerun passed with
+  that restriction lifted.
+- `yq eval '.' .github/workflows/changelog.yml` and `git diff --check` — passed.
+- `actionlint` is unavailable in the environment; no workflow linter was installed.
+- `git ls-remote --tags origin` could not resolve `github.com`; local tag listing is
+  empty and checked-in release/security documentation reports no published release.
+
+Governance and CI commits, final branch review, and clean-tree confirmation remain.

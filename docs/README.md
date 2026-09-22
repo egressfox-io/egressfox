@@ -13,6 +13,7 @@ read the owning design and accepted decisions for the area they plan to change.
 | Verify a release or supported version | [Release guide](operations/releasing.md), [versioning](operations/versioning.md), and [Kubernetes compatibility](operations/kubernetes-compatibility.md) |
 | Report or assess security concerns | [Security policy](../SECURITY.md) and [threat model](security/threat-model.md) |
 | Contribute a change | [Contributing](../CONTRIBUTING.md), [workflow](development/workflow.md), and [testing](development/testing.md) |
+| Review notable project changes | [Changelog](../CHANGELOG.md) |
 | Configure the public GitHub repository | [Repository settings](operations/github-repository.md) |
 
 ## Sources of truth

@@ -82,6 +82,12 @@ Follow the authoritative [development workflow](docs/development/workflow.md):
    current. Preserve/report unrelated pre-existing changes. Never automatically
    merge into main, push, destructively reset, force-push, or rewrite shared history.
 
+Before completing a pull request or milestone, assess whether it introduces notable
+user-facing changes. Add accurate entries under `CHANGELOG.md` → `Unreleased` in the
+same branch when required; otherwise record why no entry is needed. Changelog review
+is part of the definition of done. Follow the authoritative policy in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Validation
 
 Use the Go version in [go.mod](go.mod), Git, Make, and a C compiler for race tests.

@@ -246,3 +246,15 @@ place for bugs, proposals, questions, or security reports.
 EgressFox is licensed under [Apache-2.0](LICENSE). Source-built engine derivatives
 inside release images remain subject to their upstream GPL terms and corresponding-
 source requirements; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+---
+
+<div align="center">
+
+[Contributing](CONTRIBUTING.md) ·
+[Maintainers](MAINTAINERS.md) ·
+[Changelog](CHANGELOG.md) ·
+[Security](SECURITY.md) ·
+[License](LICENSE)
+
+</div>

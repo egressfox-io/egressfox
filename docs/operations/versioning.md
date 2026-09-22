@@ -85,10 +85,17 @@ the privileged job, and refuses a version that already exists.
    signatures, checksums and Helm metadata as described in the
    [release guide](releasing.md).
 
-GitHub-generated notes are the initial changelog convention. A maintainer must add
-important compatibility/migration/security context and verify that prerelease versus
-stable classification matches the tag before approval. Do not hand-maintain a second
-unsynchronized changelog.
+`CHANGELOG.md` is the maintained development record: add notable changes under
+`Unreleased` during ordinary development. When a version is actually published, move
+the applicable entries to a section for that version, use the actual publication
+date, preserve earlier history, and create a fresh `Unreleased` section. A dry-run,
+development version value, or internal milestone does not finalize release history.
+
+GitHub-generated notes remain a publication summary, not a replacement for the
+repository changelog. Before approving a release, reconcile generated notes with the
+finalized changelog and add any important compatibility, migration, or security
+context. Verify that prerelease versus stable classification matches the published
+tag.
 
 ## Updating the development line
 

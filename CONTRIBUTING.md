@@ -41,6 +41,42 @@ semantics, and supported-version changes require explicit compatibility review. 
 not add speculative interfaces, placeholder packages, or P1 behavior as a shortcut.
 The detailed Git contract is in the [development workflow](docs/development/workflow.md).
 
+## Changelog
+
+For every pull request or milestone, determine whether the change affects users,
+operators, or downstream integrators. Notable functionality, behavior changes,
+user-visible fixes, security fixes, breaking API or configuration changes,
+compatibility changes, operationally significant improvements, deprecations, and
+removals require a factual entry in the `## [Unreleased]` section of
+[CHANGELOG.md](CHANGELOG.md), in the same branch and task-owned commit. Describe
+implemented behavior, group related changes, and do not write one entry per commit.
+
+Purely internal refactoring, routine dependency updates, formatting, test-only work,
+and minor documentation fixes normally need no entry. If there is no entry, explain
+why in the pull request. The changelog workflow automatically exempts changes
+limited to `docs/plans/`, `docs/decisions/`, `docs/development/`, the documentation
+map, contributor/agent/maintainer guidance, the pull request template, or Go
+`*_test.go` files. Other paths, including product, security, compatibility,
+operational, and release documentation, are treated as ambiguous: add an entry or
+request a maintainer-authorized exemption.
+
+The `No changelog entry is required` checkbox is a request, not approval. Add a
+brief reason; a maintainer must review the request and apply the `no-changelog`
+label. A label alone, an unchecked box, or a reason without the label is not an
+exemption. Do not use PR titles, branch names, or free-form bypass text.
+
+Before marking a milestone complete, agents must inspect the changelog, decide
+whether an entry is required, verify that it describes implemented behavior, include
+it in task-owned commits, and state the changelog decision in the final handoff. A
+milestone with a notable change is not complete until this is done. Internal
+milestone completion and release dry-runs do not create a versioned section.
+
+Only when a release is actually published should its applicable entries move from
+`Unreleased` into a versioned section using the actual version and publication date.
+Preserve prior history and leave a fresh `Unreleased` section. Never invent a
+version, date, publication, or feature. See the [versioning guide](docs/operations/versioning.md)
+for release integration.
+
 ## Validation
 
 For documentation-only changes:

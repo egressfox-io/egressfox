@@ -161,6 +161,10 @@ absolute paths and bare nonportable file links in repository documentation.
 ## Definition of done
 
 - Scope and invariants respected; implemented/planned/future wording is accurate.
+- Review [the changelog policy](../../CONTRIBUTING.md#changelog): add a factual
+  `CHANGELOG.md` entry under `Unreleased` for notable changes, or record why no
+  entry is required. Mention the decision in the final handoff; milestone completion
+  does not create a release section.
 - Behavior changes have meaningful tests from the [testing strategy](testing.md).
 - Relevant designs, API compatibility notes, threat model, ADRs, and plan are current.
 - Documented applicable commands run successfully; blocked/unavailable checks are

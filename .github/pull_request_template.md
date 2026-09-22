@@ -18,3 +18,12 @@ use “none” where appropriate. Call out generated files that changed.
 - [ ] Generated artifacts are current where applicable.
 - [ ] No credentials, subscriptions, Secret contents, private revisions, or generated operational configuration are included.
 - [ ] Compatibility and security implications are stated above.
+
+## Changelog
+
+- [ ] CHANGELOG.md updated under Unreleased.
+- [ ] No changelog entry is required.
+
+If no entry is required, explain why:
+
+Reason:
