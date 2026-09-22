@@ -25,10 +25,21 @@ per destination. Named candidate groups may then be referenced by bounded Egress
 routing intent for an EgressGateway. Geography is only example metadata; it is not
 a built-in pool type or semantic primitive.
 
-When inputs overlap, canonical full endpoint identity is deduplicated before
-eligibility/scoring and provenance is unioned. One logical connection discovered
-through multiple sources/pools/groups does not become several independent proxies.
-Existing credential-revision and provenance semantics remain authoritative.
+Composition uses the existing full connection identity and provenance contracts;
+it does not define a new endpoint identity algorithm. Within one rendered engine
+configuration, a full connection identity contributed by multiple sources or pools
+must produce one engine proxy entry, while retaining all contributing source
+provenance and each `(ProxyPool, Profile)`/candidate-group membership. Reusing an
+engine entry does not erase its membership in multiple policy groups.
+
+This representation-level deduplication does not merge profile-specific evidence,
+eligibility, scores, selection state or group membership. Evaluate each input using
+the evidence key and eligibility rules for its own target/profile context; results
+from different contexts are not interchangeable. A different credential or
+transport revision remains a different full connection identity and is not merged.
+The existing [endpoint and provenance contract](../designs/endpoints-and-sources.md)
+and [observation and selection contract](../designs/observations-and-selection.md)
+remain authoritative.
 
 Do not introduce a separate `ProxyGroup` CRD or another resource solely to express
 candidate composition. Prefer bounded policy representation over a mega-CRD that
@@ -44,7 +55,8 @@ observability.
   impossible.
 - M10 must not encode a permanent `one Gateway -> exactly one candidate Pool`
   restriction. It must leave room for bounded named groups composed from multiple
-  Pool/Profile inputs. Exact syntax and supported routing remain its design gate.
+  Pool/Profile inputs from at least two distinct ProxyPools. Exact syntax and
+  supported routing remain its design gate.
 - M11/M12 report selection, no-op, publication repair and activation outcomes
   without exposing confidential connection/artifact identity.
 

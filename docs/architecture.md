@@ -56,10 +56,13 @@ and `EgressOutput` are future work.
    the shared core without a daemon or engine. `probe` and native `validate` are
    independent capabilities and require a compatible engine only when invoked.
    Exact command syntax is open.
-2. **Future standalone control plane:** `egressfox run` owns source refresh, probes,
-   history, selection, render/validation, LKG, publication and managed replacement
-   through shared core semantics. A thin `egressfox-runtime` starts the selected
-   engine; the engine moves traffic.
+2. **Future standalone control plane:** `egressfox run` uses the shared core in
+   publication-only mode or optional managed mode. Publication-only continuously
+   refreshes sources, probes as configured, maintains history/selection, validates
+   and publishes artifacts without owning a permanent Gateway. Managed mode also
+   activates a persistent engine through the thin `egressfox-runtime`; the engine
+   moves traffic. Both modes use real engine executables for native validation and
+   actual endpoint probes when those capabilities run.
 3. **Current managed Kubernetes:** `egressfox-operator` derives and validates the
    artifact, publishes it to an immutable internal generation Secret, and a
    one-replica Deployment starts the selected engine binary directly from the same
@@ -108,9 +111,13 @@ One `ProxyPool` may contain multiple sources and remains a leaf inventory. Profi
 provide target/probe/selection context over the same inventory. Future candidate
 groups may compose multiple `(Pool, Profile)` inputs; pools do not recursively
 contain pools. Composition belongs to policy/selection intent, not inventory
-ownership. Deduplicate overlapping full endpoint identities and union provenance
-before eligibility/scoring. Exact group/filter/profile syntax is a future M9/M10
-design gate; no `ProxyGroup` CRD is currently planned.
+ownership. A repeated full connection identity should render once per engine
+configuration while retaining source provenance and each Pool/Profile/group
+membership; different credential revisions remain distinct. Evaluate eligibility
+and selection within each matching target/profile evidence context without
+collapsing its measurements or scores into another context. Exact group/filter/
+profile syntax is a future M9/M10 design gate; no `ProxyGroup` CRD is currently
+planned.
 
 ## Terms
 

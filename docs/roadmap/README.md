@@ -75,7 +75,7 @@ Candidate work stages, to be decomposed and gated before implementation:
 | --- | --- |
 | S1 | Thin runtime execution/lifecycle boundary and canonical engine packaging |
 | S2 | One-shot Go `egressfox` CLI and shared publisher adapters |
-| S3 | Long-running standalone control plane with LKG-preserving managed activation |
+| S3 | Long-running standalone: publication-only output and optional managed activation |
 | S4 | Full single-file distribution, secure lazy payload materialization and release qualification |
 
 The future publisher family includes Kubernetes Secret, Vault, S3-compatible object
@@ -86,6 +86,13 @@ from current Gateway `outputSecretName`; basic managed Gateway does not require
 mechanics and release artifact procedures remain open until their owning designs
 and plans supply implementation evidence. These stage labels do not reuse P1
 milestone numbers.
+
+The standalone `run` control plane must work publication-only as well as in managed
+standalone mode. Publication-only continuously synchronizes external destinations
+without owning a permanent Gateway; compatible real engine executables are still
+required when native validation or through-endpoint probes run, and may be invoked
+as temporary helpers. Both modes reuse the shared Go core. Exact CLI flags and
+configuration remain future design work.
 
 P2 holds advanced storage, operator HA, cross-namespace grants, native composition,
 additional output systems beyond the accepted initial publisher family, and richer

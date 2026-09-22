@@ -1,6 +1,7 @@
 # Runtime, standalone and publication architecture documentation
 
-Status: active. Date: 2026-09-22. Branch: `docs/runtime-standalone-architecture`.
+Status: complete (original milestone; targeted review fix-up recorded below).
+Date: 2026-09-22. Branch: `docs/runtime-standalone-architecture`.
 Baseline: `c961b5b`.
 
 ## Objective and boundaries
@@ -157,3 +158,50 @@ reconciliation and execution record.
 
 No Kubernetes envtest/kind qualification or online vulnerability scan was run; no
 claim about those checks is made.
+
+## Post-completion architecture review fix-up (2026-09-23)
+
+The original milestone remains complete. This appendix records a focused review
+correction without a new plan, ADR, or roadmap milestone:
+
+1. Clarify that ready generation N+1 receives new connections while old N stops
+   receiving new assignments; distinguish readiness, handoff, activation
+   acknowledgment, retirement, and best-effort session drain.
+2. Separate rendered-entry deduplication by existing full connection identity from
+   Pool/Profile/group membership and profile-specific evidence, eligibility,
+   scoring, and selection. Preserve source provenance and distinct credential
+   revisions; link the existing endpoint and observation authorities.
+3. Make publication-only standalone `egressfox run` an explicit first-class mode
+   alongside managed standalone mode, with temporary real engine use for native
+   validation/probes and no permanent managed Gateway requirement in publication-
+   only mode.
+4. Require M10 acceptance across two distinct ProxyPools, including overlapping
+   connections, provenance, credential revisions, target-profile evidence, group
+   rendering, and both-engine native validation.
+
+Corrected documents: `docs/designs/artifact-publication-and-composition.md`,
+`docs/designs/runtime-and-standalone.md`, ADRs 0015–0017 where their decisions
+needed clarification, `docs/architecture.md`, `docs/roadmap/p1.md`, and the
+post-P1 track in `docs/roadmap/README.md`. The requested
+`docs/roadmap/standalone.md` is absent; the existing roadmap index is the relevant
+post-P1 authority and no new roadmap file was created.
+
+Fix-up validation:
+
+- `GOCACHE=/private/tmp/egressfox-fixup-docs-gocache make docs` — passed after the
+  architecture edits. A final rerun after an unrelated README change appeared
+  failed because `README.md` now links to missing `CHANGELOG.md` (checkdocs reports
+  `README.md:256`).
+- `GOCACHE=/private/tmp/egressfox-fixup-check-gocache make check` — passed before
+  those unrelated README/repository additions appeared, including generated-file
+  consistency, vet, race tests, builds, docs, Helm lint/template, release guards
+  and whitespace checks. It ran with the permission needed by localhost-only tests.
+- `git diff --check` — passed, including after the unrelated additions appeared.
+
+Fix-up commit ID is added after the documentation checkpoint is committed.
+
+An unrelated tracked README footer change and untracked `.github/CODEOWNERS` and
+`MAINTAINERS.md` appeared after baseline discovery. The files are preserved and
+excluded from the fix-up commit. The footer links to an absent `CHANGELOG.md`; no
+unrelated README or maintainer-file change is included in this fix-up. The checkout
+will remain non-clean until those additions are resolved by their owner.

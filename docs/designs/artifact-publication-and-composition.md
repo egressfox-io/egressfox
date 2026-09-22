@@ -163,13 +163,22 @@ runtime-ready. Lifecycle conceptually follows:
 
 ```text
 active N -> derive and validate N+1 -> materialize N+1 -> start candidate
-         -> prove usable local dataplane -> serve new connections on N+1
+         -> prove usable local dataplane -> make N+1 available to new connections
          -> stop assigning new connections to N -> drain N -> retire N
+         -> N+1 continues serving
 ```
 
 If candidate start/readiness fails, retain N; mark the candidate failed/degraded.
 Publication success, Secret materialization or process existence alone is not
 activation or readiness.
+
+Candidate readiness gates the traffic handoff; it does not by itself acknowledge
+activation. Once N+1 is ready, the handoff makes N+1 available for new connections
+and stops assigning new connections to N. Record exact-generation activation
+acknowledgment separately from readiness and from retirement: it identifies when
+N+1 is serving new connections, and need not wait for N's existing sessions to
+drain. Exact acknowledgment timing and traffic-transition mechanics remain
+implementation-specific.
 
 M7 already deploys one steady-state replica with `RollingUpdate`,
 `maxUnavailable: 0`, `maxSurge: 1`, stable Service selectors and immutable
@@ -187,15 +196,19 @@ remains open; do not claim M7 proves forwarded application traffic.
 Keep the managed Service name/identity stable across config generations. Keep
 client-facing SOCKS credentials stable across selection/config changes; credential
 rotation is its own lifecycle. Minimize existing connection interruption where
-possible: after the candidate is Ready, stop sending it new connections, allow a
-bounded future drain period, request graceful engine shutdown, and force termination
-only after a bounded timeout. Research actual Mihomo/sing-box signals, Service
-endpoint behavior, readiness termination, preStop use and termination grace before
-implementation. Do not invent timeout values or claim every arbitrary long-lived
-session survives process replacement.
+possible: after N+1 is Ready, make it available to new connections and stop
+assigning new connections to old generation N. Allow existing N sessions to
+continue where possible for a bounded future drain period, request graceful engine
+shutdown, and force termination only after a bounded timeout. Research actual
+Mihomo/sing-box signals, Service endpoint behavior, readiness termination,
+preStop use and termination grace before implementation. Do not invent timeout
+values or claim every arbitrary long-lived session survives process replacement.
 
-Standalone `egressfox run` follows the same healthy-LKG-until-ready rule. Its exact
-listener/port handoff outside Kubernetes remains an open implementation problem.
+Managed standalone mode follows the same healthy-LKG-until-replacement-ready rule.
+Publication-only standalone has no managed runtime to activate; the existing
+validated-artifact and publication LKG guarantees still apply, with publication
+remaining distinct from runtime activation. Managed mode's exact listener/port
+handoff outside Kubernetes remains an open implementation problem.
 
 ## Pool and policy composition
 
@@ -214,12 +227,22 @@ not source ownership. An EgressPolicy may refer to named groups for bounded rout
 no separate ProxyGroup CRD is justified at this stage. EgressGateway remains the
 runtime/desired artifact association. Exact schema stays open under M9/M10 and Q16.
 
-On composition, canonical full endpoint identity is deduplicated before eligibility
-and scoring and provenance is unioned. Credential revisions remain distinct
-connections, and observations cannot cross credential/profile/target/vantage
-boundaries. Existing endpoint/source semantics remain in
-[the source design](endpoints-and-sources.md) and
-[selection design](observations-and-selection.md).
+Composition preserves the existing full connection identity, source provenance and
+evidence-key contracts; it does not introduce a new identity rule. Within one
+rendered engine configuration, the same full connection identity contributed by
+multiple sources or pools must not become duplicate proxy entries. Preserve the
+contributing source provenance and each `(ProxyPool, Profile)` and policy-group
+membership as distinct relationships. Reusing one engine entry does not erase its
+membership in multiple groups.
+
+Deduplicating engine entries does not merge profile evidence or selection results.
+Evaluate eligibility and selection separately in each referenced target/profile
+context using only matching evidence. Measurements, summaries, scores and selection
+state from different contexts are not interchangeable. A changed credential or
+transport revision remains a distinct full connection identity and is never
+collapsed with another revision. The authoritative identity/provenance rules are in
+[endpoints and sources](endpoints-and-sources.md); complete evidence keys and
+eligibility rules are in [observations and selection](observations-and-selection.md).
 
 ## Open API and implementation details
 

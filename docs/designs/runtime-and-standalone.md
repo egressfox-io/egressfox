@@ -69,7 +69,7 @@ that commands exist:
 | `probe` | Run the real bounded through-endpoint check for an endpoint/profile/target | Compatible engine required; a TCP port check is not equivalent |
 | `validate` | Validate existing or newly rendered config with the exact supported native engine | Selected engine required; do not reimplement its complete parser |
 | `version` | Report EgressFox, runtime and supported engine profile identities | No engine extraction is required merely to report control-plane identity |
-| `run` | Long-running standalone control-plane operation | Shared refresh, history, selection, publication and activation semantics |
+| `run` | Long-running standalone control-plane operation | Shared refresh, history, selection and publication; permanent managed activation is optional |
 
 Probing and native validation answer different questions. A run/generate invocation
 may render without probes, probe then render/validate, probe without producing a
@@ -86,18 +86,41 @@ redaction throughout text, JSON and errors.
 ## Long-running standalone operation
 
 `egressfox run` is the future standalone control plane, not the runtime wrapper. It
-reuses shared core behavior for source refresh, inventory, scheduled probes,
-persisted history, freshness summaries, eligibility, adaptive selection,
-residence/hysteresis/cooldown/recovery, deterministic rendering, native validation,
-LKG, external publication and managed activation/replacement. It does not fork
-these semantics into CLI-specific logic.
+must support two first-class deployment modes over the same shared Go core; these
+are architectural modes, not settled CLI flags or YAML fields:
 
-Standalone must follow the availability principle that the current healthy LKG is
-not destroyed before a replacement is proved usable. Candidate start/ready/traffic
-handoff is difficult on a bare host because listener ownership and routing between
-generations do not come from Kubernetes Services. The high-level LKG requirement is
-accepted; exact local listener handoff, process supervision, signal and drain
-mechanics are open and must be tested on supported platforms.
+| Mode | Control-plane work | Permanent managed dataplane |
+| --- | --- | --- |
+| Publication-only | Continuously refresh sources, maintain inventory/history, probe as configured, select, render, natively validate, and publish the validated desired artifact to external destinations | None; EgressFox does not own or run a Gateway engine |
+| Managed standalone | The same shared source, evidence, selection, render, validation and publication behavior, plus managed activation/replacement | Persistent engine process owned by EgressFox through its execution/lifecycle adapter |
+
+Publication-only is a normal long-running use case: for example, `egressfox run`
+can keep a Vault artifact synchronized while External Secrets and
+consumer-owned automation update an independently managed sing-box workload.
+Equivalent S3-to-VM, filesystem-to-systemd and Kubernetes-Secret-to-custom-workload
+deployments do not require EgressFox to own the consumer's engine. Publication-only
+still preserves validated-artifact and LKG guarantees: invalid configuration does
+not replace the last successfully published artifact, and publication is not
+reported as runtime activation.
+
+Native validation requires the real compatible engine executable, and actual
+through-endpoint probing requires the real engine. A publication-only process may
+invoke the engine as a short-lived validation command and launch temporary isolated
+engine processes for probes. Those bounded helpers are not a permanent managed
+Gateway and do not transfer ownership of the consumer workload to EgressFox. If a
+required engine executable is unavailable, validation/probe-dependent operations
+fail explicitly; publication-only does not mean render-only validation or synthetic
+probe results.
+
+Managed standalone mode follows the availability principle that the current
+healthy LKG is not destroyed before a replacement is ready to serve new
+connections. Candidate readiness, traffic handoff, exact-generation activation
+acknowledgment and old-process retirement are distinct stages; existing sessions
+on the old generation receive best-effort bounded drain without a guarantee that
+every session survives. Bare-host listener ownership and routing between
+generations do not come from Kubernetes Services. Exact handoff, process
+supervision, signal and drain mechanics remain open and must be tested on supported
+platforms.
 
 ## Packaging and canonical runtime bytes
 
@@ -112,8 +135,10 @@ control-plane process and engine implementation does not run in-process.
 
 Materialize only the payload required by a command: inspect and render-only
 generation require none; native validation/probe require the selected engine; a
-managed `run` requires runtime plus selected engine. Payloads come from the
-versioned EgressFox release. There are no hidden first-run engine downloads.
+publication-only `run` needs an engine only for its configured validation/probe
+operations; managed `run` requires runtime plus the selected engine. Payloads come
+from the versioned EgressFox release. There are no hidden first-run engine
+downloads.
 
 Before execution, a future materializer must check expected internal identity,
 content/version identity and file type; use a private per-user directory; resist

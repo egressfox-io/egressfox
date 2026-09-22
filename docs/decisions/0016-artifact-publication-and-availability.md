@@ -145,19 +145,29 @@ fixed helper that reads mounted credentials and negotiates authenticated SOCKS5 
 loopback. That is useful local evidence, not a claim of arbitrary endpoint or
 application health.
 
+Readiness gates traffic transition; it is not activation acknowledgment. Once
+generation N+1 is Ready, make it available for new connections and stop assigning
+new connections to old generation N. Acknowledge N+1 as the generation serving new
+connections separately from readiness and from retirement. The exact point at
+which a managed implementation records that acknowledgment remains implementation-
+specific; it need not wait for old N sessions to drain.
+
 Keep Gateway Service identity stable across artifact generations. Client-facing
 credentials have a lifecycle separate from selected endpoint/config generations
 and must not rotate merely because the artifact changes. Where engine/platform
-behavior permits, stop assigning new connections to the old generation, allow
-existing sessions to drain for a bounded future grace period, then terminate
-gracefully and force termination only after a future bounded timeout. Do not claim
-that every arbitrarily long-lived TCP/UDP/application session survives process
-replacement. Service-level availability during a controlled rollout is distinct
-from universal preservation of every connection.
+behavior permits, allow existing sessions on N to drain for a bounded future grace
+period after new connections use N+1 and N receives no new assignments, then
+terminate N gracefully and force termination only after a future bounded timeout.
+Do not claim that every arbitrarily long-lived TCP/UDP/application session survives
+process replacement. Service-level availability during a controlled rollout is
+distinct from universal preservation of every connection.
 
-The same active-LKG-before-replacement-ready principle applies to future standalone
-`egressfox run`. Kubernetes Service behavior does not decide bare-host listener
-handoff. The exact standalone mechanism remains open.
+The active-LKG-before-replacement-ready principle applies to future managed
+standalone mode. Publication-only standalone has no managed runtime to activate;
+the existing validated-artifact and publication LKG guarantees still apply, with
+publication remaining distinct from runtime activation. Kubernetes Service behavior
+does not decide bare-host listener handoff. The exact managed-standalone mechanism
+remains open.
 
 ## Alternatives rejected
 

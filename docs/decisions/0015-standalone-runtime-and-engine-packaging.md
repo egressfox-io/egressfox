@@ -62,8 +62,21 @@ validation require the exact supported engine. Probing endpoint reachability and
 validating native configuration are independent capabilities. Stateless generation
 must not invent persisted health evidence; adaptive history requires real state or
 explicit non-historical semantics. Long-running source refresh, probes, history,
-selection, render, validation, publication and managed activation belong to the
-shared EgressFox control plane.
+selection, render, validation and publication belong to the shared EgressFox
+control plane. Long-running `egressfox run` must support both publication-only and
+managed standalone modes. These are deployment semantics, not settled CLI flags or
+configuration fields. In publication-only mode, the control plane continuously
+publishes the validated desired artifact and does not own or run a permanent
+Gateway dataplane. Managed standalone mode additionally owns a persistent engine
+generation and its activation lifecycle. Both modes use the same shared Go core.
+
+Publication-only operation does not bypass native validation or real endpoint
+probing. Native validation requires the exact supported engine executable; actual
+through-endpoint probes require the real engine and may launch temporary isolated
+engine processes. Those temporary helpers do not constitute a permanent managed
+dataplane or make EgressFox the owner of the external consumer workload. A
+validation/probe-dependent operation fails explicitly if its engine executable is
+unavailable. Exact command/config selection of the deployment mode remains open.
 
 The recommended future standalone UX is one full `egressfox` executable per
 supported platform, initially the release platform set. It may embed the release
