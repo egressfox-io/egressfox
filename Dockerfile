@@ -48,8 +48,8 @@ FROM scratch
 ARG VERSION=0.0.0-dev
 ARG REVISION=unknown
 ARG CREATED=unknown
-LABEL org.opencontainers.image.title="EgressFox operator" \
-      org.opencontainers.image.description="Namespace-scoped control plane for desired Mihomo and sing-box configuration" \
+LABEL org.opencontainers.image.title="EgressFox operator and managed runtime" \
+      org.opencontainers.image.description="Namespace-scoped control plane and authenticated managed Mihomo/sing-box runtime" \
       org.opencontainers.image.source="https://github.com/egressfox-io/egressfox" \
       org.opencontainers.image.url="https://github.com/egressfox-io/egressfox" \
       org.opencontainers.image.documentation="https://github.com/egressfox-io/egressfox/tree/${REVISION}/docs" \
