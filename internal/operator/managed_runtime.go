@@ -38,6 +38,8 @@ const (
 	ComponentLabel                 = "egressfox.io/component"
 	GatewayUIDLabel                = "egressfox.io/gateway-uid"
 	GenerationAnnotation           = "egressfox.io/generation"
+	ClientUsernameDataKey          = ".egressfox-client-username"
+	ClientPasswordDataKey          = ".egressfox-client-password"
 	componentAuthentication        = "client-auth"
 	componentGeneration            = "runtime-generation"
 	componentRuntime               = "runtime"
@@ -136,9 +138,14 @@ func (r *ManagedRuntime) ensureAuthentication(ctx context.Context, gateway *egre
 		return nil, managedRuntimeFailure("authentication_read")
 	}
 
-	randomBytes := make([]byte, 32)
-	if _, err := io.ReadFull(r.random, randomBytes); err != nil {
-		return nil, managedRuntimeFailure("authentication_random")
+	username, password, recovered := r.recoverAuthentication(ctx, gateway)
+	if !recovered {
+		randomBytes := make([]byte, 32)
+		if _, err := io.ReadFull(r.random, randomBytes); err != nil {
+			return nil, managedRuntimeFailure("authentication_random")
+		}
+		username = ManagedUsername
+		password = base64.RawURLEncoding.EncodeToString(randomBytes)
 	}
 	immutable := true
 	desired := &corev1.Secret{
@@ -146,8 +153,8 @@ func (r *ManagedRuntime) ensureAuthentication(ctx context.Context, gateway *egre
 		Type:       BasicAuthSecretType,
 		Immutable:  &immutable,
 		Data: map[string][]byte{
-			corev1.BasicAuthUsernameKey: []byte(ManagedUsername),
-			corev1.BasicAuthPasswordKey: []byte(base64.RawURLEncoding.EncodeToString(randomBytes)),
+			corev1.BasicAuthUsernameKey: []byte(username),
+			corev1.BasicAuthPasswordKey: []byte(password),
 		},
 	}
 	if err := controllerutil.SetControllerReference(gateway, desired, r.scheme); err != nil {
@@ -160,6 +167,24 @@ func (r *ManagedRuntime) ensureAuthentication(ctx context.Context, gateway *egre
 		return nil, managedRuntimeFailure("authentication_create")
 	}
 	return desired, nil
+}
+
+func (r *ManagedRuntime) recoverAuthentication(ctx context.Context, gateway *egressv1alpha1.EgressGateway) (string, string, bool) {
+	for _, name := range []string{gateway.Status.ActiveGeneration, gateway.Status.PublishedGeneration} {
+		if name == "" {
+			continue
+		}
+		secret := &corev1.Secret{}
+		if err := r.client.Get(ctx, types.NamespacedName{Namespace: gateway.Namespace, Name: name}, secret); err != nil || !ownedByGateway(secret, gateway) || secret.Type != EngineSecretType {
+			continue
+		}
+		username := string(secret.Data[ClientUsernameDataKey])
+		password := string(secret.Data[ClientPasswordDataKey])
+		if _, err := policy.NewManagedSOCKSListener(ManagedSOCKSPort, username, password); err == nil {
+			return username, password, true
+		}
+	}
+	return "", "", false
 }
 
 // GenerationPublisher stores exact validated bytes in immutable Secrets. The
@@ -224,7 +249,13 @@ func (p *GenerationPublisher) Publish(ctx context.Context, validated artifact.Va
 	if !ok || validated.Profile().Engine.String() != profileEngine(p.owner.Spec.Engine) {
 		return artifact.Publication{}, secretPublicationFailure("profile")
 	}
-	if len(content)+len(receiptBytes) > MaxSecretDataBytes {
+	authentication := &corev1.Secret{}
+	if err := p.client.Get(ctx, types.NamespacedName{Namespace: p.owner.Namespace, Name: managedResourceName(p.owner, "client-auth")}, authentication); err != nil || !ownedByGateway(authentication, p.owner) || authentication.Type != BasicAuthSecretType {
+		return artifact.Publication{}, managedRuntimeFailure("authentication_read")
+	}
+	username := authentication.Data[corev1.BasicAuthUsernameKey]
+	password := authentication.Data[corev1.BasicAuthPasswordKey]
+	if len(content)+len(receiptBytes)+len(username)+len(password) > MaxSecretDataBytes {
 		return artifact.Publication{}, secretPublicationFailure("payload_too_large")
 	}
 	secrets, err := p.generations(ctx)
@@ -233,7 +264,7 @@ func (p *GenerationPublisher) Publish(ctx context.Context, validated artifact.Va
 	}
 	for index := range secrets {
 		secret := &secrets[index]
-		if bytes.Equal(secret.Data[configKey], content) && bytes.Equal(secret.Data[ReceiptDataKey], receiptBytes) && len(secret.Data) == 2 {
+		if bytes.Equal(secret.Data[configKey], content) && bytes.Equal(secret.Data[ReceiptDataKey], receiptBytes) && bytes.Equal(secret.Data[ClientUsernameDataKey], username) && bytes.Equal(secret.Data[ClientPasswordDataKey], password) && len(secret.Data) == 4 {
 			p.currentName = secret.Name
 			return artifact.Publication{Profile: validated.Profile(), Changed: false}, nil
 		}
@@ -252,7 +283,10 @@ func (p *GenerationPublisher) Publish(ctx context.Context, validated artifact.Va
 		},
 		Type:      EngineSecretType,
 		Immutable: &immutable,
-		Data:      map[string][]byte{configKey: content, ReceiptDataKey: receiptBytes},
+		Data: map[string][]byte{
+			configKey: content, ReceiptDataKey: receiptBytes,
+			ClientUsernameDataKey: append([]byte(nil), username...), ClientPasswordDataKey: append([]byte(nil), password...),
+		},
 	}
 	desired.Labels[EngineLabel] = validated.Profile().Engine.String()
 	if err := controllerutil.SetControllerReference(p.owner, desired, p.scheme); err != nil {

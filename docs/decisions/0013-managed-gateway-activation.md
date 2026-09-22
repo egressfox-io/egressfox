@@ -39,9 +39,11 @@ Managed mode renders one username/password-authenticated SOCKS5 listener on
 The operator creates one immutable `kubernetes.io/basic-auth` Secret per Gateway,
 with fixed username `egressfox` and a cryptographically random 32-byte base64url
 password. Credentials never enter spec, status, args, labels, annotations or logs.
-Deleting that owned Secret is the explicit M7 rotation operation: the operator
-generates a replacement and the changed auth input creates a new runtime generation.
-User-provided credentials and automatic scheduled rotation are deferred.
+The credentials are also retained as protected data in each immutable generation
+Secret so deletion of the client-facing auth Secret can reconstruct the same value
+without creating an inconsistent rollout window. M7 does not rotate credentials;
+user-provided credentials, scheduled rotation and a two-phase zero-downtime rotation
+protocol are deferred.
 
 ### Image authority and process
 

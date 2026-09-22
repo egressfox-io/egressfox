@@ -125,6 +125,22 @@ func TestManagedRuntimeCreatesSecureOwnedResourcesAndActivatesExactGeneration(t 
 	if !outcome.Activated || !outcome.RuntimeReady || outcome.ActiveGeneration != generation {
 		t.Fatalf("activated runtime outcome = %#v", outcome)
 	}
+	gateway.Status.PublishedGeneration = generation
+	gateway.Status.ActiveGeneration = generation
+	authentication := &corev1.Secret{}
+	if err := kubeClient.Get(ctx, types.NamespacedName{Namespace: gateway.Namespace, Name: outcome.ClientAuthSecretName}, authentication); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubeClient.Delete(ctx, authentication); err != nil {
+		t.Fatal(err)
+	}
+	repaired, _, _, err := runtimeAdapter.Prepare(ctx, gateway)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired.Password() != passwordCanary {
+		t.Fatal("auth Secret repair rotated credentials before a coordinated rollout")
+	}
 }
 
 func TestManagedRuntimeRejectsUnownedResourceCollision(t *testing.T) {
