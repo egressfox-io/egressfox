@@ -20,7 +20,7 @@
     <img src="https://img.shields.io/github/license/egressfox-io/egressfox?style=flat-square" alt="License">
   </a>
   <img src="https://img.shields.io/badge/status-pre--alpha-orange?style=flat-square" alt="Pre-alpha">
-  <img src="https://img.shields.io/badge/Kubernetes-native-326CE5?style=flat-square&logo=kubernetes&logoColor=white" alt="Kubernetes native">
+  <img src="https://img.shields.io/badge/Kubernetes-integration-326CE5?style=flat-square&logo=kubernetes&logoColor=white" alt="Kubernetes integration">
   <img src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-1793D1?style=flat-square&logo=linux&logoColor=white" alt="Platforms">
 
   <br>
@@ -69,10 +69,11 @@
 EgressFox discovers external proxy endpoints, observes their destination-specific
 health, retains historical evidence, and adaptively selects a stable usable set.
 
-It renders and validates configuration for **Mihomo** and **sing-box**, then either
-runs the data plane for you or publishes the configuration for a runtime you manage.
-
-EgressFox works as a **standalone control plane** and as a **Kubernetes-native operator**.
+It renders and validates configuration for **Mihomo** and **sing-box**. Today the
+Go core supports standalone reconciliation and the Kubernetes operator provides
+BYO Secret publication plus an explicit managed Gateway. A user-facing standalone
+CLI/daemon and broader external publishers are accepted future architecture, not
+current release capabilities.
 ## Why EgressFox?
 
 External integrations sometimes depend on gateways that rotate credentials,
@@ -113,7 +114,10 @@ EgressFox until their renderer and native compatibility profile are tested.
   or arbitrary workload routing.
 - Rich routing composition, native escape hatches, additional proxy protocols, or
   cross-namespace references.
-- Highly available operators, shared SQLite, a Web UI, or a general product CLI.
+- A user-facing standalone product CLI/daemon, Vault/S3 publishers, or
+  `EgressOutput`; these are post-P1 architecture directions, not implemented APIs.
+- Highly available operators, shared SQLite, a Web UI, or a rich general-purpose
+  product CLI in the committed P1 path.
 
 See the [roadmap](docs/roadmap/README.md) for later horizons. Planned work is not a
 current compatibility promise.

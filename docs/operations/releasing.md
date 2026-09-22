@@ -5,6 +5,11 @@ dry-run section. [ADR 0012](../decisions/0012-release-distribution-and-provenanc
 owns redistribution and trust-boundary decisions; [ADR 0014](../decisions/0014-development-versioning-and-kubernetes-compatibility.md)
 owns development versioning and Kubernetes qualification.
 
+This guide describes the current operator, managed Gateway image and release files.
+The future `egressfox` standalone distribution, `egressfox-runtime`, canonical
+OCI/embedded engine byte sharing and shared publisher family are architecture
+requirements only; see [runtime and standalone](../designs/runtime-and-standalone.md).
+
 ## Supported release contract
 
 The initial public artifacts support exactly:
@@ -13,7 +18,7 @@ The initial public artifacts support exactly:
 | --- | --- | --- |
 | Mihomo | 1.19.31 / `egressfox.mihomo/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
 | sing-box | 1.14.1 / `egressfox.sing-box/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
-| Operator/runtime image | linux/amd64, linux/arm64 | Operator, readiness helper and source-built engine derivatives are compiled for both architectures; the same signed image is the M7 managed runtime authority |
+| Operator and managed Gateway image | linux/amd64, linux/arm64 | Operator, readiness helper and source-built engine derivatives are compiled for both architectures; the same signed image is the M7 managed runtime authority. Managed Pods start engine binaries directly. |
 | Kubernetes | 1.32, 1.34, 1.37 | Pinned envtest and kind release-qualification profiles; not a promise for every older or newer minor |
 | API | `egressfox.io/v1alpha1` | Alpha compatibility: review CRD diffs and release notes before every upgrade |
 

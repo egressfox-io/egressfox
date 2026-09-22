@@ -17,7 +17,7 @@ dry run. P1 M7 adds the first explicit managed engine path and exact-generation
 activation. There is still no product CLI, managed HTTP source refresh,
 cross-namespace API or HA topology.
 
-**Next implementation horizon: P1 M8.** The authoritative
+**Next implementation milestone: P1 M8.** The authoritative
 [P1 product roadmap](p1.md) now orders managed runtime/activation, resilient source
 refresh, target-aware selection, bounded routing policy, observability and
 explainability. M7 is complete; later P1 behavior is not implemented. A public
@@ -60,8 +60,36 @@ milestones, dependencies, scope tiers and exit criteria. The full
 [catalog](features.md) preserves optional and later ideas without turning them into
 implicit milestones.
 
+## Accepted post-P1 architecture track
+
+After M12, the roadmap naturally continues into the accepted
+[runtime/standalone design](../designs/runtime-and-standalone.md) and
+[artifact/publication/composition design](../designs/artifact-publication-and-composition.md).
+This is future work, not an implementation commitment with dates. It reuses the
+shared primitives established by M8–M12 instead of duplicating refresh, profiles,
+policy, visibility or explanation in another frontend.
+
+Candidate work stages, to be decomposed and gated before implementation:
+
+| Stage | Future outcome |
+| --- | --- |
+| S1 | Thin runtime execution/lifecycle boundary and canonical engine packaging |
+| S2 | One-shot Go `egressfox` CLI and shared publisher adapters |
+| S3 | Long-running standalone control plane with LKG-preserving managed activation |
+| S4 | Full single-file distribution, secure lazy payload materialization and release qualification |
+
+The future publisher family includes Kubernetes Secret, Vault, S3-compatible object
+storage, filesystem and sensitive one-shot stdout export. A separate Kubernetes
+publication/API milestone will deliberately design `EgressOutput` and migration
+from current Gateway `outputSecretName`; basic managed Gateway does not require
+`EgressOutput`. Exact stage boundaries and sequencing, output API/schema, runtime
+mechanics and release artifact procedures remain open until their owning designs
+and plans supply implementation evidence. These stage labels do not reuse P1
+milestone numbers.
+
 P2 holds advanced storage, operator HA, cross-namespace grants, native composition,
-additional output systems and richer UI/customization. P3 explores transparent
-datapath and fleet integration. Operator HA cannot assume leader election or a
-shared SQLite file is sufficient; it must supersede the single-active topology in
-ADR 0011 with supported durable state and fencing.
+additional output systems beyond the accepted initial publisher family, and richer
+UI/customization. P3 explores transparent datapath and fleet integration. Operator
+HA cannot assume leader election or a shared SQLite file is sufficient; it must
+supersede the single-active topology in ADR 0011 with supported durable state and
+fencing.

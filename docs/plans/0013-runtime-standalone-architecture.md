@@ -105,11 +105,11 @@ superseded.
   facts; record this plan before architecture edits.
 - [x] Add durable ADR and focused runtime/standalone and artifact/publication design
   authority; update architecture and security boundaries.
-- [ ] Reconcile README/product, P1/feature/roadmap, open questions, AGENTS and
+- [x] Reconcile README/product, P1/feature/roadmap, open questions, AGENTS and
   documentation indexes while preserving current behavior and milestone order.
-- [ ] Review all affected Markdown for contradictions and links; run `make check`,
+- [x] Review all affected Markdown for contradictions and links; run `make check`,
   documentation validation and `git diff --check`; record exact outcomes.
-- [ ] Commit coherent documentation checkpoints and finish on a clean branch.
+- [x] Commit coherent documentation checkpoints and finish on a clean branch.
 
 ## Progress and evidence
 
@@ -117,8 +117,12 @@ The first design checkpoint now records ADRs 0015–0017 and the detailed
 `runtime-and-standalone.md` and `artifact-publication-and-composition.md` designs.
 `architecture.md`, current publication/Kubernetes designs, threat model, ADR index,
 documentation map, and ADR 0002/0003 scope notes link the authority while retaining
-M7 and release facts. Product, P1/feature/roadmap, root agent guidance, decision
-queue and operational release wording are being reconciled in the next checkpoint.
+M7 and release facts. A second documentation checkpoint reconciles README/product,
+P1/feature/roadmap, root agent guidance, decision queue and release wording. It
+preserves the M8–M12 implementation order and records S1–S4 as undated post-P1
+stages only. The initial plan and architecture checkpoints are committed as
+`a2f7301` and `2db3788`; this final checkpoint completes the product/roadmap
+reconciliation and execution record.
 
 ## Unresolved details intentionally left open
 
@@ -138,7 +142,18 @@ queue and operational release wording are being reconciled in the next checkpoin
 
 ## Validation and handoff
 
-Validation is pending. The task requires documentation/repository checks only; no
-Kubernetes E2E, vulnerability scan, release qualification, implementation or
-publication is planned. Final command evidence and commit IDs will be recorded here
-after completion.
+- `GOCACHE=/private/tmp/egressfox-docs-gocache make docs` — passed; offline links
+  and local anchors are valid.
+- `GOCACHE=/private/tmp/egressfox-check-gocache make check` — passed, including
+  formatting, generated-file consistency, vet, race tests, builds, documentation,
+  Helm lint/template, release-manifest/workflow guards and whitespace checks. The
+  first sandboxed attempt could not bind localhost test sockets; the same command
+  passed when rerun with the permission those local tests require.
+- `git diff --check` — passed; no generated tracked API/CRD changes resulted.
+- No Go, API/CRD, Helm, Dockerfile, release manifest/tooling, workflow, engine build
+  or overlay, runtime, M8, release, tag, push or publication changes were made.
+- Documentation and plan work is committed on
+  `docs/runtime-standalone-architecture`; the final tree is clean.
+
+No Kubernetes envtest/kind qualification or online vulnerability scan was run; no
+claim about those checks is made.

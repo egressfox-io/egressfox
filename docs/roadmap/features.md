@@ -17,7 +17,7 @@ work; designs define semantics. Update this catalog when scope changes deliberat
 | P0-05 | Destination-aware probes with explicit execution path, budgets, freshness and outcomes | M4 |
 | P0-06 | Historical state and initial SQLite persistence | M4 |
 | P0-07 | Adaptive scoring, anti-flapping, hard eligibility and Top-N selection | M5 |
-| P0-08 | Standalone/CLI foundations and continuous reconciliation | M2–M5 |
+| P0-08 | Kubernetes-independent core/use-case foundations and continuous reconciliation | M2–M5 |
 | P0-09 | Structured diagnostics, Prometheus foundations and bounded decision evidence | M2–M6 |
 | P0-10 | Proposed ProxyPool/EgressGateway APIs, operator reconciliation, status/Conditions, Secret references and Kubernetes Secret output | M6 |
 | P0-11 | BYO/unmanaged runtime integration and Helm installation | M6 |
@@ -25,6 +25,8 @@ work; designs define semantics. Update this catalog when scope changes deliberat
 The first slices have explicit supported protocols/formats. No broad protocol list
 is an implicit promise of support. P0 holds transactional source state through a
 failed refresh but does not include the complete P1 HTTP caching/fallback system.
+Kubernetes-independent M1–M5 behavior does not mean a user-facing `egressfox` CLI
+or standalone daemon is implemented.
 
 ## P1 — Self-contained namespace egress service
 
@@ -53,12 +55,12 @@ their API/security contract.
 | ID | Capability group | Constraint |
 | --- | --- | --- |
 | P2-01 | PostgreSQL | Concrete operational need and adapter contract, not speculative storage framework |
-| P2-02 | Hierarchical/fallback pools | Cycle/precedence, failure and infeasible-selection semantics |
+| P2-02 | Explicit fallback among leaf Pool/Profile candidate sets | Order, failure and infeasible-selection semantics; inventories remain non-recursive |
 | P2-03 | Quota/cost-aware selection and custom scoring | Explainable policy, safe extension model, reproducibility |
-| P2-04 | kubectl plugin and Web UI | Stable authenticated interfaces; no UI stack now |
+| P2-04 | kubectl plugin, Web UI or a separately justified TUI | Stable authenticated interfaces; no UI stack now |
 | P2-05 | Advanced rollout strategies | Activation evidence and controlled traffic tests |
 | P2-06 | Sidecar/transparent proxy experiments | Separate networking/security design; explicit proxy remains initial model |
-| P2-07 | OpenTelemetry, Vault and additional source/output adapters | Proven use case, secrecy and target-specific idempotency/acknowledgment guarantees |
+| P2-07 | OpenTelemetry and source/output adapters beyond the accepted post-P1 publisher family | Proven use case, secrecy and target-specific idempotency/acknowledgment guarantees |
 | P2-08 | Operator HA and shared durable state | Real write fencing/recovery; no shared SQLite or replica-count shortcut |
 | P2-09 | Cross-namespace references | Explicit grant/reference model and scoped Secret authorization |
 | P2-10 | Engine-native composition and base-config escape hatch | Reserved-field ownership, safe merge and final native validation |
@@ -91,8 +93,10 @@ with a concrete use case:
   rule sets, direct, fallback, URL-test-like behavior, balancing, final/default route.
 - Output modes: complete configs, provider/proxy fragments, outbound fragments,
   sensitive stdout export, and future output adapters.
-- CLI ideas: validate, fetch, nodes, probe, score, explain, render, diff, run; a
-  Rust/Ratatui rich CLI/TUI is deferred and does not justify a workspace today.
+- CLI capability examples: inspect, generate, probe, validate, version and run;
+  exact commands are future design. The primary product CLI is planned in Go over
+  the shared core. A separate TUI or remote client is undecided and does not justify
+  a second control-plane implementation or workspace.
 
 The [product document](../product.md) owns the thesis purpose. Experimental static,
 lowest-latency and adaptive comparisons are enabled by P0 testability, without
