@@ -1,19 +1,78 @@
-# EgressFox
+<p align="center">
+  <img
+    src=".github/assets/banner.png"
+    alt="EgressFox — A smarter way out."
+    width="100%"
+  />
+</p>
 
-**Adaptive egress control plane for reliable external connectivity.**
+<p align="center">
+  <strong>Adaptive egress control plane for reliable external connectivity.</strong>
+</p>
 
-[![Repository checks](https://github.com/egressfox-io/egressfox/actions/workflows/check.yml/badge.svg)](https://github.com/egressfox-io/egressfox/actions/workflows/check.yml)
-[![Go 1.27.1](https://img.shields.io/badge/Go-1.27.1-00ADD8?logo=go&logoColor=white)](go.mod)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-EgressFox ingests external proxy endpoint sources, measures destination-specific
-connectivity, retains historical evidence, selects a stable usable set, and renders
-validated desired configuration for Mihomo or sing-box. Its Kubernetes operator
-publishes that configuration for a runtime you manage.
+<div align="center">
 
-> **Pre-release alpha.** The P0 control-plane path and release machinery are
-> implemented, but no public release or production-support commitment exists yet.
+  <a href="https://github.com/egressfox-io/egressfox/actions/workflows/check.yml">
+    <img src="https://github.com/egressfox-io/egressfox/actions/workflows/check.yml/badge.svg" alt="Repository checks">
+  </a>
+  <a href="https://github.com/egressfox-io/egressfox/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/egressfox-io/egressfox?style=flat-square" alt="License">
+  </a>
+  <img src="https://img.shields.io/badge/status-pre--alpha-orange?style=flat-square" alt="Pre-alpha">
+  <img src="https://img.shields.io/badge/Kubernetes-native-326CE5?style=flat-square&logo=kubernetes&logoColor=white" alt="Kubernetes native">
+  <img src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-1793D1?style=flat-square&logo=linux&logoColor=white" alt="Platforms">
 
+  <br>
+
+  <a href="./go.mod">
+    <img src="https://img.shields.io/github/go-mod/go-version/egressfox-io/egressfox?style=flat-square&logo=go" alt="Go version">
+  </a>
+  <a href="https://github.com/egressfox-io/egressfox">
+    <img src="https://img.shields.io/github/languages/top/egressfox-io/egressfox?style=flat-square&logo=go" alt="Top language">
+  </a>
+  <img src="https://img.shields.io/badge/Mihomo-1.19.31-5c7cfa?style=flat-square" alt="Mihomo 1.19.31">
+  <img src="https://img.shields.io/badge/sing--box-1.14.1-5e81ac?style=flat-square" alt="sing-box 1.14.1">
+
+  <br>
+
+  <a href="https://github.com/egressfox-io/egressfox">
+    <img src="https://img.shields.io/github/commit-activity/m/egressfox-io/egressfox?style=flat-square&label=commits" alt="Commit activity">
+  </a>
+  <a href="https://github.com/egressfox-io/egressfox/commits/main">
+    <img src="https://img.shields.io/github/last-commit/egressfox-io/egressfox?style=flat-square" alt="Last commit">
+  </a>
+  <a href="https://github.com/egressfox-io/egressfox/issues">
+    <img src="https://img.shields.io/github/issues/egressfox-io/egressfox?style=flat-square" alt="Issues">
+  </a>
+  <a href="https://github.com/egressfox-io/egressfox/pulls">
+    <img src="https://img.shields.io/github/issues-pr/egressfox-io/egressfox?style=flat-square" alt="Pull requests">
+  </a>
+  <a href="https://github.com/egressfox-io/egressfox/graphs/contributors">
+    <img src="https://img.shields.io/github/contributors/egressfox-io/egressfox?style=flat-square" alt="Contributors">
+  </a>
+
+</div>
+
+
+
+> [!CAUTION]
+> **Pre-alpha — active development.**
+>
+> EgressFox is under active development. Core functionality is implemented,
+> but public releases, API stability, and production readiness are not yet
+> guaranteed.
+>
+> Breaking changes may occur without prior notice.
+---
+
+EgressFox discovers external proxy endpoints, observes their destination-specific
+health, retains historical evidence, and adaptively selects a stable usable set.
+
+It renders and validates configuration for **Mihomo** and **sing-box**, then either
+runs the data plane for you or publishes the configuration for a runtime you manage.
+
+EgressFox works as a **standalone control plane** and as a **Kubernetes-native operator**.
 ## Why EgressFox?
 
 External integrations sometimes depend on gateways that rotate credentials,
@@ -30,27 +89,6 @@ Mihomo and sing-box remain the data plane: they implement protocols and move tra
 EgressFox is the control plane that decides which validated configuration should
 exist.
 
-## How it works
-
-```mermaid
-flowchart LR
-    S[URI and Base64 URI-list sources] --> N[Normalize and deduplicate]
-    N --> P[Probe through pinned engines]
-    P --> H[Historical evidence]
-    H --> A[Adaptive selection]
-    A --> R[Render for Mihomo or sing-box]
-    R --> V[Native validation]
-    V --> L[Last-known-good publication]
-    L --> D[User-managed data plane]
-    K[Kubernetes operator] --> S
-    K --> L
-```
-
-The core endpoint, observation, selection, rendering, and reconciliation packages do
-not depend on Kubernetes. The operator adapts same-namespace Secrets and alpha CRDs
-to that core and publishes an owned Secret; it does not create or reload an engine
-workload.
-
 ## Current capabilities
 
 | Area | Implemented P0 contract |
@@ -61,7 +99,7 @@ workload.
 | Selection | Static, lowest-latency, and deterministic adaptive Top-N strategies with residence, hysteresis, cooldown and emergency replacement |
 | Rendering | Exact Mihomo 1.19.31 and sing-box-compatible 1.14.1 profiles with native validation |
 | Publication | Recoverable file output in the core; owner-checked Kubernetes Secret output with last-known-good preservation |
-| Kubernetes | Namespace-scoped `egressfox.io/v1alpha1` operator, Helm chart, scoped RBAC, retained RWO state PVC |
+| Kubernetes | Namespace-scoped `egressfox.io/v1alpha1` operator, explicit managed or BYO Gateways, exact-generation activation, Helm chart, scoped RBAC, retained RWO state PVC |
 | Release path | linux/amd64 and linux/arm64 builds, SPDX SBOMs, vulnerability gates, checksums, keyless signing and provenance workflow |
 
 Versions or protocols not listed above may work upstream but are unsupported by
@@ -69,8 +107,8 @@ EgressFox until their renderer and native compatibility profile are tested.
 
 ## Intentionally not implemented
 
-- Managed Mihomo or sing-box Deployments, Services, reloads, or activation
-  acknowledgement.
+- Managed replicas greater than one, live reload, PDB/topology controls, external
+  Services, HTTP proxy listeners, or traffic-level health claims.
 - Transparent interception, TProxy automation, eBPF integration, sidecar injection,
   or arbitrary workload routing.
 - Rich routing composition, native escape hatches, additional proxy protocols, or
@@ -99,10 +137,10 @@ make test-envtest
 make e2e-kind
 ```
 
-The kind test creates an isolated Kubernetes 1.37.0 cluster, installs the chart,
-checks namespace-scoped RBAC, proxies controlled traffic through the bundled
-sing-box-compatible engine, verifies restart and last-known-good behavior, and
-deletes the cluster when complete.
+The kind test creates an isolated Kubernetes 1.37.0 cluster, installs/upgrades the
+chart, checks negative RBAC and BYO compatibility, proxies controlled traffic
+through both managed engines, verifies authentication, failed-rollout LKG, repair,
+restart and mode transitions, and deletes the cluster when complete.
 
 After the first approved alpha is published, use the verified image digest and Helm
 package described in the [release guide](docs/operations/releasing.md). Do not deploy
@@ -111,8 +149,8 @@ an invented `latest` tag.
 ## Kubernetes model
 
 The operator watches one namespace. A `ProxyPool` reads endpoint and probe-target
-Secrets; an `EgressGateway` selects an exact engine profile and names its output
-Secret:
+Secrets; an `EgressGateway` selects an exact engine profile and explicitly opts into
+the managed runtime:
 
 ```yaml
 apiVersion: egressfox.io/v1alpha1
@@ -137,15 +175,16 @@ metadata:
 spec:
   poolRef: {name: external-api}
   engine: SingBox
-  listener: {address: 127.0.0.1, port: 1080}
-  outputSecretName: external-api-engine-config
+  runtime:
+    managed: {}
 ```
 
 The referenced Secrets contain credentials and must be created through your secret
-management workflow. The operator writes validated `config.yaml` or `config.json`
-bytes, but the user-managed engine workload is responsible for mounting and loading
-them. See the [sanitized samples](config/samples/README.md) and the
-[operator guide](docs/operations/kubernetes.md).
+management workflow. Managed mode creates one authenticated SOCKS5 Service; status
+reports its name, the client-auth Secret and distinct published/active generations.
+Applications explicitly configure that proxy. Omit `runtime` and provide the legacy
+loopback `listener` plus `outputSecretName` to retain BYO behavior. See the
+[sanitized samples](config/samples/README.md) and the [operator guide](docs/operations/kubernetes.md).
 
 ## Adaptive selection
 
@@ -172,11 +211,11 @@ Read [SECURITY.md](SECURITY.md) before reporting a sensitive issue and see the
 
 ## Project status and roadmap
 
-P0 milestones M1–M6 and post-M6 release hardening are complete. The current API is
-`v1alpha1`, Kubernetes 1.37.0 is the tested baseline, and the project is not
-production-certified. P1 is now designed as six bounded milestones; M7 managed
-gateway/activation is the next implementation unit. No P1 feature is implemented or
-implied by the current repository. See the [P1 roadmap](docs/roadmap/p1.md).
+P0 milestones M1–M6, post-M6 release hardening and P1 M7 managed
+gateway/activation are complete. The current API is `v1alpha1`, Kubernetes 1.37.0
+is the tested baseline, and the project is not production-certified. M8 resilient
+HTTP source refresh is the next implementation unit. See the
+[P1 roadmap](docs/roadmap/p1.md).
 
 ## Documentation
 
