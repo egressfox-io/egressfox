@@ -158,20 +158,44 @@ iptables/nftables, or admission permissions for a configuration-only operator.
 Non-root execution, read-only root filesystem with dedicated writable state/temp
 volumes, dropped capabilities, resource bounds, and secure TLS are planned defaults.
 
-### P1 API and runtime direction
+### M7 managed API and runtime
 
-The [P1 roadmap](../roadmap/p1.md) is authoritative for sequencing. M7 adds an
-explicit managed runtime mode while omission remains the existing BYO behavior. It
-owns a single-replica engine Deployment, authenticated SOCKS ClusterIP Service and
-revision-bound generation Secret; it does not adopt user workloads. Exact fields,
-client credential ownership, image authority, Secret retention and deletion are Q13
-and require an ADR before CRD generation.
+The [P1 roadmap](../roadmap/p1.md) is authoritative for sequencing and
+[ADR 0013](../decisions/0013-managed-gateway-activation.md) resolves Q7/Q13. M7 adds
+optional `spec.runtime.managed: {}`; omission remains existing BYO behavior. BYO
+requires `outputSecretName` and permits the existing loopback listener. Managed mode
+forbids those BYO-only fields and fixes one authenticated SOCKS listener on port
+1080. This discriminated shape cannot express two runtime modes simultaneously.
 
-Managed status separates `Published`, `Activated` and `RuntimeReady`. The common
-first activation path is a fresh engine process in a changed Pod template, not an
-engine-specific live reload. Readiness establishes process/listener availability
-for the exact Pod generation, not destination traffic health. BYO activation stays
-unknown.
+Managed mode owns one immutable generated `kubernetes.io/basic-auth` Secret,
+bounded immutable generation Secrets, one Deployment, one ClusterIP Service and one
+ingress-only NetworkPolicy. Every child has the exact Gateway controller owner;
+same-name unowned objects are conflicts. Credentials are generated with secure
+randomness, never enter API status/metadata/args, and rotate only when the auth
+Secret is deliberately deleted. Cross-namespace and user-provided auth are not M7.
+
+The Deployment uses the exact configured EgressFox release image, fixed engine
+executable/arguments, one replica, `maxUnavailable: 0` and `maxSurge: 1`. It has no
+service-account token, control port, host namespace or elevated privilege. A stable
+Service selector spans rollout generations and Kubernetes readiness removes an
+unready replacement from endpoints without removing the old ready Pod.
+
+Managed status exposes opaque, random, non-content-derived published and active
+generation names plus safe owned Service/auth Secret names. `Published` means the
+validated exact bytes exist in the immutable current Secret. `Activated` requires
+the observed Deployment template for that Secret to have its sole updated replica
+ready and available. `RuntimeReady` means at least one managed replica is ready, so
+during a failed rollout it can remain true for the previous active generation while
+`Activated=False` and `Degraded=True` for desired. The fixed readiness helper reads
+mounted credentials and completes SOCKS5 username/password negotiation on loopback;
+it does not proxy traffic or claim destination health. BYO activation stays Unknown.
+
+Opaque generations are retained while active, immediately previous, or referenced
+by a non-terminal Pod; other owned generations are deleted after successful
+activation. Gateway deletion relies on garbage collection without a finalizer.
+Managed-to-BYO removes only exact-owned managed children after BYO publication;
+BYO-to-managed retains the old owned output until managed activation. Downgrade
+requires returning objects to BYO before installing an M6 operator.
 
 M9 evolves `ProxyPool` toward bounded named probe/selection profiles over one source
 inventory while preserving the current fields as a legacy/default profile. M10 adds
@@ -201,9 +225,9 @@ the initial support baseline.
 
 ## Non-goals and open questions
 
-No frozen YAML API, EgressPolicy in P0, multi-tenancy, automatic workload routing,
-transparent interception, or operator HA implementation. The
-[ADR 0011](../decisions/0011-namespaced-byo-operator.md) owns the P0 API, topology,
-deletion, RBAC and state decisions. P1 requires a new decision before managed
-runtimes. Q15/Q16 gate profile/policy APIs; cross-namespace use and HA are deferred
-beyond the committed P1 path.
+No EgressPolicy in M7, multi-tenancy, automatic workload routing, transparent
+interception, or operator HA implementation. ADRs
+[0011](../decisions/0011-namespaced-byo-operator.md) and
+[0013](../decisions/0013-managed-gateway-activation.md) own the BYO and managed
+runtime contracts. Q15/Q16 gate profile/policy APIs; cross-namespace use and HA are
+deferred beyond the committed P1 path.

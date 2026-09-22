@@ -9,12 +9,13 @@ RWO-PVC single-active operation.
 Release tooling adds a centralized checksum manifest, exact engine/source/license
 artifacts, SPDX SBOMs, image/package scanning, keyless signing and provenance.
 Ordinary CI is read-only; publication is tag-bound and protected-environment gated.
-There is no managed data-plane runtime or production stability claim. Reporting
+M7 adds an explicit managed single-replica data-plane runtime; there is still no
+production stability or high-availability claim. Reporting
 guidance is in [SECURITY.md](../../SECURITY.md).
 
 The [P1 roadmap](../roadmap/p1.md) is design, not an implemented control. Its first
 milestone introduces a new authenticated proxy-listener and managed-workload trust
-boundary only after Q7/Q13 resolve exact-generation activation and ownership.
+boundary under ADR 0013.
 
 M2 HTTP acquisition permits HTTPS by default, requires explicit intent for HTTP and
 non-public destinations, checks resolved addresses on the actual dial path, disables
@@ -135,6 +136,16 @@ root filesystem with explicit state/temp volumes, and exposes only required port
 No NET_ADMIN, host networking, or privileged container is justified by P0.
 Source and validator binaries must not execute arbitrary hooks from subscriptions.
 
+M7 managed engine Pods inherit those controls, use no service-account token, mount
+only their immutable config, auth and bounded writable state, and expose only an
+authenticated SOCKS ClusterIP port. A namespace-local NetworkPolicy is defense in
+depth because enforcement depends on the CNI. The readiness helper reads credentials
+from files and performs only local SOCKS authentication; it never logs them or puts
+them in process arguments. The release image contains both engines and the operator
+binary, so a dedicated future engine-only image could reduce attack surface, but
+the Pod has no Kubernetes credentials and fixed command/arguments prevent API-level
+binary injection.
+
 ## Security review triggers and residual risks
 
 Update this model alongside new network fetch paths, parsers, engine invocations,
@@ -147,8 +158,9 @@ Q3/Q4 probe and history choices are resolved by
 [ADR 0009](../decisions/0009-bounded-probes-and-sqlite-evidence.md), and Q5 selection
 by [ADR 0010](../decisions/0010-deterministic-adaptive-selection.md). Secret publication
 and operator state/permissions/deletion are resolved by
-[ADR 0011](../decisions/0011-namespaced-byo-operator.md). Runtime activation/rollback
-remains under Q7. M3 validator and file recovery
+[ADR 0011](../decisions/0011-namespaced-byo-operator.md). Managed runtime
+activation/rollback and ownership are resolved by
+[ADR 0013](../decisions/0013-managed-gateway-activation.md). M3 validator and file recovery
 choices are resolved by [ADR 0008](../decisions/0008-engine-artifacts-and-file-publication.md). All open
 items are recorded in the [decision queue](../decisions/open-questions.md).
 

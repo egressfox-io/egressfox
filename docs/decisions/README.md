@@ -18,6 +18,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0010](0010-deterministic-adaptive-selection.md) | Deterministic adaptive selection and publication checkpoints | Accepted |
 | [0011](0011-namespaced-byo-operator.md) | Namespace-scoped BYO operator and owned Secret publication | Accepted |
 | [0012](0012-release-distribution-and-provenance.md) | Engine redistribution, versioning, signing and provenance | Accepted |
+| [0013](0013-managed-gateway-activation.md) | Managed gateway ownership and exact-generation activation | Accepted |
 
 ## Adding a decision
 

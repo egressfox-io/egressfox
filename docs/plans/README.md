@@ -16,6 +16,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0008](0008-release-hardening.md) | Complete | First alpha release hardening and Q12 resolution |
 | [0009](0009-public-repository-polish.md) | Complete | First-public-push presentation, community files and hygiene |
 | [0010](0010-p1-product-roadmap.md) | Complete | P1 product objective, milestones, API gates and implementation order |
+| [0011](0011-managed-gateway.md) | In progress | M7 managed gateway and exact-generation activation |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

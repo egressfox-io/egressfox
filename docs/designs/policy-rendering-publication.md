@@ -177,13 +177,19 @@ the last successfully published, validated artifact plus its provenance. In BYO
 mode activation remains unknown; a publication Condition must not claim traffic
 readiness. Future reload/activation adapters can report a separate acknowledgment.
 
-P1 M7 makes that acknowledgment concrete only for an operator-managed runtime. The
-first common path binds a fresh process Pod to an immutable generation Secret and
-uses engine listener readiness plus completed Deployment rollout as activation
-evidence. It does not enable Mihomo's control API or assume sing-box `SIGHUP` has the
-same semantics. The previous ready generation and its Secret remain until the new
-generation activates; Q7/Q13 must define failure, retention and deletion precisely.
-BYO mode remains publication-only.
+P1 M7 makes that acknowledgment concrete only for an operator-managed runtime under
+[ADR 0013](../decisions/0013-managed-gateway-activation.md). The common policy
+listener now distinguishes loopback/unauthenticated BYO intent from Pod-network,
+username/password-authenticated managed intent without Kubernetes types. Mihomo
+renders `socks-port`, `allow-lan`, `bind-address` and `authentication`; sing-box
+renders one SOCKS inbound with `users`. Both exact-profile native validators must
+accept the result; neither renderer may omit authentication or add another listener.
+
+The first activation path binds a fresh process Pod to an immutable generation
+Secret and uses an authenticated loopback SOCKS handshake plus completed Deployment
+rollout as activation evidence. It does not enable Mihomo's control API or assume
+sing-box `SIGHUP` has the same semantics. The previous ready generation and its
+Secret remain until the new generation activates. BYO mode remains publication-only.
 
 P1 M10 expands the common model only after Q16 proves a bounded ordered rule/action
 intersection for both exact engine versions. One Gateway references at most one
@@ -247,7 +253,7 @@ replace. Reject unsafe symlink/path ownership. Retain the previous artifact
 securely before replacement, with a bounded retention/cleanup policy. Do not
 assume rename alone proves power-loss durability or cross-filesystem atomicity.
 
-**Kubernetes Secret (implemented M6):** the mutable target is type
+**Kubernetes BYO Secret (implemented M6):** the mutable target is type
 `egressfox.io/engine-config`, has the exact EgressGateway controller owner, and
 contains one engine config plus `.egressfox-receipt` in `data`. The receipt and
 configuration replace atomically in one resourceVersion-guarded API update. An
@@ -256,6 +262,15 @@ owner-reference garbage collection implements Gateway deletion. There is no seco
 backup Secret: the current owned object is the recoverable LKG. API-server durability
 and mounted-file propagation remain Kubernetes responsibilities.
 Mounted-file propagation and application reload are separate from API publication.
+
+**Kubernetes managed generation Secret (M7):** each distinct validated artifact,
+including the generated listener credentials, is one immutable, exactly owned
+Secret with config plus protected receipt. A random API-server suffix supplies the
+opaque generation name; no content digest crosses into metadata or status. Equality
+is established by protected receipt readback, not a public annotation. The
+Deployment template names that Secret, so a template revision and ready Pod bind
+activation to exact bytes. Cleanup retains active/previous/Pod-referenced generations
+and deletes older exact-owned objects. An ownership collision fails closed.
 
 Kubernetes documents [Secret handling and size limits](https://kubernetes.io/docs/concepts/configuration/secret/).
 Base64 is not encryption. Secret authorization and cluster encryption-at-rest
@@ -269,7 +284,8 @@ idempotency, authentication, acknowledgment, retry, and rollback contracts.
 ## Non-goals and open questions
 
 No EgressFox runtime routing implementation, universal policy language, live engine
-reload or native merge engine exists here. M3 compatibility is limited to the exact
-profiles and common slice above. The [decision queue](../decisions/open-questions.md)
-retains activation/rollback under Q7 and native composition under Q10. Secret
-publication is resolved by ADR 0011.
+reload or native merge engine exists here. M7 compatibility is limited to the exact
+profiles and the authenticated managed listener described above. Activation and
+managed ownership are resolved by ADR 0013; the
+[decision queue](../decisions/open-questions.md) retains native composition under
+Q10. BYO Secret publication remains resolved by ADR 0011.
