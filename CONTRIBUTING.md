@@ -66,7 +66,9 @@ request template, or Go `*_test.go` files. Other paths, including product, secur
 compatibility, operational, and release documentation, are treated as ambiguous: add
 an entry or request a maintainer-authorized exemption.
 
-The `No changelog entry is required` checkbox is a request, not approval. Add a
+Finalizing a reviewed version section before tagging also satisfies the changelog
+check; the release notes are extracted from that exact section. The
+`No changelog entry is required` checkbox is a request, not approval. Add a
 brief reason; a maintainer must review the request and apply the `no-changelog`
 label. A label alone, an unchecked box, or a reason without the label is not an
 exemption. Do not use PR titles, branch names, or free-form bypass text.
@@ -77,11 +79,12 @@ it in task-owned commits, and state the changelog decision in the final handoff.
 milestone with a notable change is not complete until this is done. Internal
 milestone completion and release dry-runs do not create a versioned section.
 
-Only when a release is actually published should its applicable entries move from
-`Unreleased` into a versioned section using the actual version and publication date.
-Preserve prior history and leave a fresh `Unreleased` section. Never invent a
-version, date, publication, or feature. See the [versioning guide](docs/operations/versioning.md)
-for release integration.
+Before tagging a reviewed release candidate, move its applicable entries from
+`Unreleased` into a versioned section using the exact planned version, and leave a
+fresh `Unreleased` section. The section prepares the release; GitHub Releases records
+the publication date. Preserve prior history. Never invent a publication or feature.
+The published release description is extracted from that section; see the
+[versioning guide](docs/operations/versioning.md).
 
 ## Validation
 

@@ -96,6 +96,13 @@ runtime` becomes `- ✨ Add managed runtime`. Keep the pull request title aligne
 its Conventional Commit subject so GitHub-generated release notes retain that
 signal.
 
+Release notes come from the reviewed `CHANGELOG.md` version section. Preserve
+semantic emojis exactly once and keep remote publication fail-closed: check GitHub
+Release and GHCR tag state before any write, reject partial publication and reruns,
+and never replace published artifacts. Never push, tag, merge, publish or change
+remote settings without explicit authorization. See the [release guide](docs/operations/releasing.md)
+for the operational contract; security and validation gates above remain mandatory.
+
 ## Validation
 
 Use the Go version in [go.mod](go.mod), Git, Make, and a C compiler for race tests.

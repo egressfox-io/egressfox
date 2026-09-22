@@ -72,6 +72,7 @@ docker-build:
 release-validate:
 	$(GO) run ./tools/releasectl validate --root .
 	$(GO) run ./tools/releasectl release-guard
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s hack -p 'test_release_*.py'
 
 release-dry-run: release-validate
 	./hack/release-dry-run.sh

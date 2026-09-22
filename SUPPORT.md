@@ -15,6 +15,7 @@ commitment beyond the documented alpha support matrix.
   [SECURITY.md](SECURITY.md). Never post credentials, subscriptions, Secret contents,
   generated configurations, or exploit details publicly.
 
-The current Kubernetes model is namespace-scoped and bring-your-own runtime. Requests
-for managed gateways, additional protocols, HA, cross-namespace access, or richer
-routing are roadmap proposals rather than support incidents.
+The current Kubernetes model is namespace-scoped and supports explicit single-replica
+managed Gateways and bring-your-own runtimes. Requests for additional protocols,
+HA, cross-namespace access, or richer routing are roadmap proposals rather than
+support incidents.

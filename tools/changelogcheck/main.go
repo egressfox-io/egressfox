@@ -20,15 +20,16 @@ import (
 const exemptionLabel = "no-changelog"
 
 var (
-	commitPattern       = regexp.MustCompile(`^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`)
-	sectionPattern      = regexp.MustCompile(`^##\s+\[Unreleased\]\s*$`)
-	majorHeadingPattern = regexp.MustCompile(`^##(?:\s|$)`)
-	categoryPattern     = regexp.MustCompile(`^###\s+(.+?)\s*$`)
-	bulletPattern       = regexp.MustCompile(`^[-*+]\s+(.+?)\s*$`)
-	checkboxPattern     = regexp.MustCompile(`^\s*-\s+\[([ xX])\]\s+(.+?)\s*$`)
-	reasonPattern       = regexp.MustCompile(`(?i)^\s*reason:\s*(.*)$`)
-	commentPattern      = regexp.MustCompile(`(?s)<!--.*?-->`)
-	placeholderPattern  = regexp.MustCompile(`(?i)^(?:tbd|todo|fixme|wip|none|n/?a|no changes?(?: yet)?|no notable changes|describe (?:the )?change|placeholder|\[.+\])\s*[.!?]*$`)
+	commitPattern         = regexp.MustCompile(`^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`)
+	sectionPattern        = regexp.MustCompile(`^##\s+\[Unreleased\]\s*$`)
+	versionSectionPattern = regexp.MustCompile(`(?m)^## \[(v\d+\.\d+\.\d+(?:-(?:dev|alpha|beta)\.\d+)?)\]$`)
+	majorHeadingPattern   = regexp.MustCompile(`^##(?:\s|$)`)
+	categoryPattern       = regexp.MustCompile(`^###\s+(.+?)\s*$`)
+	bulletPattern         = regexp.MustCompile(`^[-*+]\s+(.+?)\s*$`)
+	checkboxPattern       = regexp.MustCompile(`^\s*-\s+\[([ xX])\]\s+(.+?)\s*$`)
+	reasonPattern         = regexp.MustCompile(`(?i)^\s*reason:\s*(.*)$`)
+	commentPattern        = regexp.MustCompile(`(?s)<!--.*?-->`)
+	placeholderPattern    = regexp.MustCompile(`(?i)^(?:tbd|todo|fixme|wip|none|n/?a|no changes?(?: yet)?|no notable changes|describe (?:the )?change|placeholder|\[.+\])\s*[.!?]*$`)
 )
 
 var standardCategories = map[string]struct{}{
@@ -172,7 +173,10 @@ func git(args ...string) ([]byte, error) {
 }
 
 func check(paths []string, baseLog, headLog *string, body string, authorized bool) (result, error) {
-	updatedChecked, updatedUnchecked := checkboxStates(body, "CHANGELOG.md updated under Unreleased.")
+	updatedChecked, updatedUnchecked := checkboxStates(body, "CHANGELOG.md updated with release notes.")
+	if !updatedChecked && !updatedUnchecked {
+		updatedChecked, updatedUnchecked = checkboxStates(body, "CHANGELOG.md updated under Unreleased.")
+	}
 	exemptChecked, exemptUnchecked := checkboxStates(body, "No changelog entry is required.")
 	if (updatedChecked && updatedUnchecked) || (exemptChecked && exemptUnchecked) || (updatedChecked && exemptChecked) {
 		return result{}, errors.New("the changelog checklist is contradictory; select exactly one option")
@@ -182,8 +186,14 @@ func check(paths []string, baseLog, headLog *string, body string, authorized boo
 	if err != nil {
 		return result{}, err
 	}
+	if !delta {
+		delta, err = preparedReleaseDelta(baseLog, headLog)
+		if err != nil {
+			return result{}, err
+		}
+	}
 	if updatedChecked && !delta {
-		return result{}, errors.New("the checklist says CHANGELOG.md was updated, but no meaningful new entry was found under ## [Unreleased]")
+		return result{}, errors.New("the checklist says CHANGELOG.md was updated, but no meaningful new entry was found")
 	}
 	if exemptChecked && delta {
 		return result{}, errors.New("the checklist requests no changelog entry, but a meaningful Unreleased entry is present; select only one option")
@@ -198,12 +208,43 @@ func check(paths []string, baseLog, headLog *string, body string, authorized boo
 		return result{Message: "passed (maintainer-authorized no-changelog exemption)"}, nil
 	}
 	if delta {
-		return result{Message: "passed (meaningful entry added under Unreleased)"}, nil
+		return result{Message: "passed (meaningful changelog entry added)"}, nil
 	}
 	if automaticallyExempt(paths) {
 		return result{Message: "passed (only narrowly classified internal documentation or Go test files changed)"}, nil
 	}
 	return result{}, errors.New("a changelog entry is required: add a meaningful entry under CHANGELOG.md's ## [Unreleased], or request an exemption with a reason and the maintainer-applied `no-changelog` label")
+}
+
+// A reviewed release candidate moves notes into a new exact-version section
+// before its tag is created. This is an entry, not a changelog exemption.
+func preparedReleaseDelta(baseLog, headLog *string) (bool, error) {
+	if headLog == nil {
+		return false, nil
+	}
+	base := ""
+	if baseLog != nil {
+		base = *baseLog
+	}
+	for _, match := range versionSectionPattern.FindAllStringIndex(*headLog, -1) {
+		heading := (*headLog)[match[0]:match[1]]
+		if strings.Contains(base, heading) {
+			continue
+		}
+		end := len(*headLog)
+		if next := majorHeadingPattern.FindStringIndex((*headLog)[match[1]:]); next != nil {
+			end = match[1] + next[0]
+		}
+		section := "## [Unreleased]" + (*headLog)[match[1]:end]
+		entries, _, err := unreleasedEntries(section)
+		if err != nil {
+			return false, err
+		}
+		if len(entries) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func unreleasedDelta(baseLog, headLog *string) (bool, error) {

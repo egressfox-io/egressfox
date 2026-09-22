@@ -32,8 +32,9 @@ Use this restrained set rather than unrelated discovery or VPN-bypass terms.
 - **Wiki:** disable; versioned documentation in `docs/` is authoritative.
 
 `CHANGELOG.md` is the maintained record of notable development changes: new entries
-stay under `Unreleased` until a release is actually published. GitHub Releases
-remain the publication record and carry the release artifacts and generated notes.
+stay under `Unreleased` until a release candidate is finalized in a reviewed commit.
+GitHub Releases remain the publication record and carry the release artifacts and
+notes extracted from the exact version section.
 Internal milestones and release dry-runs do not create published release entries.
 
 ## Social preview and branding
@@ -64,7 +65,10 @@ Before the first public push or runtime release, maintainers should:
    described in [SECURITY.md](../../SECURITY.md).
 6. Create the protected `release` environment with required reviewers and restrict
    release tags before enabling publication.
-7. Confirm GHCR package visibility and retention before publishing the first image.
+7. Confirm GHCR package visibility, retention and repository inheritance before
+   publishing the first image. Limit package write/admin access to release maintainers;
+   GHCR tag names are not treated as immutable by the workflow. If account settings
+   offer tag immutability, enable it for version tags and verify it separately.
 8. Review the public Git history and repository contents once more before the initial
    push; do not rewrite authorship merely for presentation.
 

@@ -71,6 +71,19 @@ func TestUnreleasedEntriesPreserveSemanticEmoji(t *testing.T) {
 	}
 }
 
+func TestPreparedVersionSectionCountsAsChangelogUpdate(t *testing.T) {
+	base := "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- ✨ First capability.\n"
+	head := "# Changelog\n\n## [Unreleased]\n\n## [v0.1.0-dev.1]\n\n### Added\n\n- ✨ First capability.\n"
+	ok, err := preparedReleaseDelta(&base, &head)
+	if err != nil || !ok {
+		t.Fatalf("prepared release section rejected: ok=%v err=%v", ok, err)
+	}
+	if _, err := check([]string{"CHANGELOG.md", ".github/workflows/release.yml"}, &base, &head,
+		"- [x] CHANGELOG.md updated with release notes.\n- [ ] No changelog entry is required.\n", false); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUntrustedPullRequestMetadataIsNeverEvaluated(t *testing.T) {
 	repo := t.TempDir()
 	gitTest(t, repo, "init", "-q")
@@ -155,7 +168,7 @@ func TestRunAcceptsInitialChangelogCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run() rejected a valid initial changelog: %v", err)
 	}
-	if message != "passed (meaningful entry added under Unreleased)" {
+	if message != "passed (meaningful changelog entry added)" {
 		t.Fatalf("run() message = %q, want valid-entry success", message)
 	}
 }

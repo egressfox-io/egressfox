@@ -21,7 +21,7 @@ const publicationStep = `      - name: Create release and upload verified files
             echo "publish a new version such as the next -dev.N snapshot instead" >&2
             exit 1
           fi
-          gh release create "$VERSION" --verify-tag --generate-notes $prerelease
+          gh release create "$VERSION" --verify-tag --notes-file dist/release-notes.md $prerelease
           gh release upload "$VERSION" dist/release/*
 `
 
@@ -60,6 +60,14 @@ jobs:
           test -z "$(git status --porcelain)"
       - name: Construct release files without registry writes
         run: make release-dry-run
+      - name: Prepare remote publication
+        run: |
+          python3 hack/release-notes.py --version "$VERSION" --output dist/release-notes.md
+          python3 hack/release-preflight.py
+      - name: Publish image
+        run: |
+          python3 hack/release-preflight.py
+          docker buildx build --platform linux/amd64,linux/arm64 --push .
 ` + publicationStep
 }
 
@@ -87,13 +95,21 @@ jobs:
         test -z "$(git status --porcelain)"
     - name: Qualify
       run: make release-dry-run
+    - name: Check
+      run: |
+        python3 hack/release-notes.py --version "$VERSION" --output dist/release-notes.md
+        python3 hack/release-preflight.py
+    - name: Image
+      run: |
+        python3 hack/release-preflight.py
+        docker buildx build --platform linux/amd64,linux/arm64 --push .
     - name: Publish
       run: |
         if gh release view "$VERSION" >/dev/null 2>&1; then
           echo "release $VERSION already exists; published versions are immutable" >&2
           exit 1
         fi
-        gh release create "$VERSION" --generate-notes --verify-tag $prerelease
+        gh release create "$VERSION" --notes-file dist/release-notes.md --verify-tag $prerelease
         gh release upload "$VERSION" dist/release/*
 `
 }
@@ -131,6 +147,19 @@ func TestReleaseWorkflowRejectsAssetClobbering(t *testing.T) {
 		`gh release upload "$VERSION" dist/release/* --clobber`, 1)
 	if err := releaseWorkflowChecks(clobbering); err == nil {
 		t.Fatal("workflow that clobbers existing assets must be rejected")
+	}
+}
+
+func TestReleaseWorkflowRejectsImageBeforePreflight(t *testing.T) {
+	original := publicationWorkflow()
+	image := "      - name: Publish image\n        run: |\n          python3 hack/release-preflight.py\n          docker buildx build --platform linux/amd64,linux/arm64 --push .\n"
+	if !strings.Contains(original, image) {
+		t.Fatal("missing image fixture")
+	}
+	changed := strings.Replace(original, image, "", 1)
+	changed = strings.Replace(changed, "      - name: Prepare remote publication", image+"      - name: Prepare remote publication", 1)
+	if err := releaseWorkflowChecks(changed); err == nil {
+		t.Fatal("image publication before preflight must fail")
 	}
 }
 

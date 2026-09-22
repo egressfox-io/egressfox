@@ -95,6 +95,20 @@ func releaseWorkflowChecks(content string) error {
 		return fmt.Errorf("protected publish job has no runnable step")
 	}
 	joined := strings.Join(scripts, "\n")
+	// The actual registry write must be dominated by both remote checks and
+	// changelog extraction. A check after image publication is too late.
+	preflight := strings.Index(joined, "python3 hack/release-preflight.py")
+	push := strings.Index(joined, "docker buildx build --platform")
+	notes := strings.Index(joined, "python3 hack/release-notes.py")
+	if preflight < 0 || push < 0 || notes < 0 || preflight > push || notes > push {
+		return fmt.Errorf("remote release preflight and reviewed notes must precede the image push")
+	}
+	if strings.Count(joined[:push], "python3 hack/release-preflight.py") < 2 {
+		return fmt.Errorf("remote release preflight must be repeated immediately before image push")
+	}
+	if strings.Contains(joined, "--generate-notes") || !strings.Contains(joined, "--notes-file dist/release-notes.md") {
+		return fmt.Errorf("GitHub Release must use the reviewed changelog notes")
+	}
 	for _, requirement := range []struct {
 		name string
 		text string

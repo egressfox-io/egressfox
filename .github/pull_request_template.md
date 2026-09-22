@@ -21,7 +21,7 @@ use “none” where appropriate. Call out generated files that changed.
 
 ## Changelog
 
-- [ ] CHANGELOG.md updated under Unreleased.
+- [ ] CHANGELOG.md updated with release notes.
 - [ ] No changelog entry is required.
 
 If no entry is required, explain why:

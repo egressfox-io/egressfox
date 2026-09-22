@@ -17,8 +17,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ inputs.version }}
+  group: release-publication
   cancel-in-progress: false
+  queue: max
 
 jobs:
   validate:
@@ -80,11 +81,16 @@ jobs:
         env:
           RELEASE_SKIP_IMAGE: "1"
         run: make release-dry-run
+      - name: Check remote release identity and reviewed notes
+        run: |
+          python3 hack/release-notes.py --version "$VERSION" --output dist/release-notes.md
+          python3 hack/release-preflight.py
       - name: Authenticate to GHCR
         run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
       - name: Build and push immutable multi-platform image
         id: image
         run: |
+          python3 hack/release-preflight.py
           normalized=${VERSION#v}
           revision=$(git rev-parse HEAD)
           created=$(git show -s --format=%cI HEAD)
@@ -141,5 +147,5 @@ jobs:
             echo "publish a new version such as the next -dev.N snapshot instead" >&2
             exit 1
           fi
-          gh release create "$VERSION" --verify-tag --generate-notes $prerelease
+          gh release create "$VERSION" --verify-tag --notes-file dist/release-notes.md $prerelease
           gh release upload "$VERSION" dist/release/*

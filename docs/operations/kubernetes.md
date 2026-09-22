@@ -7,16 +7,18 @@ validated configuration Secret. Runtime omission preserves the M6 BYO contract.
 
 ## Install and compatibility
 
-The signed image contains EgressFox, a fixed readiness helper, source-built Mihomo
+The release image contains EgressFox, a fixed readiness helper, source-built Mihomo
 1.19.31 and the branded sing-box-compatible 1.14.1 derivative. The image, source,
 notices, SBOM, scan and provenance share the release contract in
-[ADR 0012](../decisions/0012-release-distribution-and-provenance.md). Install with a
-verified immutable digest:
+[ADR 0012](../decisions/0012-release-distribution-and-provenance.md). After a release
+exists, download its `egressfox-<version>.tgz` asset, verify it with the release's
+`SHA256SUMS`, and install with the verified image digest. The command below uses
+placeholders; no public artifact exists yet:
 
 ```sh
-helm upgrade --install egressfox charts/egressfox \
+helm upgrade --install egressfox ./egressfox-0.1.0-dev.1.tgz \
   --namespace egressfox --create-namespace \
-  --set image.repository=registry.example/egressfox \
+  --set image.repository=ghcr.io/egressfox-io/egressfox \
   --set image.digest=sha256:REPLACE_WITH_VERIFIED_DIGEST
 ```
 

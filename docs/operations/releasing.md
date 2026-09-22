@@ -32,13 +32,22 @@ artifacts. Deploy by immutable image digest even though a human-readable tag exi
 See [versioning](versioning.md).
 
 A published version is immutable: one version, one commit, one image digest, one
-release file set. Publication refuses a version whose GitHub Release already exists
-and never clobbers existing assets, so a change requires the next version
+release file set. Publication checks both GitHub Release and GHCR tag state before
+image push and never clobbers existing assets, so a change requires the next version
 (`v0.1.0-dev.1` → `v0.1.0-dev.2` → `v0.1.0-alpha.1`). Neither the release workflow nor
 a maintainer recovery step deletes or edits a published release. Publication is
 strictly tag-bound and additionally requires a clean source tree and approval of the
 protected `release` environment; `make release-validate` checks that the workflow
-keeps enforcing this contract.
+keeps enforcing this contract. GitHub Actions serializes release runs in one
+repository-wide concurrency group. GHCR tags remain mutable to actors with package
+write access; external tag protection and privileged human writes are outside the
+workflow's atomicity guarantee.
+
+If image publication succeeds but a later SBOM, signature, attestation or GitHub
+Release step fails, the GHCR tag is reserved. A rerun fails closed even when no
+GitHub Release exists. Preserve the partial artifacts for investigation, fix the
+cause in a new reviewed commit and advance to a new version. Do not delete or
+overwrite the old image, signature, provenance or release assets as routine recovery.
 
 ## Inputs and reproducibility
 
@@ -114,7 +123,7 @@ including `make k8s-compat` across Kubernetes 1.32, 1.34 and 1.37.
 With `publish=false` it can run from a branch and has read-only repository permission;
 the requested version must still match the planned release version. Publication
 additionally requires the selected ref to be the exact existing version tag, an
-unpublished version, a clean source tree rechecked in the privileged job, and a
+version absent from both GitHub Releases and GHCR, a clean source tree rechecked in the privileged job, and a
 maintainer's approval of the protected `release` environment.
 
 ## Produced artifacts
@@ -142,13 +151,16 @@ are invalid.
 
 ## Signing, provenance and publication
 
-The protected publication job pushes only `ghcr.io/egressfox-io/egressfox:<version>`
+The protected publication job first validates the exact tag, commit, planned version,
+reviewed changelog section and remote GitHub Release/GHCR tag state. It checks remote
+state again immediately before pushing only `ghcr.io/egressfox-io/egressfox:<version>`
 and records its immutable digest. GitHub Actions OIDC obtains an ephemeral Sigstore
 identity; no private key or registry token is committed. Cosign signs the digest and
 attests its SPDX SBOM. GitHub's attestation action creates build provenance for the
 image and release files, binding their digests to repository, commit, workflow and
 event. The workflow then creates a prerelease for a `dev`, `alpha` or `beta` tag, or
-a stable release for a stable tag, and uploads the checked files. It never creates
+a stable release for a stable tag, using only the reviewed version section from
+`CHANGELOG.md`, and uploads the checked files. It never creates
 or pushes a Git tag.
 
 The workflow deliberately has no write permission at workflow or validation-job
@@ -163,7 +175,7 @@ Fetch artifacts from one release, then verify checksums and GitHub provenance:
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify ./egressfox-operator-0.1.0-alpha.1-linux-amd64 \
+gh attestation verify ./egressfox-operator-0.1.0-dev.1-linux-amd64 \
   --repo egressfox-io/egressfox
 gh attestation verify oci://ghcr.io/egressfox-io/egressfox@sha256:REPLACE \
   --repo egressfox-io/egressfox
@@ -174,11 +186,11 @@ workflow and tag identity:
 
 ```sh
 cosign verify \
-  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.1' \
+  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-dev.1' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   ghcr.io/egressfox-io/egressfox@sha256:REPLACE
 cosign verify-attestation --type spdxjson \
-  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.1' \
+  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-dev.1' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   ghcr.io/egressfox-io/egressfox@sha256:REPLACE
 ```
@@ -192,7 +204,7 @@ does not establish trust: the repository and workflow identity must match.
 - [ ] Release qualification ran from a clean candidate commit with `VERSION` equal to
   the planned release version; the published tag is created afterwards on that commit.
 - [ ] The published version is the exact existing tag on that commit, the source tree
-  is clean, and no GitHub Release or asset for it exists; a published version is never
+  is clean, and no GitHub Release or GHCR version tag exists; a published version is never
   replaced, recreated or reuploaded.
 - [ ] `make generate`, `make manifests`, `make check`, `make k8s-compat`,
   `make vuln` and `git diff --check` pass.
@@ -222,5 +234,9 @@ vulnerability reporting under repository Settings → Security/Advanced Security
 subscribe maintainers/security managers to security-alert notifications, and create
 the protected `release` environment with required reviewers and tag restrictions.
 These repository settings cannot be truthfully configured or verified from source.
+Check GHCR package visibility, repository-linked token access, retention and package
+write grants; restrict release-tag creation through a ruleset. The workflow's remote
+preflight requires its token to list the organization's container package versions
+and fails closed if that read is denied.
 Maintainers must also review current vulnerability results, upstream license/source
-availability and the generated release notes before approving publication.
+availability and the extracted, reviewed changelog notes before approving publication.

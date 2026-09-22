@@ -46,10 +46,11 @@ set forever. Changes always advance the version:
 
     v0.1.0-dev.1 → v0.1.0-dev.2 → v0.1.0-dev.3 → v0.1.0-alpha.1
 
-Publication refuses to continue when the target GitHub Release exists, and release
-assets are uploaded without clobbering, so an existing version can be neither
-replaced nor recreated. Recovery from a bad publication is a new version, never an
-edit or deletion of a published one.
+Publication checks both the target GitHub Release and the GHCR version tag before
+the first remote write, then repeats the check immediately before image push. An
+existing image without a GitHub Release is a partial publication and also blocks a
+rerun. Release assets are uploaded without clobbering. Recovery requires a new
+version; neither the workflow nor routine recovery deletes or replaces artifacts.
 
 ## Qualification and publication requirements
 
@@ -86,19 +87,14 @@ the privileged job, and refuses a version that already exists.
    [release guide](releasing.md).
 
 `CHANGELOG.md` is the maintained development record: add notable changes under
-`Unreleased` during ordinary development. When a version is actually published, move
-the applicable entries to a section for that version, use the actual publication
-date, preserve earlier history, and create a fresh `Unreleased` section. A dry-run,
-development version value, or internal milestone does not finalize release history.
-
-GitHub-generated notes remain a publication summary, not a replacement for the
-repository changelog. Before approving a release, reconcile generated notes with the
-finalized changelog and add any important compatibility, migration, or security
-context. Preserve the leading semantic emoji from each Conventional Commit subject
-in its pull request title and in any changelog summary exactly once; GitHub's
-generated-note configuration controls PR grouping and exclusions, not title
-rewriting. Verify that prerelease versus stable classification matches the published
-tag.
+`Unreleased` during ordinary development. Before tagging, finalize the applicable
+entries under `## [vX.Y.Z...]` in the reviewed commit and leave a fresh `Unreleased`
+section. The version section is a prepared release candidate, not a claim of
+publication; GitHub Releases records the actual publication date. The workflow
+extracts exactly that section into release notes and rejects a missing, duplicate or
+empty section before image publication. It never generates a second narrative from
+pull requests. Preserve the leading semantic emoji from each Conventional Commit
+subject exactly once in reader-facing entries.
 
 ## Updating the development line
 
