@@ -6,12 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/egressfox-io/egressfox/internal/buildinfo"
 	"github.com/egressfox-io/egressfox/internal/releasemanifest"
 )
 
@@ -19,7 +19,7 @@ const defaultManifest = "release/manifest.json"
 
 func main() {
 	if len(os.Args) < 2 {
-		fail("usage: releasectl <validate|validate-version|build-version|kubernetes|metadata|fetch-engine|prepare-engine-source|overrides|engine-build|fetch-sources|fetch-licenses|install-tool>")
+		fail("usage: releasectl <validate|validate-version|build-version|release-guard|kubernetes|metadata|fetch-engine|prepare-engine-source|overrides|engine-build|fetch-sources|fetch-licenses|install-tool>")
 	}
 	var err error
 	switch os.Args[1] {
@@ -28,7 +28,12 @@ func main() {
 	case "validate-version":
 		err = validateVersion(os.Args[2:])
 	case "build-version":
-		err = buildVersion(os.Args[2:])
+		var version string
+		if version, err = buildVersion(os.Args[2:]); err == nil {
+			fmt.Println(version)
+		}
+	case "release-guard":
+		err = releaseGuard(os.Args[2:])
 	case "kubernetes":
 		err = kubernetes(os.Args[2:])
 	case "metadata":
@@ -129,23 +134,10 @@ func validateRepository(root string, manifest releasemanifest.Manifest) error {
 	return nil
 }
 
-var releaseTag = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(dev|alpha|beta)\.([1-9][0-9]*))?$`)
-
-type releaseVersion struct {
-	Normalized string
-	Class      string
-}
+type releaseVersion = buildinfo.Version
 
 func parseReleaseTag(value string) (releaseVersion, error) {
-	matches := releaseTag.FindStringSubmatch(value)
-	if matches == nil {
-		return releaseVersion{}, fmt.Errorf("release version %q is not an allowed SemVer tag", value)
-	}
-	class := "stable"
-	if matches[4] != "" {
-		class = matches[4]
-	}
-	return releaseVersion{Normalized: strings.TrimPrefix(value, "v"), Class: class}, nil
+	return buildinfo.ParseVersion(value)
 }
 
 func validateVersion(arguments []string) error {
@@ -156,83 +148,75 @@ func validateVersion(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	parsed, err := parseReleaseTag(*version)
+	normalized, err := checkReleaseVersion(*version, *revision, *created)
 	if err != nil {
 		return err
 	}
-	decoded, err := hex.DecodeString(*revision)
-	if err != nil || len(decoded) != 20 || *revision != strings.ToLower(*revision) {
-		return fmt.Errorf("release revision is not a full lowercase commit SHA")
-	}
-	if _, err := time.Parse(time.RFC3339, *created); err != nil {
-		return fmt.Errorf("release creation time is not RFC3339: %w", err)
-	}
-	fmt.Println(parsed.Normalized)
+	fmt.Println(normalized)
 	return nil
 }
 
-func buildVersion(arguments []string) error {
+func checkReleaseVersion(version, revision, created string) (string, error) {
+	parsed, err := parseReleaseTag(version)
+	if err != nil {
+		return "", err
+	}
+	decoded, err := hex.DecodeString(revision)
+	if err != nil || len(decoded) != 20 || revision != strings.ToLower(revision) {
+		return "", fmt.Errorf("release revision is not a full lowercase commit SHA")
+	}
+	if _, err := time.Parse(time.RFC3339, created); err != nil {
+		return "", fmt.Errorf("release creation time is not RFC3339: %w", err)
+	}
+	return parsed.Normalized, nil
+}
+
+// buildVersion resolves the identity an artifact built from root must report.
+// --require-clean makes the check fail closed for release qualification and
+// --version requires the exact official version of the target commit.
+func buildVersion(arguments []string) (string, error) {
 	flags := flag.NewFlagSet("build-version", flag.ContinueOnError)
 	root := flags.String("root", ".", "repository root")
 	manifestName := flags.String("manifest", defaultManifest, "release manifest relative to root")
+	developmentVersion := flags.String("development-version", "", "planned development version; defaults to the release manifest value")
+	expected := flags.String("version", "", "required official release version; any other resolved identity fails")
+	requireClean := flags.Bool("require-clean", false, "fail unless the source tree has no non-ignored changes")
 	if err := flags.Parse(arguments); err != nil {
-		return err
+		return "", err
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf("build-version accepts no positional arguments")
+		return "", fmt.Errorf("build-version accepts no positional arguments")
 	}
-	manifest, err := releasemanifest.Load(filepath.Join(*root, *manifestName))
-	if err != nil {
-		return err
-	}
-	return printBuildVersion(*root, manifest.Release.DevelopmentVersion)
-}
-
-func printBuildVersion(root, developmentTag string) error {
-	revision, err := gitOutput(root, "rev-parse", "HEAD")
-	if err != nil {
-		parsed, parseErr := parseReleaseTag(developmentTag)
-		if parseErr != nil {
-			return parseErr
+	base := *developmentVersion
+	if base == "" {
+		manifest, err := releasemanifest.Load(filepath.Join(*root, *manifestName))
+		if err != nil {
+			return "", err
 		}
-		fmt.Printf("%s+local\n", parsed.Normalized)
-		return nil
+		base = manifest.Release.DevelopmentVersion
 	}
-	tags, err := gitOutput(root, "tag", "--points-at", "HEAD")
+	identity, err := buildinfo.ResolveIdentity(*root, base)
 	if err != nil {
-		return err
+		return "", err
 	}
-	var releases []releaseVersion
-	for _, tag := range strings.Fields(tags) {
-		if parsed, parseErr := parseReleaseTag(tag); parseErr == nil {
-			releases = append(releases, parsed)
+	if *requireClean && identity.Dirty {
+		return "", fmt.Errorf("release qualification requires a clean working tree; the build identity would be %s", identity.EffectiveVersion())
+	}
+	if *expected != "" {
+		wanted, err := buildinfo.ParseVersion(*expected)
+		if err != nil {
+			return "", err
+		}
+		// Resolved identities carry build metadata when the exact commit has no
+		// release tag; that metadata does not change version precedence.
+		if resolved := strings.SplitN(identity.Version, "+", 2)[0]; resolved != wanted.Normalized {
+			if identity.Tagged {
+				return "", fmt.Errorf("release identity mismatch: requested %s but commit %s carries the release tag %s", wanted.Normalized, identity.Revision, identity.Version)
+			}
+			return "", fmt.Errorf("release identity mismatch: requested %s but this commit is not tagged with it and resolves to %s", wanted.Normalized, identity.EffectiveVersion())
 		}
 	}
-	if len(releases) > 1 {
-		return fmt.Errorf("commit has multiple release tags")
-	}
-	if len(releases) == 1 {
-		fmt.Println(releases[0].Normalized)
-		return nil
-	}
-	parsed, err := parseReleaseTag(developmentTag)
-	if err != nil {
-		return err
-	}
-	if len(revision) < 12 {
-		return fmt.Errorf("Git returned a short revision")
-	}
-	fmt.Printf("%s+g%s\n", parsed.Normalized, revision[:12])
-	return nil
-}
-
-func gitOutput(root string, arguments ...string) (string, error) {
-	command := exec.Command("git", append([]string{"-C", root}, arguments...)...)
-	output, err := command.Output()
-	if err != nil {
-		return "", fmt.Errorf("read Git identity: %w", err)
-	}
-	return strings.TrimSpace(string(output)), nil
+	return identity.EffectiveVersion(), nil
 }
 
 func kubernetes(arguments []string) error {

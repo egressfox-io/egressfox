@@ -16,3 +16,18 @@ func TestCurrentIsBoundedAndNamesExactProfiles(t *testing.T) {
 		t.Fatalf("version output is unbounded: %q", value)
 	}
 }
+
+func TestEffectiveVersionMarksDirtyBuilds(t *testing.T) {
+	clean := Identity{Version: "0.1.0-dev.1+g0123456789ab"}
+	if clean.EffectiveVersion() != "0.1.0-dev.1+g0123456789ab" {
+		t.Fatalf("clean build identity = %q", clean.EffectiveVersion())
+	}
+	dirty := clean
+	dirty.Dirty = true
+	if want := "0.1.0-dev.1+g0123456789ab" + DirtySuffix; dirty.EffectiveVersion() != want {
+		t.Fatalf("dirty build identity = %q, want %q", dirty.EffectiveVersion(), want)
+	}
+	if dirty.EffectiveVersion() == clean.EffectiveVersion() {
+		t.Fatal("dirty build must not claim the identity of a clean build")
+	}
+}

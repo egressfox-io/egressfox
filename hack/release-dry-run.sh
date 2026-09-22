@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# Official release qualification is tag-bound and fail-closed: VERSION must be
+# the release tag on HEAD and the working tree must contain no non-ignored
+# changes. Ignored build/release output (dist/, .cache/, bin/) never counts.
+# There is deliberately no dirty override; commit or stash first.
 : "${VERSION:?VERSION must be an explicit vX.Y.Z[-dev.N|-alpha.N|-beta.N] release tag}"
 version=$VERSION
 revision=${REVISION:-$(git rev-parse HEAD)}
@@ -17,6 +21,7 @@ tool_dir=$release_root/.cache/release-tools
 
 normalized=$($go_command run ./tools/releasectl validate-version --version "$version" --revision "$revision" --created "$created")
 $go_command run ./tools/releasectl validate --root .
+$go_command run ./tools/releasectl build-version --root . --version "$normalized" --require-clean >/dev/null
 
 rm -rf "$artifact_dir" "$report_dir" "$work_dir"
 mkdir -p "$artifact_dir" "$report_dir" "$work_dir" "$tool_dir"
