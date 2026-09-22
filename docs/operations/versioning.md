@@ -94,7 +94,10 @@ development version value, or internal milestone does not finalize release histo
 GitHub-generated notes remain a publication summary, not a replacement for the
 repository changelog. Before approving a release, reconcile generated notes with the
 finalized changelog and add any important compatibility, migration, or security
-context. Verify that prerelease versus stable classification matches the published
+context. Preserve the leading semantic emoji from each Conventional Commit subject
+in its pull request title and in any changelog summary exactly once; GitHub's
+generated-note configuration controls PR grouping and exclusions, not title
+rewriting. Verify that prerelease versus stable classification matches the published
 tag.
 
 ## Updating the development line

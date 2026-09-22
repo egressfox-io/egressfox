@@ -33,6 +33,12 @@ Run `make help` for the maintained command list.
    🐛 fix(renderer): reject unsupported routing strategy
    ```
 
+Keep the same leading emoji in a pull request title when it represents the commit
+used for the merge. Changelog and generated release-note entries retain that source
+emoji exactly once while dropping the `type(scope):` prefix. Do not add a duplicate
+emoji or rewrite an existing commit message. For example, `✨ feat(gateway): add
+managed runtime` becomes `- ✨ Add managed runtime`.
+
 6. Open a pull request explaining the problem, behavior, validation, compatibility
    impact, security implications, and remaining limitations.
 
@@ -55,10 +61,10 @@ Purely internal refactoring, routine dependency updates, formatting, test-only w
 and minor documentation fixes normally need no entry. If there is no entry, explain
 why in the pull request. The changelog workflow automatically exempts changes
 limited to `docs/plans/`, `docs/decisions/`, `docs/development/`, the documentation
-map, contributor/agent/maintainer guidance, the pull request template, or Go
-`*_test.go` files. Other paths, including product, security, compatibility,
-operational, and release documentation, are treated as ambiguous: add an entry or
-request a maintainer-authorized exemption.
+map, `.github/ISSUE_TEMPLATE/*.md`, contributor/agent/maintainer guidance, the pull
+request template, or Go `*_test.go` files. Other paths, including product, security,
+compatibility, operational, and release documentation, are treated as ambiguous: add
+an entry or request a maintainer-authorized exemption.
 
 The `No changelog entry is required` checkbox is a request, not approval. Add a
 brief reason; a maintainer must review the request and apply the `no-changelog`

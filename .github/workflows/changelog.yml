@@ -1,0 +1,35 @@
+name: Changelog
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: changelog-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Changelog validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Test changelog validator
+        run: go test ./tools/changelogcheck
+      - name: Validate pull request changelog
+        env:
+          CHANGELOG_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CHANGELOG_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: go run ./tools/changelogcheck

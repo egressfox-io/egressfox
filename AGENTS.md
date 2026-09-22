@@ -88,6 +88,14 @@ same branch when required; otherwise record why no entry is needed. Changelog re
 is part of the definition of done. Follow the authoritative policy in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+When summarizing Conventional Commit subjects in the changelog or release notes,
+preserve the subject's leading semantic emoji exactly once. Remove the
+`type(scope):` prefix when turning a subject into a reader-facing entry, but do not
+add another emoji or rewrite the commit. For example, `✨ feat(gateway): add managed
+runtime` becomes `- ✨ Add managed runtime`. Keep the pull request title aligned with
+its Conventional Commit subject so GitHub-generated release notes retain that
+signal.
+
 ## Validation
 
 Use the Go version in [go.mod](go.mod), Git, Make, and a C compiler for race tests.

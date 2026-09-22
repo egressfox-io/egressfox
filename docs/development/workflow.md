@@ -93,6 +93,12 @@ engineering change, never `update`, `changes`, `work`, `WIP`, or `fix stuff`. Us
 imperative, specific description and a body when rationale
 or compatibility impact is not obvious.
 
+Keep the same leading emoji in the pull request title when it represents the
+Conventional Commit subject used for the merge. Changelog and release-note summaries
+retain that source emoji exactly once while dropping the Conventional Commit prefix;
+do not add a second emoji. For example, `✨ feat(gateway): add managed runtime`
+becomes `- ✨ Add managed runtime`.
+
 | Change | Preferred signal and example |
 | --- | --- |
 | Feature | `✨ feat(core): add normalized endpoint model` |

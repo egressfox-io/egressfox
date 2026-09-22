@@ -19,7 +19,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0011](0011-managed-gateway.md) | Complete | M7 managed gateway and exact-generation activation |
 | [0012](0012-development-versioning-kubernetes-compatibility.md) | Complete | Development versioning and Kubernetes compatibility |
 | [0013](0013-runtime-standalone-architecture.md) | Complete | Future standalone, runtime, artifact publication, composition and availability architecture |
-| [0014](0014-changelog-governance.md) | In progress | Initial changelog, maintainer governance and pull-request enforcement |
+| [0014](0014-changelog-governance.md) | Complete | Initial changelog, maintainer governance and pull-request enforcement |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

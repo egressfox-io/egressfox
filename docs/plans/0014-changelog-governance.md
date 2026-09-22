@@ -1,6 +1,6 @@
 # Changelog, maintainer governance and CI enforcement
 
-Status: in progress. Prepared: 2026-09-23.
+Status: complete. Prepared: 2026-09-23.
 
 ## Objective
 
@@ -34,6 +34,9 @@ release-publication contract; do not implement product behavior or publish anyth
 - Compare base and head revisions and require a new non-placeholder entry in the
   `Unreleased` section. Do not infer publication from development metadata or a
   successful dry-run.
+- Preserve semantic emojis in changelog and generated release-note summaries. The
+  existing validator compares changelog text without removing emojis; GitHub's
+  generated notes are retained and PR titles must carry the source emoji.
 - Keep the workflow on `pull_request`, with pinned actions and `contents: read`.
 
 ## Checkpoints
@@ -44,7 +47,9 @@ release-publication contract; do not implement product behavior or publish anyth
   repository-settings guidance.
 - [x] Add the PR checklist, maintainer documentation, CODEOWNERS and navigation.
 - [x] Implement and test the deterministic validator and stable PR workflow.
-- [ ] Run the requested repository checks, inspect/stage/commit only task files,
+- [x] Document semantic emoji preservation and add a regression test proving the
+  changelog validator retains the leading emoji without duplication.
+- [x] Run the requested repository checks, inspect/stage/commit only task files,
   update this record and leave the branch clean.
 
 ## Validation and completion record
@@ -59,7 +64,8 @@ Validation on 2026-09-23:
 
 - `GOCACHE=/private/tmp/egressfox-go-cache make fmt` — passed.
 - `GOCACHE=/private/tmp/egressfox-go-cache go test -count=1 ./tools/changelogcheck`
-  — passed, including table-driven policy cases and temporary-repository tests.
+  — passed, including table-driven policy cases, temporary-repository tests, and
+  the regression test that checks the leading emoji remains exactly once.
 - `GOCACHE=/private/tmp/egressfox-go-cache make docs` — passed.
 - `GOCACHE=/private/tmp/egressfox-go-cache make check` — passed, including
   generation drift, formatting, vet, race tests, builds, documentation checks,
@@ -68,7 +74,13 @@ Validation on 2026-09-23:
   that restriction lifted.
 - `yq eval '.' .github/workflows/changelog.yml` and `git diff --check` — passed.
 - `actionlint` is unavailable in the environment; no workflow linter was installed.
+- GitHub's `gh release create --generate-notes` remains the release-note path. No
+  `.github/release.yml` or repository renderer strips titles; GitHub's documented
+  generated-note settings group/exclude pull requests, so preserve the source emoji
+  in the PR title rather than add a second rendering layer.
 - `git ls-remote --tags origin` could not resolve `github.com`; local tag listing is
   empty and checked-in release/security documentation reports no published release.
 
-Governance and CI commits, final branch review, and clean-tree confirmation remain.
+The changelog checkpoint is committed as `e88a83d`; governance documentation and
+maintainer files are committed as `bf5bd52`. The validator/workflow checkpoint is
+committed on this branch; the final handoff confirms the clean tree.
