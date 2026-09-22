@@ -3,7 +3,10 @@
 Status: M6 namespace-scoped P0 API and M7 managed single-replica runtime implemented.
 [ADR 0011](../decisions/0011-namespaced-byo-operator.md) owns the BYO topology and
 Secret contract; [ADR 0013](../decisions/0013-managed-gateway-activation.md) owns
-managed lifecycle and activation. Later sections retain future design constraints.
+current managed lifecycle and activation. The
+[artifact publication and composition design](artifact-publication-and-composition.md)
+owns future external `EgressOutput`, multi-pool composition and no-op/repair
+constraints. Later sections retain future design constraints.
 [ADR 0003](../decisions/0003-operator-tooling.md) accepts Kubebuilder/controller-runtime
 and an initial alpha API, while deferring generation until the M6 design gate.
 
@@ -19,11 +22,15 @@ this table is not an installable schema.
 | --- | --- | --- | --- |
 | ProxyPool | Secret source references, admission flags, probe authorization, selection strategy/Top-N and refresh interval | Bounded accepted/rejected/unsupported counts, last inventory-change time, Conditions | Gateway workload lifecycle or raw credentials/history |
 | EgressGateway | Pool reference, pinned engine profile and either BYO output/listener or explicit managed runtime | Bounded selection/publication counts, safe generation/service/auth references and separate activation/readiness Conditions | Fetching independently, exposing artifact receipts, or mutating user-managed engines |
-| EgressPolicy (P1) | Routing intent associated with a gateway | Acceptance/conflict status for that policy | A separate connection-level router |
+| EgressPolicy (P1) | Bounded routing intent and future candidate-group composition associated with a gateway | Acceptance/conflict status for that policy | A separate connection-level router |
+| EgressOutput (future) | One external publication destination consuming an EgressGateway artifact | Independent publication result and receipt status | Managed Gateway activation or a reusable backend-connection registry |
 
-One pool can feed multiple gateways. The current API uses one pool reference per
-gateway; multiple pools, routing rules and standalone EgressPolicy composition wait
-for M10. BYO renders the M3 minimal loopback SOCKS gateway; managed mode renders the
+One pool can feed multiple gateways, and a pool may contain multiple sources. The
+current Gateway API still uses one pool reference per gateway. M9 adds target-aware
+profiles over one leaf inventory; M10 must leave room for bounded named candidate
+groups composed from multiple `(ProxyPool, Profile)` inputs inside policy. Pools do
+not recursively include other pools, and no separate ProxyGroup CRD is currently
+planned. BYO renders the M3 minimal loopback SOCKS gateway; managed mode renders the
 fixed authenticated Pod-network listener without exposing a second routing model.
 
 P0 references are same-namespace, with explicit names and Secret keys;
@@ -62,6 +69,14 @@ it does not imply successful reconciliation. A Secret update or new pool snapsho
 can change desired output without changing a gateway's `metadata.generation`.
 Track dependency input revisions separately using a safe representation, and
 never set success for an obsolete combination of inputs.
+
+The current `Published` Condition is not a future external-output condition. For
+BYO it reflects publication to the Gateway's owner-checked `outputSecretName`
+Secret. In managed M7 it reflects validated exact bytes and a protected receipt in
+the internal immutable generation Secret used for activation. Future `EgressOutput`
+resources publish the same validated artifact to independent external destinations;
+they are not required to make a managed Gateway run. Preserve current API and
+Condition meaning until a reviewed migration/API design deliberately changes it.
 
 Use structural schemas, explicit enums only for implemented strategies, documented
 units, bounded lists/strings, and validation of cross-field constraints. Prefer
@@ -198,10 +213,12 @@ BYO-to-managed retains the old owned output until managed activation. Downgrade
 requires returning objects to BYO before installing an M6 operator.
 
 M9 evolves `ProxyPool` toward bounded named probe/selection profiles over one source
-inventory while preserving the current fields as a legacy/default profile. M10 adds
-`EgressPolicy` for routing intent only: a Gateway references at most one policy, and
-the policy has no workload selector. Q15 and Q16 own exact migration and schema
-choices. Cross-namespace grants, operator HA and transparent attachment are not P1.
+inventory while preserving the current fields as a legacy/default profile. A single
+inventory can be evaluated under more than one target context. M10 adds one
+`EgressPolicy` per Gateway for routing intent and candidate composition; a policy
+has no workload selector. Q15/Q16 own exact migration and schema choices. External
+`EgressOutput` is a post-P1 publication resource, not required for managed activation.
+Cross-namespace grants, operator HA and transparent attachment are not P1.
 
 Helm is P0 delivery work after generated API/controller behavior exists, not an
 empty chart now. Chart upgrades must explicitly manage CRD evolution; validate a

@@ -1,164 +1,236 @@
 # Architecture and domain language
 
-Status: accepted boundaries with M1–M7 components implemented and later P1
-sequencing designed. The
-[ADRs](decisions/README.md) record durable choices; detailed designs distinguish
-implemented behavior from future requirements.
+Status: M1–M7 core and Kubernetes behavior implemented; P1 M8–M12 designed; the
+standalone/runtime/publication architecture is accepted future direction. [ADRs](decisions/README.md)
+record durable boundaries; detailed designs distinguish shipped behavior from
+requirements for later work.
+
+## Product boundary
+
+EgressFox is an adaptive egress control plane. Kubernetes is one deployment
+frontend, not a product requirement. Standalone Linux, VM and container operation
+is an intended first-class frontend over the same Kubernetes-independent Go core.
+The standalone CLI/daemon is not implemented today.
+
+**EgressFox decides what configuration should exist. Mihomo or sing-box decides
+how traffic flows through it.** EgressFox may express bounded routing intent and
+render engine-native configuration. It does not proxy application traffic, route
+individual packets/connections, implement proxy protocols or perform adaptive
+selection inside the runtime.
 
 ## System shape
 
 ```mermaid
 flowchart TD
-    S[External sources and secret references] --> A[Acquire and parse]
-    A --> N[Normalize and deduplicate]
-    N --> F[Static candidate filters]
-    F --> P[Bounded probes through engine adapters]
-    P --> H[Observations and historical state]
-    H --> E[Eligibility and selection]
-    I[User policy] --> F
-    I --> E
-    I --> D[Desired gateway model]
-    E --> D
-    D --> R[Engine renderer and capability checks]
-    R --> V[Validation for target engine version]
-    V --> U[Publish validated generation and retain LKG]
-    U --> G[Mihomo or sing-box runtime]
-    G --> T[Application traffic]
+    S[Sources] --> I[Shared core: acquire, normalize, inventory]
+    I --> E[Evidence: probes, observations and history]
+    E --> C[Selection and policy composition]
+    C --> R[Engine renderer and capability checks]
+    R --> V[Exact native engine validation]
+    V --> A[Validated artifact]
+    A --> X[Managed activation]
+    A --> P[Zero or more external publications]
+    X --> RT[egressfox-runtime, future thin execution adapter]
+    RT --> M[egressfox-engine-m, future private Mihomo executable]
+    RT --> B[egressfox-engine-s, private sing-box-derived executable]
+    M --> T[Application traffic]
+    B --> T
+    P --> D[Secret, Vault, S3-compatible storage, file or stdout]
+    F1[Future Go egressfox frontend] --> I
+    F1 --> C
+    F2[egressfox-operator frontend] --> I
+    F2 --> C
+    F1 -. future .-> P
+    F2 -. future .-> P
 ```
 
-The pipeline is conceptual. Policy is an input to filtering and selection as
-well as rendering; it is not a stage that first appears after selection.
-Source refresh, probe scheduling, and desired-state reconciliation have separate
-cadences. A single sequential loop must not wait for every endpoint probe before
-responding to a policy change or confirmed outage.
+The diagram combines current core stages with future composition/activation and
+publication directions; it does not claim all shown processes or destinations
+exist today. In particular, current M7 starts the engine directly, current release
+image has no `egressfox` CLI or `egressfox-runtime`, and Vault/S3/stdout publishers
+and `EgressOutput` are future work.
+
+### Representative deployment flows
+
+1. **Future one-shot CLI:** `egressfox inspect` or render-only `generate` composes
+   the shared core without a daemon or engine. `probe` and native `validate` are
+   independent capabilities and require a compatible engine only when invoked.
+   Exact command syntax is open.
+2. **Future standalone control plane:** `egressfox run` owns source refresh, probes,
+   history, selection, render/validation, LKG, publication and managed replacement
+   through shared core semantics. A thin `egressfox-runtime` starts the selected
+   engine; the engine moves traffic.
+3. **Current managed Kubernetes:** `egressfox-operator` derives and validates the
+   artifact, publishes it to an immutable internal generation Secret, and a
+   one-replica Deployment starts the selected engine binary directly from the same
+   release image. The stable Service exposes authenticated SOCKS. A future runtime
+   wrapper may mediate engine execution.
+4. **Future externally managed dataplane:** a CLI or operator publishes a validated
+   artifact to Vault/S3/Secret/file. Consumer-owned sync/reload automation updates
+   a separately managed engine. EgressFox does not claim or observe activation of
+   that external workload.
+
+## Artifact lifecycle
+
+```text
+render -> exact native validation -> Validated Artifact
+                                       |             |
+                                  Activation   External Publication
+```
+
+Activation and external publication are separate responsibilities. The same
+validated bytes may be activated, published to one or more destinations, both, or
+neither while reconciliation is incomplete. A destination does not independently
+render the engine configuration. Probing asks whether a real endpoint reaches a
+target; native validation asks whether the exact engine accepts the generated
+configuration. They are independent.
+
+Internal equality may use a protected exact-content fingerprint. Public status and
+metadata use safe opaque generations/revisions; credential-derived config digests
+are not exposed by default. A new validated artifact is not necessarily active. The
+healthy LKG remains in service until a replacement is proven runtime-ready, and an
+external publication failure must not destroy a healthy active dataplane.
+
+M7's current `Published` Condition records exact validated bytes and a protected
+receipt in the owned immutable generation Secret. It does not by itself mean the
+runtime is active. Current BYO `outputSecretName` is the separate historical user
+output behavior. Future external `EgressOutput` semantics are not implemented and
+must not silently redefine either contract.
+
+## Pool and policy composition
+
+```text
+Sources -> leaf ProxyPools -> target-aware Profiles -> candidate composition
+        -> EgressPolicy -> EgressGateway desired artifact
+```
+
+One `ProxyPool` may contain multiple sources and remains a leaf inventory. Profiles
+provide target/probe/selection context over the same inventory. Future candidate
+groups may compose multiple `(Pool, Profile)` inputs; pools do not recursively
+contain pools. Composition belongs to policy/selection intent, not inventory
+ownership. Deduplicate overlapping full endpoint identities and union provenance
+before eligibility/scoring. Exact group/filter/profile syntax is a future M9/M10
+design gate; no `ProxyGroup` CRD is currently planned.
 
 ## Terms
 
 | Term | Meaning |
 | --- | --- |
-| Source | A configured origin of endpoint descriptions, including its credential references and refresh policy |
-| Endpoint | A normalized external connection configuration; not a display name or a Kubernetes EndpointSlice |
+| Source | Configured origin of endpoint descriptions, including credential references and refresh policy |
+| Endpoint | Normalized external connection configuration; not a Kubernetes EndpointSlice |
 | Endpoint identity | Versioned logical endpoint ID plus a confidential connection revision; current health is revision-specific |
 | Provenance | Sources and source-local records contributing an endpoint, with per-source presence times |
-| Destination | A named target or class of traffic whose reachability matters; not automatically a probe URL |
-| Probe profile | Versioned check definition, destination, timeout, and success criteria |
-| Observation | One measured result with endpoint/profile/revision, time, execution vantage, and outcome |
-| Health summary | Freshness-aware aggregation of observations; unknown and stale are distinct from observed failure |
-| Pool | Candidates and derivation policy, including filters, probes, and selection intent |
-| Selection decision | Chosen endpoint set/order plus bounded reasons and the input snapshot revision |
-| Policy | Desired destination/routing/group behavior independent of an engine syntax |
-| Gateway | Desired configuration target and its publication/runtime association |
-| Renderer | Engine/version-specific transformation of desired model into an artifact |
-| Generation | A desired artifact revision; separate from Kubernetes `metadata.generation` and artifact content digest |
-| Last-known-good (LKG) | Retained, successfully published, validated artifact; not evidence of runtime activation |
-| Activation | Confirmation that a runtime loaded a particular generation; unknown for BYO unless reported |
+| Destination | Named target whose reachability matters; not automatically a probe URL |
+| Probe profile | Versioned check definition, destination, timeout and success criteria |
+| Observation | Measured result with endpoint/profile/revision, time, vantage and outcome |
+| Health summary | Freshness-aware aggregation; unknown and stale differ from observed failure |
+| Pool | Leaf candidate inventory and derivation policy, including filters, probes and selection intent |
+| Profile | Target/probe/selection context applied to one shared inventory |
+| Candidate composition | Future selection/policy union of one or more Pool/Profile inputs |
+| Policy | Desired destination/routing/group intent independent of engine syntax |
+| Gateway | Desired artifact and publication/runtime association |
+| Validated artifact | Exact rendered bytes accepted by the exact engine/version validator |
+| Private content identity | Protected exact-content/profile comparison value; not public metadata by default |
+| Generation | Safe opaque artifact revision; distinct from content fingerprint, Kubernetes `metadata.generation`, publication receipt and active runtime generation |
+| Last-known-good (LKG) | Retained validated artifact/runtime that most recently succeeded at the relevant publication or activation boundary |
+| Activation | Evidence that a managed runtime loaded and can serve an exact generation; unknown for BYO without acknowledgment |
+| External publication | Making the same validated payload available at a separately managed destination |
 
-Detailed identity rules belong in [endpoints and sources](designs/endpoints-and-sources.md).
-Probe outcomes and summary semantics belong in [observations and selection](designs/observations-and-selection.md).
+Detailed endpoint identity rules belong in
+[endpoints and sources](designs/endpoints-and-sources.md). Probe outcomes and
+selection belong in [observations and selection](designs/observations-and-selection.md).
+Artifact and composition requirements belong in
+[artifact publication and composition](designs/artifact-publication-and-composition.md).
 
-## Component boundaries and future code placement
+## Component boundaries and code placement
 
-There is one Go module. `internal/endpoint` implements M1, `internal/source`
-implements M2, M3 is implemented by `internal/policy`, `internal/engine`,
-`internal/artifact`, and `internal/publish`, M4 is implemented by
-`internal/observation`, `internal/probe`, and `internal/state`, and M5 adds
-`internal/selection`, shared use-case composition in `internal/reconcile`, plus
-receipt-bound decision checkpoints in `internal/state`. M6 adds generated
-`api/v1alpha1`, thin `internal/controller` reconcilers, Kubernetes adapters in
-`internal/operator`, and `cmd/operator`. M7 adds the managed runtime planner,
-immutable generation/auth publication and activation observer in `internal/operator`
-plus the fixed `cmd/healthcheck` readiness helper. `tools/checkdocs` is repository tooling;
-there is no standalone product CLI yet. The remaining paths are
-placement guidance, **not directories to pre-create**. Introduce packages with their
-first real consumer; combine closely related code until a tested dependency boundary
-warrants splitting it.
+There is one Go module. M1 implements `internal/endpoint`; M2 implements
+`internal/source`; M3 is implemented by `internal/policy`, `internal/engine`,
+`internal/artifact` and `internal/publish`; M4 by `internal/observation`,
+`internal/probe` and `internal/state`; M5 by `internal/selection` and shared
+`internal/reconcile`; M6 adds `api/v1alpha1`, `internal/controller`, Kubernetes
+adapters in `internal/operator` and `cmd/operator`; M7 adds managed runtime planning
+and exact activation in `internal/operator` plus the fixed `cmd/healthcheck` helper.
+`tools/checkdocs` is repository tooling. There is no product CLI or runtime wrapper
+today.
 
 | Responsibility | Intended location when implemented | Dependency constraint |
 | --- | --- | --- |
 | Normalized endpoint types and identity | `internal/endpoint` | No Kubernetes or engine imports |
-| Acquisition adapters and subscription parsers | `internal/source` (implemented M2 slice) and format-specific children when justified | Produce normalized input; cannot publish output |
-| Observation evidence and summaries | `internal/observation` (implemented M4) | Revision/target/vantage-specific value types; no scheduler or SQL dependency |
-| Probe scheduling and engine execution | `internal/probe` (implemented M4) | Pinned engines behind a narrow adapter; no proxy-protocol implementation |
-| History reads/writes and SQLite adapter | `internal/state` (implemented M4/M5) | Domain-shaped operations; no generic ORM or backend framework |
-| Eligibility, scoring, selection | `internal/selection` (implemented M5) | Deterministic inputs; no I/O or Kubernetes types |
-| Common routing and desired gateway model | `internal/policy` (implemented M3 slice) | No native engine maps in common semantics |
-| Engine configuration and validation | `internal/engine/mihomo`, `internal/engine/singbox`, `internal/artifact` (implemented M3 profiles) | Engine dependencies stay here; no publication side effects |
-| File and Secret publication | `internal/publish` (file M3); Secret adapter in `internal/operator` (M6) | Consume validated artifacts; serialize writes per target |
-| Shared reconciliation/use cases | `internal/reconcile` (implemented M5 standalone slice) | Explicit consumers of adapters; no Kubernetes client dependency |
-| Standalone process composition | `cmd/egressfox` | Thin flags, lifecycle, dependency wiring |
-| Kubernetes API and reconcilers | Kubebuilder-generated `api/v1alpha1`, `internal/controller`; adapters and managed runtime planner in `internal/operator` (implemented M6/M7) | Convert Kubernetes objects to core inputs; never invert this dependency |
-| Operator and readiness processes | `cmd/operator`, fixed managed listener probe in `cmd/healthcheck` (implemented M6/M7) | Preserve supported scaffold conventions; health helper proves authentication only and never proxies traffic |
+| Acquisition and subscription parsers | `internal/source` | Produce normalized input; cannot publish output |
+| Observation evidence and summaries | `internal/observation` | No scheduler or SQL dependency |
+| Probe scheduling and engine execution | `internal/probe` | Pinned engines behind a narrow adapter; no proxy implementation |
+| History and SQLite adapter | `internal/state` | Domain-shaped operations; no generic ORM |
+| Eligibility, scoring and selection | `internal/selection` | Deterministic inputs; no I/O or Kubernetes types |
+| Common routing intent and desired gateway | `internal/policy` | No native engine maps in common semantics |
+| Engine config and validation | `internal/engine/*`, `internal/artifact` | Version-aware adapters; no publication side effects |
+| File and Secret publication | `internal/publish` and current `internal/operator` adapter | Consume validated artifacts; serialize writes per target |
+| Shared reconciliation/use cases | `internal/reconcile` | Explicit side-effect adapters; no Kubernetes client dependency |
+| Standalone product frontend | Future `cmd/egressfox` | Thin Go CLI/process composition over shared core |
+| Runtime process adapter | Future runtime command/package, exact placement open | Launch/lifecycle only; no control-plane decisions |
+| Kubernetes API/reconcilers | `api/v1alpha1`, `internal/controller`, `internal/operator`, `cmd/operator` | Adapt Kubernetes objects to core; never invert dependency |
+| Current readiness helper | `cmd/healthcheck` | Narrow authenticated local SOCKS check; not a general runtime supervisor |
 
-Do not introduce a shared `utils`, a public Go SDK, empty interfaces for every
-pipeline arrow, a plugin RPC protocol, or a distributed service for each stage.
-Interfaces belong at actual consumers of side effects. Clock and random input
-must be controllable for selection replay. Use `context.Context` for cancellable
-I/O, contextual sanitized errors, explicit dependencies, and small packages.
-
-The official [Go module layout guidance](https://go.dev/doc/modules/layout)
-supports starting small and using `internal` for non-public packages. It does
-not require a generic community project tree.
+These future paths are placement guidance, not directories to pre-create. Do not
+introduce a generic `utils`, public SDK, empty interface for every pipeline stage,
+plugin RPC protocol, or a service for each stage. Interfaces belong at real side
+effect consumers. Control time/random input, use cancellable I/O, sanitized errors,
+explicit dependencies and deterministic ordering.
 
 ## Reconciliation and consistency
 
 The shared use case assembles an immutable input snapshot: desired policy revision,
 source/inventory revisions, endpoint credential revisions, observation cutoff,
-previous selection, and engine compatibility profile. It derives a decision and
-artifact without fetching fresh network data halfway through rendering.
+previous selection and engine compatibility profile. It derives a decision and
+artifact without fetching mutable network data halfway through rendering. Repeating
+the same effective snapshot and explicit time/seed produces the same decision and
+bytes.
 
-Repeated reconciliation of the same snapshot and explicit clock/seed must give
-the same decision and bytes. In a running system observations evolve; idempotency
-means repeated handling of the same effective inputs has no additional side
-effects, not that traffic conditions are frozen.
-
-Before publication, reject obsolete work using the current desired revision and
-the target's recorded generation. A slow render from an older policy must not
-overwrite a newer result. Writes are serialized per target; Kubernetes resource
-versions provide conflict detection, not a substitute for semantic revision checks.
-Retries reconstruct desired state rather than assuming an event sequence.
-
-No transaction spans the history database, filesystem, API server, and engine.
-Publication therefore needs recoverable checkpoints and read-back after ambiguous
-writes. The [publication design](designs/policy-rendering-publication.md) owns
-crash behavior, target ownership, and the distinction between validation and activation.
+Before publication, reject obsolete work using current desired revisions and target
+ownership. A slow render from older policy must not overwrite newer state. Writes
+are serialized per target and ambiguous writes are read back. No transaction spans
+history, filesystem, API server and engine; recoverable checkpoints preserve LKG.
+The artifact design owns future content-aware no-op and same-generation repair.
 
 ## Failure boundaries
 
-| Failure | Intended response |
+| Failure | Required response |
 | --- | --- |
-| Source timeout or invalid response | Record refresh failure; never interpret it as an authoritative empty inventory |
+| Source timeout/invalid response | Record refresh failure; do not turn it into authoritative empty inventory |
 | No fresh observations | Preserve unknown/stale evidence; apply explicit eligibility policy |
-| Insufficient candidates | Report a shortfall; never silently relax deny rules or route directly |
-| Unsupported renderer semantics | Fail with capability/field context and retain current published artifact |
+| Insufficient candidates | Report shortfall; never relax deny rules or route directly |
+| Unsupported renderer semantics | Fail with safe capability/field context and retain current LKG |
 | Native validation failure | Suppress publication and expose sanitized diagnostics |
-| Publication conflict or ambiguous write | Read back and retry within bounds; do not blindly promote state |
-| Lost history | Explicit cold-start/recovery policy; no fabricated healthy state |
-| Data-plane failure after validation | Report separately where observable; validation is not an availability guarantee |
+| Publication conflict/ambiguous write | Read back and retry within bounds; do not promote blindly |
+| Lost history | Apply explicit cold-start/recovery policy; do not fabricate healthy state |
+| Candidate activation failure | Keep healthy active LKG; report candidate failure separately |
+| External output failure | Report that destination independently; preserve healthy active dataplane |
+| Data-plane/target failure after validation | Report separately where observable; validation is not availability proof |
 
 ## Standalone and Kubernetes
 
-Standalone and operator modes compose the same core behavior. Kubernetes is an
-adapter for desired input, scheduling signals, Secret access/output, ownership,
-and bounded status. The core must not know a namespace, CRD, Kubernetes Condition,
-or API server resource version.
+Standalone and operator modes compose the same core. Kubernetes adapts desired
+inputs, scheduling signals, Secret access, output ownership, runtime lifecycle and
+bounded status. The core must not know namespaces, CRD Conditions, API-server
+resource versions or Kubernetes clients. M1–M5 core behavior is already
+Kubernetes-independent; the user-facing standalone frontend remains future work.
 
 P0 uses one namespace-scoped operator replica, leader election and one RWO-PVC-backed
-SQLite store as defined by [ADR 0011](decisions/0011-namespaced-byo-operator.md).
-It does not authorize shared SQLite or multiple replicas.
+SQLite store under [ADR 0011](decisions/0011-namespaced-byo-operator.md). This does
+not authorize shared SQLite or multiple operator replicas.
 
 ## Design navigation and non-goals
 
-- [Sources and endpoint identity](designs/endpoints-and-sources.md): untrusted input to inventory.
-- [Observations, history, selection, and observability](designs/observations-and-selection.md): evidence to decisions.
-- [Policy, renderers, and safe publication](designs/policy-rendering-publication.md): decisions to artifacts.
-- [Kubernetes](designs/kubernetes.md): implemented P0 APIs and reconciliation ownership.
-- [Threat model](security/threat-model.md): trust boundaries and required controls.
+- [Sources and endpoint identity](designs/endpoints-and-sources.md)
+- [Observations, history, selection and observability](designs/observations-and-selection.md)
+- [Policy, renderers and current safe publication](designs/policy-rendering-publication.md)
+- [Future runtime and standalone design](designs/runtime-and-standalone.md)
+- [Artifact publication and composition](designs/artifact-publication-and-composition.md)
+- [Kubernetes API and current lifecycle](designs/kubernetes.md)
+- [Threat model](security/threat-model.md)
+- [P1 and post-P1 roadmap](roadmap/p1.md)
 
-Transparent networking, per-connection decisions, HA storage, and a public extension
-SDK are not part of this foundation. Track unresolved details in the
-[decision queue](decisions/open-questions.md) rather than making them implicit in code.
-
-The [P1 roadmap](roadmap/p1.md) preserves these boundaries while adding managed
-process ownership around an existing engine, not a new data plane. It orders runtime
-activation before resilient sources, target-aware selection, routing composition,
-metrics and explainability so later APIs consume explicit lifecycle/evidence states.
+Transparent networking, per-connection decisions, HA storage and a public extension
+SDK are not part of this foundation. Track unsettled details in the
+[decision queue](decisions/open-questions.md); do not let proposed architecture
+masquerade as implemented behavior.

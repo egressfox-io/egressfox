@@ -35,3 +35,11 @@ Recheck the official [compatibility policy](https://book.kubebuilder.io/versions
 [reconciliation guidance](https://book.kubebuilder.io/reference/good-practices), and
 [controller-runtime compatibility](https://github.com/kubernetes-sigs/controller-runtime#compatibility)
 before choosing versions. No cluster version support is claimed today.
+
+## Scope clarification (2026-09-23)
+
+[ADR 0015](0015-standalone-runtime-and-engine-packaging.md) clarifies that
+"Kubernetes-native" in this record describes the operator frontend and its API,
+not a Kubernetes-only product. The shared Go core remains Kubernetes-independent;
+standalone operation is an accepted future frontend and is not implemented by this
+ADR or by the current operator tooling.

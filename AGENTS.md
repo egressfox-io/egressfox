@@ -1,13 +1,17 @@
 # EgressFox agent contract
 
-EgressFox is a Go control plane that derives desired Mihomo/sing-box configuration.
+EgressFox is an adaptive egress control plane with intended standalone and
+Kubernetes frontends over one shared Go core. It derives desired Mihomo/sing-box
+configuration; engines execute traffic routing.
 M1–M5 provide the Kubernetes-independent endpoint, source, render, probe, history,
 selection and reconciliation pipeline. M6 adds a namespace-scoped BYO operator,
 generated alpha CRDs, owned Secret publication and Helm delivery. M7 adds explicit
 single-replica managed Mihomo/sing-box workloads, authenticated ClusterIP SOCKS and
 exact-generation activation while preserving BYO. There is no product CLI, managed
 source refresh, rich routing or HA topology. The P1 product sequence is designed in
-`docs/roadmap/p1.md`; M8 is the next implementation milestone.
+`docs/roadmap/p1.md`; M8 is the next implementation milestone. After M12, continue
+through the accepted post-P1 architecture in
+`docs/roadmap/README.md` rather than duplicating those shared capabilities.
 Read the [documentation map](docs/README.md),
 [architecture](docs/architecture.md), and [current roadmap](docs/roadmap/README.md)
 before implementation. Planned features are not existing behavior.
@@ -16,13 +20,29 @@ before implementation. Planned features are not existing behavior.
 
 - EgressFox decides desired configuration; engines proxy, tunnel, route, and balance
   connections. Do not implement a proxy protocol or datapath here.
+- Intended frontends share one Go core: future standalone `egressfox` and current
+  Kubernetes `egressfox-operator`. `egressfox-runtime` is execution/lifecycle only;
+  selection and policy never belong there. `egressfox-engine-m/-s` are future
+  private executable names; public engine choices remain Mihomo/sing-box. Do not
+  duplicate the core in Rust.
 - Core endpoint/policy/selection logic has no Kubernetes imports or concepts.
   Engine behavior belongs in version-aware adapters/renderers.
 - Reconciliation is idempotent. Obsolete work must not overwrite newer desired state.
+- Equivalent deterministic desired artifact means no new dataplane generation or
+  restart. Reconciliation frequency and source/probe/status activity alone are not
+  rollout triggers; missing/drifted targets may be repaired with the same generation.
+- Managed activation and external publication are separate. Current M7 activation
+  uses its internal generation Secret; future `EgressOutput` is optional external
+  publication, not required for a managed Gateway. No reusable `EgressSink` is planned.
+- ProxyPools remain leaf inventories, may contain multiple sources, and do not
+  recursively include pools. Future candidate composition belongs to policy/selection.
 - Never log credentials, full subscription/endpoint URIs, or generated configuration;
   errors, metrics, status, Events, fixtures, and retained output need the same care.
 - Invalid generated configuration never replaces last-known-good output.
   Publication success does not prove runtime activation.
+- Keep healthy active LKG until a replacement is ready; normal managed rollout must
+  preserve Ready service capacity, stable Service identity and client credentials,
+  and drain old connections best-effort without promising every session survives.
 - Unsupported renderer semantics fail explicitly. Never silently weaken routing,
   TLS, selection constraints, or replace an empty pool with direct access.
 - Public API/CRD and persistent-state changes require compatibility consideration.
@@ -38,6 +58,8 @@ before implementation. Planned features are not existing behavior.
 | API/operator/Helm | [Kubernetes design](docs/designs/kubernetes.md) |
 | Secrets/network/parser/output boundaries | [Threat model](docs/security/threat-model.md) |
 | Durable decisions or unsettled details | [ADRs](docs/decisions/README.md) and [decision queue](docs/decisions/open-questions.md) |
+| Future process, runtime and package model | [Runtime and standalone](docs/designs/runtime-and-standalone.md) |
+| Future artifact, publisher, composition and availability rules | [Artifact publication and composition](docs/designs/artifact-publication-and-composition.md) |
 
 The [placement map](docs/architecture.md) guides future packages. Create them with
 real behavior, not empty trees or speculative interfaces. `tools/checkdocs` is

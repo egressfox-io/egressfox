@@ -21,6 +21,8 @@ read the owning design and accepted decisions for the area they plan to change.
 | --- | --- |
 | What is the product, and what is outside it? | [Product](product.md) |
 | What do terms mean, where does code belong, how do boundaries interact? | [Architecture](architecture.md) |
+| What are the future standalone process, runtime and packaging boundaries? | [Runtime and standalone design](designs/runtime-and-standalone.md) |
+| How do artifacts, external publication, candidate composition and managed activation relate? | [Artifact publication and composition](designs/artifact-publication-and-composition.md) |
 | How should identity, normalization, provenance, and source refresh behave? | [Endpoints and sources](designs/endpoints-and-sources.md) |
 | How should probes, history, adaptation, explanation, and metrics work? | [Observations and selection](designs/observations-and-selection.md) |
 | How do policy, engine differences, validation, and LKG publication work? | [Policy, renderers, publication](designs/policy-rendering-publication.md) |
@@ -50,7 +52,8 @@ read the owning design and accepted decisions for the area they plan to change.
   is in the roadmap. This applies to repository tooling and the M1–M7 endpoint,
   source, policy, engine artifact, local publication, observation, probe, history,
   selection, reconciliation, Kubernetes operator, Secret publication and managed
-  runtime/activation domains.
+  runtime/activation domains. The standalone product CLI/runtime wrapper and the
+  broader publisher family remain future architecture.
 - **Future/experimental**: cataloged beyond the current milestone; not current work.
 
 Priority and maturity are independent. P0 does not mean implemented; an accepted

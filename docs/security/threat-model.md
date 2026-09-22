@@ -11,7 +11,10 @@ artifacts, SPDX SBOMs, image/package scanning, keyless signing and provenance.
 Ordinary CI is read-only; publication is tag-bound and protected-environment gated.
 M7 adds an explicit managed single-replica data-plane runtime; there is still no
 production stability or high-availability claim. Reporting
-guidance is in [SECURITY.md](../../SECURITY.md).
+guidance is in [SECURITY.md](../../SECURITY.md). ADRs 0015–0017 and the
+[runtime/standalone](../designs/runtime-and-standalone.md) and
+[artifact/publication/composition](../designs/artifact-publication-and-composition.md)
+designs add future security boundaries; they are not implemented controls.
 
 The [P1 roadmap](../roadmap/p1.md) is not itself an implemented control. M7's
 authenticated proxy-listener and managed-workload boundary is implemented under
@@ -80,6 +83,10 @@ Trust boundaries:
 | Registry, signing identity or release-workflow compromise | Verify immutable digest plus expected repository/workflow/tag certificate identity and provenance; protected reviewers and transparency records limit but do not eliminate maintainer/GitHub compromise |
 | Duplicate, replaced or re-generated release artifacts for one version | Immutable published versions: publication refuses an existing version, never clobbers or recreates assets, and validates that workflow contract; a defective publication is superseded by the next version |
 | Artifact mislabeled as an official release while built from modified source | Build identity carries the source commit and appends `.dirty` for non-ignored working-tree changes; release qualification fails closed unless the requested version is the planned release version and the tree is clean, and tagged publication additionally requires the exact existing tag |
+| Embedded runtime/engine payload substituted or extracted unsafely | Future materialization accepts only release-bundled payloads, verifies expected identity, uses a private user-owned path and restrictive permissions, rejects symlink/path replacement and unexpected existing content, writes atomically, and fails closed; never download an executable implicitly |
+| Publisher writes to the wrong tenant/bucket/path/Secret or exposes destination credentials | Future outputs validate destination ownership and scope, keep auth as external references, use least-privilege credentials, bind protected receipts to a safe artifact generation, validate before publication, and isolate each output's failure |
+| Runtime starts bytes other than the validated generation or retires LKG early | Bind process input to the exact materialized artifact/generation, prove candidate readiness before cutover, preserve the prior healthy LKG on failure, and keep external output credentials out of Gateway Pods |
+| Public metadata leaks equality information about credential-bearing configuration | Keep exact-content fingerprints protected; expose safe opaque artifact generations/receipts only, and test status, labels, annotations, metrics, names and logs for digest leakage |
 
 ## P1 controls and design gates
 
@@ -90,6 +97,9 @@ boundary; they must not be described as present before that implementation ships
 | --- | --- |
 | Managed proxy Service (implemented M7) | Secret-backed client authentication, ClusterIP only, CNI-dependent NetworkPolicy as defense in depth, no engine control API exposure, non-root/read-only/drop-all container and exact owner collision checks |
 | Generation activation (implemented M7) | Immutable revision-bound config input, protected receipt binding, old-ready generation retention during failed rollout, bounded cleanup and separate Published/Activated/RuntimeReady states |
+| Embedded engine/runtime materialization (future) | Release-bundled origin, identity verification, private cache, atomic extraction, restrictive permissions, path/race resistance, version coexistence and no implicit executable download |
+| External publishers and future EgressOutput (future) | Destination authorization/ownership, referenced auth material, least privilege, no publication of unvalidated bytes, protected receipts, safe generation correlation and failure isolation from active runtime |
+| Availability-preserving activation (future refinement) | Exact generation binding, candidate readiness with local usable-dataplane evidence, surge-first cutover, old LKG retention, stable Service/client credentials and best-effort drain |
 | Durable HTTP source cache | Preserve P0 SSRF/redirect/auth rules on retries, private bounded cache, validator/auth identity separation, explicit expiry and no failure-to-empty conversion |
 | Multiple target profiles | Independent target authorization and scheduler budgets; adding one target grants no rights to another and cannot create an unbounded inventory/profile product |
 | EgressPolicy routing | Explicit direct/block/final behavior, ordered rules, no empty-pool direct fallback, exact engine capability rejection and no subscription-supplied rules/hooks |

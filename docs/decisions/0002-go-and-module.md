@@ -34,3 +34,11 @@ Future packages grow with working behavior and tests. Apply the official
 [Go module layout guidance](https://go.dev/doc/modules/layout), explicit dependencies,
 consumer-defined interfaces, and normal `gofmt`, `go vet`, and Go testing. Revisit
 a separate client/TUI only with a concrete interface and maintenance case.
+
+## Scope clarification (2026-09-23)
+
+[ADR 0015](0015-standalone-runtime-and-engine-packaging.md) accepts the primary
+user-facing standalone `egressfox` CLI and long-running control plane in Go over
+this shared module. Rust is not the planned primary CLI or a second core. The
+historical TUI alternative above remains an undecided, separate client possibility;
+it is not part of the standalone product decision.

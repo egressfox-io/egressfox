@@ -20,6 +20,9 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0012](0012-release-distribution-and-provenance.md) | Engine redistribution, versioning, signing and provenance | Accepted |
 | [0013](0013-managed-gateway-activation.md) | Managed gateway ownership and exact-generation activation | Accepted |
 | [0014](0014-development-versioning-and-kubernetes-compatibility.md) | Development release identity and Kubernetes compatibility | Accepted |
+| [0015](0015-standalone-runtime-and-engine-packaging.md) | Standalone control plane, runtime boundary and engine packaging | Accepted future architecture |
+| [0016](0016-artifact-publication-and-availability.md) | Change-driven artifacts, independent publication and safe activation | Accepted future architecture |
+| [0017](0017-leaf-pools-and-policy-composition.md) | Leaf ProxyPools and composable policy candidates | Accepted future architecture |
 
 ## Adding a decision
 

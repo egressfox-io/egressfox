@@ -1,7 +1,11 @@
 # Policy, renderers, and safe publication
 
 Status: accepted boundaries with the M3 renderer, native-validation and file
-publication contract fixed by ADR 0008.
+publication contract fixed by ADR 0008. The
+[artifact publication and composition design](artifact-publication-and-composition.md)
+owns accepted future cross-backend publisher, no-op/repair and availability
+semantics; this document remains authority for the current renderer and publication
+contracts.
 
 ## Decisions
 
@@ -187,9 +191,11 @@ accept the result; neither renderer may omit authentication or add another liste
 
 The first activation path binds a fresh process Pod to an immutable generation
 Secret and uses an authenticated loopback SOCKS handshake plus completed Deployment
-rollout as activation evidence. It does not enable Mihomo's control API or assume
-sing-box `SIGHUP` has the same semantics. The previous ready generation and its
-Secret remain until the new generation activates. BYO mode remains publication-only.
+rollout as activation evidence. M7 starts the engine executable directly; it does
+not yet use the future `egressfox-runtime` wrapper. It does not enable Mihomo's
+control API or assume sing-box `SIGHUP` has the same semantics. The previous ready
+generation and its Secret remain until the new generation activates. BYO mode
+remains publication-only.
 
 P1 M10 expands the common model only after Q16 proves a bounded ordered rule/action
 intersection for both exact engine versions. One Gateway references at most one
@@ -276,15 +282,19 @@ Kubernetes documents [Secret handling and size limits](https://kubernetes.io/doc
 Base64 is not encryption. Secret authorization and cluster encryption-at-rest
 remain deployment responsibilities, with least-privilege operator access.
 
-**Future targets:** stdout is a sensitive export stream, not durable atomic
-publication; diagnostics belong on stderr. ConfigMap is only for proven
-credential-free artifacts. Vault and HTTP/webhook targets require target-specific
-idempotency, authentication, acknowledgment, retry, and rollback contracts.
+**Future publisher family:** Kubernetes Secret, Vault, S3-compatible object
+storage, filesystem and stdout are accepted deployment-independent directions under
+the [artifact publication design](artifact-publication-and-composition.md), but the
+new adapters are not implemented. Stdout is a sensitive one-shot export, not a
+normal operator sink; diagnostics belong on stderr. ConfigMap remains suitable only
+for artifacts proven credential-free end to end. Each backend still needs its own
+idempotency, authentication, acknowledgment, retry and recovery contract.
 
 ## Non-goals and open questions
 
 No EgressFox runtime routing implementation, universal policy language, live engine
-reload or native merge engine exists here. M7 compatibility is limited to the exact
+reload or native merge engine exists here. `EgressOutput` and Vault/S3/shared output
+adapters remain future architecture. M7 compatibility is limited to the exact
 profiles and the authenticated managed listener described above. Activation and
 managed ownership are resolved by ADR 0013; the
 [decision queue](../decisions/open-questions.md) retains native composition under

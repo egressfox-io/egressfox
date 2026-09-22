@@ -93,21 +93,32 @@ ADR 0012 remains authority for current engine redistribution, GPL/source/notices
 SBOM, scanning, signing, provenance and protected publication. ADR 0013 remains
 historical and current authority for the implemented M7 exact-generation managed
 activation. ADR 0014 remains authority for release identity and Kubernetes
-qualification. New ADRs refine future product/runtime, artifact/publication and
-composition direction; they do not rewrite those records or claim future packaging
-and outputs already ship. No historical ADR requires a superseded marker.
+qualification. ADRs 0015–0017 add future product/runtime, artifact/publication and
+composition decisions; they do not rewrite those records or claim future packaging
+and outputs already ship. ADRs 0002 and 0003 receive dated scope clarifications for
+the Go standalone frontend and Kubernetes product wording. No decision is
+superseded.
 
 ## Checkpoints
 
 - [x] Verify baseline, branch, instructions, document authority and implementation
   facts; record this plan before architecture edits.
-- [ ] Add durable ADR and focused runtime/standalone and artifact/publication design
+- [x] Add durable ADR and focused runtime/standalone and artifact/publication design
   authority; update architecture and security boundaries.
 - [ ] Reconcile README/product, P1/feature/roadmap, open questions, AGENTS and
   documentation indexes while preserving current behavior and milestone order.
 - [ ] Review all affected Markdown for contradictions and links; run `make check`,
   documentation validation and `git diff --check`; record exact outcomes.
 - [ ] Commit coherent documentation checkpoints and finish on a clean branch.
+
+## Progress and evidence
+
+The first design checkpoint now records ADRs 0015–0017 and the detailed
+`runtime-and-standalone.md` and `artifact-publication-and-composition.md` designs.
+`architecture.md`, current publication/Kubernetes designs, threat model, ADR index,
+documentation map, and ADR 0002/0003 scope notes link the authority while retaining
+M7 and release facts. Product, P1/feature/roadmap, root agent guidance, decision
+queue and operational release wording are being reconciled in the next checkpoint.
 
 ## Unresolved details intentionally left open
 
