@@ -12,7 +12,7 @@ The initial public artifacts support exactly:
 | --- | --- | --- |
 | Mihomo | 1.19.31 / `egressfox.mihomo/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
 | sing-box | 1.14.1 / `egressfox.sing-box/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
-| Operator image | linux/amd64, linux/arm64 | Operator and source-built engine derivatives are compiled for both architectures |
+| Operator/runtime image | linux/amd64, linux/arm64 | Operator, readiness helper and source-built engine derivatives are compiled for both architectures; the same signed image is the M7 managed runtime authority |
 | Kubernetes | 1.37.0 | envtest and kind baseline; not a promise for every older or newer minor |
 | API | `egressfox.io/v1alpha1` | Alpha compatibility: review CRD diffs and release notes before every upgrade |
 
@@ -32,7 +32,8 @@ package manager, curl, tar or OS packages. It runs as UID/GID 65532, has a state
 volume and temporary volume, and remains compatible with a read-only root filesystem
 and all capabilities dropped by the chart.
 
-The operator Go binaries are built twice and compared during a dry run. This proves
+The operator and managed-readiness Go binaries are built reproducibly in the image;
+the distributed operator binaries are built twice and compared during a dry run. This proves
 byte equality for the two invocations in that environment, not universal
 reproducibility across operating systems or future toolchains. OCI layer encoding,
 upstream downloads, Helm gzip headers, SBOM timestamps and vulnerability-database
@@ -64,7 +65,8 @@ This bootstraps checksum-pinned Helm 4.3.0, Syft 1.52.0, Grype 0.119.0 and Cosig
 linux/amd64 and linux/arm64 binaries twice; verifies the engine source inputs; builds
 both engine derivatives twice; creates modified source/license archives and SPDX JSON
 SBOMs; packages/renders Helm; builds a
-multi-platform OCI archive without registry credentials; scans release SBOMs/image;
+multi-platform OCI archive without registry credentials; scans release SBOMs/image,
+including the managed readiness helper and both runtime engines;
 and emits a sorted `dist/release/SHA256SUMS`. Nothing is uploaded, signed or pushed.
 
 If no container service exists, use `RELEASE_SKIP_IMAGE=1` and record that image
@@ -85,7 +87,9 @@ The release file set contains two raw operator binaries, their SPDX JSON SBOMs, 
 engine-binary SPDX JSON SBOMs, the Helm package, complete modified engine source archives and
 license files, EgressFox's license, third-party notices, the final image SPDX JSON
 SBOM, and `SHA256SUMS`. Raw engine binaries are not separately published; they are
-inside the image. The OCI image is published as a multi-platform manifest and is
+inside the image together with the fixed managed-readiness helper. The OCI image is
+both the operator and M7 managed-runtime artifact; no per-Gateway or mutable engine
+image is part of the contract. It is published as a multi-platform manifest and is
 identified by its registry digest, not by a checksum of the local dry-run OCI tar.
 
 Syft reports Go build dependencies, detectable bundled-engine Go packages and image
@@ -164,8 +168,8 @@ does not establish trust: the repository and workflow identity must match.
 - [ ] Sorted SHA-256 manifest verifies every file artifact.
 - [ ] In publish mode, image digest signature, SBOM attestation, image/file provenance
   and verification commands pass for the expected repository/workflow identity.
-- [ ] SECURITY.md, support matrix, limitations, release notes and manual actions are
-  current; no P1 feature is advertised.
+- [ ] SECURITY.md, support matrix, managed-runtime limitations, release notes and
+  manual actions are current; only completed P1 behavior is advertised.
 - [ ] GitHub private vulnerability reporting and notifications are enabled, and the
   protected `release` environment has required reviewers.
 

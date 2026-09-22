@@ -1,7 +1,7 @@
 # Architecture and domain language
 
-Status: accepted boundaries with M1–M6 components implemented and P1 sequencing
-designed. No P1 product behavior is implemented. The
+Status: accepted boundaries with M1–M7 components implemented and later P1
+sequencing designed. The
 [ADRs](decisions/README.md) record durable choices; detailed designs distinguish
 implemented behavior from future requirements.
 
@@ -65,7 +65,9 @@ implements M2, M3 is implemented by `internal/policy`, `internal/engine`,
 `internal/selection`, shared use-case composition in `internal/reconcile`, plus
 receipt-bound decision checkpoints in `internal/state`. M6 adds generated
 `api/v1alpha1`, thin `internal/controller` reconcilers, Kubernetes adapters in
-`internal/operator`, and `cmd/operator`. `tools/checkdocs` is repository tooling;
+`internal/operator`, and `cmd/operator`. M7 adds the managed runtime planner,
+immutable generation/auth publication and activation observer in `internal/operator`
+plus the fixed `cmd/healthcheck` readiness helper. `tools/checkdocs` is repository tooling;
 there is no standalone product CLI yet. The remaining paths are
 placement guidance, **not directories to pre-create**. Introduce packages with their
 first real consumer; combine closely related code until a tested dependency boundary
@@ -84,8 +86,8 @@ warrants splitting it.
 | File and Secret publication | `internal/publish` (file M3); Secret adapter in `internal/operator` (M6) | Consume validated artifacts; serialize writes per target |
 | Shared reconciliation/use cases | `internal/reconcile` (implemented M5 standalone slice) | Explicit consumers of adapters; no Kubernetes client dependency |
 | Standalone process composition | `cmd/egressfox` | Thin flags, lifecycle, dependency wiring |
-| Kubernetes API and reconcilers | Kubebuilder-generated `api/v1alpha1`, `internal/controller`; adapter helpers in `internal/operator` | Convert Kubernetes objects to core inputs; never invert this dependency |
-| Operator process | `cmd/operator` (implemented M6) | Preserve supported scaffold conventions unless a documented need arises |
+| Kubernetes API and reconcilers | Kubebuilder-generated `api/v1alpha1`, `internal/controller`; adapters and managed runtime planner in `internal/operator` (implemented M6/M7) | Convert Kubernetes objects to core inputs; never invert this dependency |
+| Operator and readiness processes | `cmd/operator`, fixed managed listener probe in `cmd/healthcheck` (implemented M6/M7) | Preserve supported scaffold conventions; health helper proves authentication only and never proxies traffic |
 
 Do not introduce a shared `utils`, a public Go SDK, empty interfaces for every
 pipeline arrow, a plugin RPC protocol, or a distributed service for each stage.

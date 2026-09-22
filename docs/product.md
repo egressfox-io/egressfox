@@ -1,6 +1,6 @@
 # Product and scope
 
-Status: product intent with the bounded P0 M1–M6 control-plane path implemented.
+Status: product intent with P0 M1–M6 and P1 M7 implemented.
 The [feature catalog](roadmap/features.md) owns priority assignments; the
 [roadmap](roadmap/README.md) owns implementation order and completion status.
 
@@ -33,7 +33,8 @@ The product is not defined around jurisdiction-specific restrictions.
 | Maintaining history and selecting eligible endpoints | Executing routing rules for individual connections |
 | Translating desired policy into engine configuration | Connection-level balancing and runtime failover groups |
 | Validating and safely publishing desired generations | TUN, TProxy, and other packet handling |
-| Explaining configuration decisions | Applying/loading configuration and reporting runtime state |
+| Managing an explicitly requested engine process and observing exact activation | Loading and executing the engine-native configuration |
+| Explaining configuration decisions | Serving proxy traffic and engine-local runtime behavior |
 
 EgressFox may start an engine to perform through-endpoint probes. That is an
 adapter to an existing data plane, not permission to implement a proxy stack.
@@ -54,16 +55,17 @@ as `validate`, `fetch`, `nodes`, `probe`, `score`, `explain`, `render`, and `dif
 are CLI direction, not existing commands or a frozen command contract.
 
 The first Kubernetes experience publishes configuration for a runtime the user
-operates (BYO/unmanaged). Managed workloads are P1. Explicit application proxy
-settings are the initial connectivity model, conceptually
-`ALL_PROXY=socks5://egress-gateway.namespace.svc:1080`. No managed engine Service exists yet.
+operates (BYO/unmanaged). M7 additionally implements an explicit single-replica
+managed workload and authenticated SOCKS5 ClusterIP Service. Applications still
+opt in with proxy settings; EgressFox does not transparently attach workloads.
 
 ## P1 product direction
 
 The authoritative [P1 roadmap](roadmap/p1.md) turns the completed BYO control plane
 into a self-contained, namespace-scoped egress Service without changing which side
-owns the data plane. Its must-have path adds a managed authenticated SOCKS runtime,
-exact-generation activation evidence, resilient managed source refresh,
+owns the data plane. M7 has added the managed authenticated SOCKS runtime and
+exact-generation activation evidence. The remaining must-have path adds resilient
+managed source refresh,
 target-aware selection profiles, bounded routing policy, operational metrics and a
 redacted explanation surface.
 
@@ -92,8 +94,9 @@ latency fluctuations do not cause churn. Confirmed failure can trigger prompt
 replacement once the configured detection criteria are met. Invalid generated
 configuration never displaces the last-known-good artifact.
 
-This does not promise uninterrupted traffic, instantaneous detection, or proof
-that a syntactically valid configuration is currently active in an engine.
+This does not promise uninterrupted traffic or instantaneous detection. BYO
+publication still does not prove activation; managed activation proves only the
+exact process/listener generation described in ADR 0013, not destination traffic.
 
 ## Research purpose
 

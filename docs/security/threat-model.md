@@ -13,9 +13,9 @@ M7 adds an explicit managed single-replica data-plane runtime; there is still no
 production stability or high-availability claim. Reporting
 guidance is in [SECURITY.md](../../SECURITY.md).
 
-The [P1 roadmap](../roadmap/p1.md) is design, not an implemented control. Its first
-milestone introduces a new authenticated proxy-listener and managed-workload trust
-boundary under ADR 0013.
+The [P1 roadmap](../roadmap/p1.md) is not itself an implemented control. M7's
+authenticated proxy-listener and managed-workload boundary is implemented under
+ADR 0013; later milestone rows below remain gates.
 
 M2 HTTP acquisition permits HTTPS by default, requires explicit intent for HTTP and
 non-public destinations, checks resolved addresses on the actual dial path, disables
@@ -79,15 +79,15 @@ Trust boundaries:
 | Compromised GitHub Action or untrusted pull request seeking credentials | Full Action commit SHAs, `persist-credentials: false`, read-only PR/validation permissions, no PR release job, exact-tag check, protected `release` environment and job-local write/OIDC permissions |
 | Registry, signing identity or release-workflow compromise | Verify immutable digest plus expected repository/workflow/tag certificate identity and provenance; protected reviewers and transparency records limit but do not eliminate maintainer/GitHub compromise |
 
-## P1 design gates
+## P1 controls and design gates
 
 The following controls are required by the P1 milestone that introduces each new
 boundary; they must not be described as present before that implementation ships.
 
-| Planned boundary | Required control before shipment |
+| Boundary | Required control before shipment |
 | --- | --- |
-| Managed proxy Service | Secret-backed client authentication, ClusterIP only, CNI-dependent NetworkPolicy as defense in depth, no engine control API exposure, non-root/read-only/drop-all container and exact owner collision checks |
-| Generation activation | Immutable revision-bound config input, protected receipt binding, old-ready generation retention during failed rollout, bounded cleanup and separate Published/Activated/RuntimeReady states |
+| Managed proxy Service (implemented M7) | Secret-backed client authentication, ClusterIP only, CNI-dependent NetworkPolicy as defense in depth, no engine control API exposure, non-root/read-only/drop-all container and exact owner collision checks |
+| Generation activation (implemented M7) | Immutable revision-bound config input, protected receipt binding, old-ready generation retention during failed rollout, bounded cleanup and separate Published/Activated/RuntimeReady states |
 | Durable HTTP source cache | Preserve P0 SSRF/redirect/auth rules on retries, private bounded cache, validator/auth identity separation, explicit expiry and no failure-to-empty conversion |
 | Multiple target profiles | Independent target authorization and scheduler budgets; adding one target grants no rights to another and cannot create an unbounded inventory/profile product |
 | EgressPolicy routing | Explicit direct/block/final behavior, ordered rules, no empty-pool direct fallback, exact engine capability rejection and no subscription-supplied rules/hooks |
@@ -173,6 +173,7 @@ protected-environment settings remain externally configured controls that must b
 checked before publication.
 
 Configuration validation cannot prove an endpoint is trustworthy, a destination
-will remain available, or a runtime actually loaded the artifact. Operators remain
+will remain available, or a BYO runtime actually loaded the artifact. Managed M7
+adds only the bounded activation evidence described above. Operators remain
 responsible for consent to probe targets, network authorization, engine hardening,
 and deployment-level secret protection. Do not present planned controls as completed.

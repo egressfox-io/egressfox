@@ -1,16 +1,17 @@
-# Kubernetes BYO operator
+# Kubernetes operator
 
-M6 provides a namespace-scoped Kubernetes 1.37 baseline. Install one Helm release
-per watched namespace. The operator publishes validated configuration but never
-creates, restarts, exposes or confirms activation of Mihomo/sing-box workloads.
+EgressFox runs one namespace-scoped operator per Helm release. A Gateway can be
+explicitly managed, in which case the operator maintains an authenticated SOCKS5
+Service backed by the selected pinned engine, or remain BYO and receive only a
+validated configuration Secret. Runtime omission preserves the M6 BYO contract.
 
-## Install
+## Install and compatibility
 
-The image contains checksum-verified, source-built Mihomo v1.19.31 and sing-box-compatible v1.14.1
-for native validation and isolated probes under the notice/source contract in
-[ADR 0012](../decisions/0012-release-distribution-and-provenance.md). Build a
-development image with `make docker-build IMG=...`; approved releases follow the
-[release guide](releasing.md). Install with a verified immutable digest:
+The signed image contains EgressFox, a fixed readiness helper, source-built Mihomo
+1.19.31 and the branded sing-box-compatible 1.14.1 derivative. The image, source,
+notices, SBOM, scan and provenance share the release contract in
+[ADR 0012](../decisions/0012-release-distribution-and-provenance.md). Install with a
+verified immutable digest:
 
 ```sh
 helm upgrade --install egressfox charts/egressfox \
@@ -19,94 +20,187 @@ helm upgrade --install egressfox charts/egressfox \
   --set image.digest=sha256:REPLACE_WITH_VERIFIED_DIGEST
 ```
 
-The chart installs the CRDs, one operator replica, a retained RWO PVC, ServiceAccount,
-namespace-limited manager/leader bindings and authenticated HTTPS metrics. CRDs are
-installed from `crds/`; Helm does not upgrade or delete them automatically. Review
-generated CRD diffs and apply compatible upgrades before upgrading a release. The
-PVC has Helm's `keep` annotation and requires explicit administrator cleanup.
-Helm also preserves CRDs on uninstall and does not upgrade files from `crds/`.
-Administrators must apply reviewed compatible CRD updates before the chart upgrade;
-uninstalling the release leaves CR instances/CRDs and the kept PVC until deliberately
-removed. Alpha APIs can make compatible schema additions, but no conversion webhook
-or automatic migration exists.
+The chart installs CRDs, one operator replica, a retained RWO PVC, ServiceAccount,
+namespace-limited manager/leader bindings and authenticated HTTPS metrics. Helm
+preserves CRDs and the annotated PVC on uninstall and does not upgrade files under
+`crds/`. Apply a reviewed compatible CRD update before upgrading the chart. Alpha
+schema additions have no conversion webhook or automatic migration.
 
-The initial support claim is Kubernetes 1.37.0 with controller-runtime v0.25.1.
-`make test-envtest` uses checksum-pinned 1.37.0 API-server assets and `make e2e-kind`
-uses kind v0.33.0 with a digest-pinned Kubernetes 1.37.0 node image.
-The kind script uses Docker by default; for Podman run
+The tested baseline is Kubernetes 1.37.0 with controller-runtime v0.25.1. Pinned
+1.37.0 envtest and kind v0.33.0 validation are available as `make test-envtest` and
+`make e2e-kind`. For Podman use
 `KIND_EXPERIMENTAL_PROVIDER=podman CONTAINER_CLI=podman make e2e-kind`.
-
-## API and Secret contracts
 
 `ProxyPool` references one to 32 same-namespace Secret keys containing explicit
 `URIList` or `Base64URIList` subscriptions and one Secret key containing an HTTP(S)
 probe target. Source IDs are safe provenance labels. Strict whole-source admission
-is default; `allowPartial`, `allowEmpty`, private-network and insecure-TLS choices
-are explicit. M2's byte, record and record-length limits still apply.
+is the default; `allowPartial`, `allowEmpty`, private-network and insecure-TLS
+choices are explicit. Parser, record, byte, probe and scheduling bounds from P0
+remain in force for both runtime modes.
 
-`EgressGateway` references one pool, selects the pinned Mihomo or sing-box profile,
-sets a loopback SOCKS listener and names its output Secret. It has no workload or
-reload fields. The output Secret has type `egressfox.io/engine-config`, exact
-Gateway controller ownership, `config.yaml` or `config.json`, and the protected
-`.egressfox-receipt` data key. Every data value is confidential. Do not expose,
-commit, diff or log the Secret.
+## Minimal managed Gateway
 
-An existing output name is accepted only when its type and controller owner UID
-match exactly. Otherwise publication fails and any previous owned LKG remains.
-The publisher rechecks the exact input object revisions before mutation and rejects
-secret data above 900 KiB before contacting the output object. Identical desired
-bytes are a no-op. Gateway deletion lets Kubernetes garbage
-collection delete the output; input Secrets and BYO workloads are never modified.
-Manual output deletion or drift is repaired on reconciliation after validation.
-A deleted source Secret or ProxyPool makes dependent Conditions false while leaving
-the last owned output Secret intact. Deleting a ProxyPool never cascades to a
-Gateway. Deleting the Gateway explicitly releases its owned output.
+Create the same-namespace subscription and target Secrets described in the
+[samples](../../config/samples/README.md), then opt in explicitly:
 
-Mount only the output key required by the chosen engine. The M6 compatibility
-profiles and typical commands are:
+```yaml
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata:
+  name: external-api
+spec:
+  poolRef: {name: external-api}
+  engine: SingBox
+  runtime:
+    managed: {}
+```
+
+Managed mode deliberately has no image, replica, Pod-template, listener, Service
+type or arbitrary environment knobs. It always creates one replica with an
+authenticated SOCKS5 listener on port 1080 behind a ClusterIP Service. The selected
+engine, renderer, native validator and executable all come from the same exact
+release profile; a Gateway cannot inject a different image.
+
+Discover the Service and credential Secret only after status reports them:
+
+```sh
+gateway=external-api
+service=$(kubectl get egressgateway "$gateway" -o jsonpath='{.status.serviceName}')
+auth=$(kubectl get egressgateway "$gateway" -o jsonpath='{.status.clientAuthSecretName}')
+username=$(kubectl get secret "$auth" -o go-template='{{index .data "username" | base64decode}}')
+password=$(kubectl get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
+printf 'SOCKS endpoint: %s:1080; username: %s\n' "$service" "$username"
+```
+
+Do not print the password in normal automation or logs. A workload must read the
+same-namespace `kubernetes.io/basic-auth` Secret through its own least-privilege
+delivery path and explicitly configure `socks5h://username:password@SERVICE:1080`.
+EgressFox does not inject workloads or transparently redirect traffic.
+
+The generated username is `egressfox`; the 32-byte random password is stable for
+the Gateway lifetime. M7 has no user-provided, scheduled or in-place credential
+rotation. Deleting the client auth Secret repairs it from protected active
+generation data with the same credential, avoiding a client/runtime mismatch.
+Deleting both the auth Secret and all recoverable generation inputs can require a
+new credential and rollout; deliberate zero-downtime rotation is later scope.
+
+## Managed resources and security
+
+One managed Gateway exclusively owns:
+
+- one immutable client-auth Secret;
+- the current published, active and immediately previous immutable configuration
+  generations, plus any generation still referenced by a non-terminal Pod;
+- one single-replica Deployment;
+- one ClusterIP Service exposing only TCP `socks` port 1080; and
+- one ingress-only NetworkPolicy allowing namespace-local access to that port.
+
+Every child has an exact controller OwnerReference. A same-named unrelated object
+causes a safe ownership conflict and is never adopted or overwritten. Deleting the
+Gateway relies on Kubernetes garbage collection; no network-dependent finalizer is
+used. Manually deleted exact-owned children are reconciled back when their inputs
+remain valid.
+
+The engine Pod runs as UID/GID 65532, non-root, with a read-only root filesystem,
+all capabilities dropped, privilege escalation disabled, RuntimeDefault seccomp,
+no service-account token, no host namespace and only bounded state/temp `emptyDir`
+volumes. It starts the fixed engine executable directly, without a shell, network
+download or control API. Credentials and config are mounted files and never appear
+in status, labels, annotations, args or normal diagnostics.
+
+The NetworkPolicy is defense in depth and requires a CNI that enforces it. Namespace
+peers still need SOCKS credentials. Administrators must treat namespace Pod creation,
+Secret read/mount permission, etcd encryption and node access as trust boundaries.
+
+## Generations, activation and readiness
+
+A distinct validated artifact becomes a new immutable Secret with a random opaque
+name. The name is the public generation identity; it is not derived from the
+secret-bearing content or receipt. Identical artifact and auth inputs reuse the
+existing generation, so an unchanged reconcile creates neither a Secret nor a
+rollout. Protected receipt and credentials remain Secret data.
+
+Status separates these facts:
+
+| Condition/field | Exact meaning |
+| --- | --- |
+| `Published=True` / `publishedGeneration` | Exact native-validated bytes exist in that owned immutable generation Secret |
+| `Activated=True` / `activeGeneration` | The Deployment observed the desired template; its one updated replica is Ready/available and no old replica remains for that rollout |
+| `RuntimeReady=True` | At least one managed Pod behind the stable Service is Ready; during a failed replacement it can be the old active generation |
+| `Degraded=True` | Current desired activation or runtime ownership failed; inspect its safe reason/message |
+
+Readiness executes a small fixed helper that reads mounted credentials, connects to
+loopback and completes SOCKS5 username/password negotiation with the engine. It does
+not forward a request. Thus readiness proves that the intended authenticated
+listener accepted the configured credentials; it does not prove destination,
+endpoint or application traffic health. M7 intentionally has no liveness probe or
+engine-specific live reload.
+
+A normal rollout mounts the new immutable Secret in a new Pod. Deployment strategy
+`maxUnavailable: 0`, `maxSurge: 1` keeps the old Ready Pod available until the new
+one becomes Ready. The Service uses one stable ownership selector and Kubernetes
+readiness, avoiding a generation-switch gap. Once the desired generation is fully
+active, status advances and safe bounded cleanup runs.
+
+If replacement startup/readiness fails, `Published=True`, `Activated=False` and
+`Degraded=True`; `RuntimeReady=True` may truthfully report that the previous LKG is
+still serving. The 120-second Deployment progress deadline bounds activation. The
+controller neither destroys the old ready generation nor turns a process failure
+into negative endpoint evidence. Correct the desired inputs or capacity constraint
+to recover.
+
+## BYO compatibility and mode transitions
+
+An omitted `runtime` remains BYO and requires the existing `outputSecretName`:
+
+```yaml
+spec:
+  poolRef: {name: external-api}
+  engine: SingBox
+  listener: {address: 127.0.0.1, port: 1080}
+  outputSecretName: external-api-engine-config
+```
+
+Its owned Secret has type `egressfox.io/engine-config`, contains `config.json` or
+`config.yaml` plus protected `.egressfox-receipt`, and keeps M6 owner/conflict,
+snapshot and LKG semantics. `Published=True` does not mean the user's runtime loaded
+it; `Activated` and `RuntimeReady` remain `Unknown`. The BYO owner must mount only
+the engine key and arrange restart/reload. Suggested exact-profile commands are:
 
 | Engine | Secret key | Suggested mount | Command |
 | --- | --- | --- | --- |
-| Mihomo v1.19.31 | `config.yaml` | `/etc/egressfox/config.yaml` | `mihomo -f /etc/egressfox/config.yaml -d /var/lib/mihomo` |
-| sing-box v1.14.1 | `config.json` | `/etc/egressfox/config.json` | `sing-box run -c /etc/egressfox/config.json -D /var/lib/sing-box` |
+| Mihomo 1.19.31 | `config.yaml` | `/etc/egressfox/config.yaml` | `mihomo -f /etc/egressfox/config.yaml -d /var/lib/mihomo` |
+| sing-box-compatible 1.14.1 | `config.json` | `/etc/egressfox/config.json` | `sing-box run -c /etc/egressfox/config.json -D /var/lib/sing-box` |
 
-The engine's state directory is separate from the read-only Secret mount. Secret
-volume propagation alone does not make a running engine reload its configuration;
-the BYO workload owner must implement restart or a supported reload mechanism.
-EgressFox does not observe that activation in M6.
+BYO to managed first publishes and activates the managed generation, then removes
+only the exact-owned old BYO output Secret. It never adopts or deletes a user's
+workload. Managed to BYO first publishes the requested BYO output, then deletes only
+the exact-owned Deployment, Service, NetworkPolicy, auth and generation Secrets and
+clears managed status. An older M6 operator cannot parse the new runtime field;
+switch objects back to BYO and complete cleanup before a binary downgrade.
 
-## Status and operation
+## Operation and recovery
 
-Pool status reports bounded admission counts, `lastInventoryChangeTime`,
-`SourcesReady` and `Ready`.
-Gateway status reports bounded eligible/selected counts plus `SelectionReady`,
-`ConfigurationValid`, `Published` and `Ready`. Messages contain stable safe text.
-`Published=True` means exact validated bytes are in the owned Secret; runtime
-activation and traffic readiness remain unknown.
+Pool status reports bounded admission counts, `SourcesReady` and `Ready`. Gateway
+status also reports selection/configuration state and the runtime Conditions above.
+Messages are stable and credential-safe. A deleted source or Pool makes dependent
+Conditions false while the last owned output/runtime remains untouched.
 
-The single process uses leader election and serial SQLite access on the RWO PVC.
-Missing state causes a conservative cold start and re-probing; the current output
-Secret remains the Kubernetes LKG. Multiple replicas, shared/RWX SQLite, cross-
-namespace references and HA are unsupported. The chart deliberately has no replica
-setting. Probe work is capped at 64 deterministic endpoints per reconcile, with M4
-global/per-target budgets; remaining endpoints advance on later refreshes. Gateway
-decision scopes use object UIDs and inactive checkpoints expire after 30 days;
-shared observations retain the existing age and count bounds.
+The operator uses one leader and serial SQLite access on the RWO PVC. State loss
+causes conservative re-probing while Kubernetes-owned LKG resources remain. Multiple
+operator replicas, shared SQLite, managed replicas greater than one, PDB/topology,
+cross-namespace references, external Services, HTTP listeners, transparent routing,
+traffic-level health and HA are not M7 features.
 
-Metrics use controller-runtime's authenticated HTTPS filter. Health endpoints are
-served separately on port 8081. The ServiceAccount can read/write Secrets and read
-CRs only in its release namespace, update CR status, and manage its Lease. It cannot
-delete Secrets or mutate workloads.
-
-## Validation and recovery
+Controller-runtime metrics use authenticated HTTPS; health endpoints are separate
+on port 8081. The ServiceAccount can read/write the required Secrets and manage only
+Deployments, Services and NetworkPolicies in its release namespace, update EgressFox
+status and manage its Lease. It cannot reach another namespace, Nodes, StatefulSets,
+admission resources or arbitrary cluster networking. The managed engine Pod receives
+no ServiceAccount token.
 
 Use `make generate-check`, `make helm-check`, `make test-envtest`, and
-`make e2e-kind`. The kind test checks install/upgrade, negative RBAC, a real VLESS
-probe path, owned Secret output, BYO sing-box traffic and LKG preservation after a
-bad credential rotation. It creates and deletes an isolated kind cluster.
-
-If the PVC is lost, retain the output Secret and allow fresh probes to rebuild
-evidence before publication. If the output Secret collides with an unrelated object,
-choose a new name or remove the unrelated object deliberately; EgressFox will not
-adopt it. If a CR must be removed while the operator is unavailable, no finalizer
-blocks deletion.
+`make e2e-kind`. The kind test covers chart upgrade, negative namespace/cluster
+RBAC, BYO regression, both managed engines, mandatory authentication, controlled
+traffic, exact-generation rollout failure/LKG and recovery, bounded generations,
+owned-resource repair, operator restart and both mode transitions.

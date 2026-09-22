@@ -1,6 +1,6 @@
 apiVersion: v2
 name: egressfox
-description: Namespace-scoped EgressFox BYO data-plane operator
+description: Namespace-scoped EgressFox managed and BYO egress control plane
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

@@ -5,5 +5,15 @@ metadata:
 spec:
   poolRef: {name: sample}
   engine: SingBox
+  runtime:
+    managed: {}
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata:
+  name: sample-byo
+spec:
+  poolRef: {name: sample}
+  engine: SingBox
   listener: {address: 127.0.0.1, port: 1080}
-  outputSecretName: sample-engine-config
+  outputSecretName: sample-byo-engine-config

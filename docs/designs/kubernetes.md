@@ -1,27 +1,30 @@
 # Kubernetes API and operator
 
-Status: M6 namespace-scoped P0 API, controllers, generated manifests and Helm chart
-implemented. [ADR 0011](../decisions/0011-namespaced-byo-operator.md) owns the
-concrete topology and Secret contract; later sections retain P1 design constraints.
+Status: M6 namespace-scoped P0 API and M7 managed single-replica runtime implemented.
+[ADR 0011](../decisions/0011-namespaced-byo-operator.md) owns the BYO topology and
+Secret contract; [ADR 0013](../decisions/0013-managed-gateway-activation.md) owns
+managed lifecycle and activation. Later sections retain future design constraints.
 [ADR 0003](../decisions/0003-operator-tooling.md) accepts Kubebuilder/controller-runtime
 and an initial alpha API, while deferring generation until the M6 design gate.
 
 ## Responsibilities and relationships
 
 M6 implements namespaced `ProxyPool` and `EgressGateway` resources in
-`egressfox.io/v1alpha1` for P0; `EgressPolicy` is P1. Names, field structures, and
+`egressfox.io/v1alpha1`; M7 extends Gateway with explicit managed mode.
+`EgressPolicy` is planned for M10. Names, field structures, and
 defaults are not frozen. Use the following relationships to evaluate an API;
 this table is not an installable schema.
 
 | Resource | Desired responsibility | Status responsibility | Must not own |
 | --- | --- | --- | --- |
 | ProxyPool | Secret source references, admission flags, probe authorization, selection strategy/Top-N and refresh interval | Bounded accepted/rejected/unsupported counts, last inventory-change time, Conditions | Gateway workload lifecycle or raw credentials/history |
-| EgressGateway | Pool reference, pinned engine profile, loopback SOCKS listener and owned output Secret name | Bounded eligible/selected counts, last publication time, observedGeneration and Conditions | Fetching independently, exposing artifact revisions, or mutating user-managed engines |
+| EgressGateway | Pool reference, pinned engine profile and either BYO output/listener or explicit managed runtime | Bounded selection/publication counts, safe generation/service/auth references and separate activation/readiness Conditions | Fetching independently, exposing artifact receipts, or mutating user-managed engines |
 | EgressPolicy (P1) | Routing intent associated with a gateway | Acceptance/conflict status for that policy | A separate connection-level router |
 
-One pool can feed multiple gateways. P0 uses one pool reference per gateway; multiple
-pools, routing rules and standalone EgressPolicy composition belong to P1. M6 renders
-the M3 minimal loopback SOCKS gateway only and does not expose a second routing model.
+One pool can feed multiple gateways. The current API uses one pool reference per
+gateway; multiple pools, routing rules and standalone EgressPolicy composition wait
+for M10. BYO renders the M3 minimal loopback SOCKS gateway; managed mode renders the
+fixed authenticated Pod-network listener without exposing a second routing model.
 
 P0 references are same-namespace, with explicit names and Secret keys;
 cross-namespace grants and multi-tenancy are deferred. Source credentials belong
@@ -43,11 +46,10 @@ Use standard `metav1.Condition`, a map-list keyed by type, bounded reason codes,
 sanitized messages, and meaningful transition times. Do not update status on every
 probe or change timestamps on a no-op reconcile.
 
-Potential conditions are `Ready`, `SourcesReady`, `ProbeDataReady`,
-`SelectionReady`, `ConfigurationValid`, and `Published`; choose conditions per
-resource and define their truth tables before implementation. Missing/unknown
-conditions must not be treated as success. `Published=True` is not evidence of
-runtime activation; unmanaged gateway traffic readiness is unobservable by default.
+Current conditions include `Ready`, `SourcesReady`, `SelectionReady`,
+`ConfigurationValid`, `Published`, `Activated`, `RuntimeReady`, and `Degraded` as
+applicable. Missing/unknown conditions are not success. `Published=True` alone is
+never evidence of runtime activation; BYO traffic readiness is unobservable.
 
 M6 Pool status reports deduplicated accepted endpoints plus rejected and unsupported
 source records. Gateway status reports eligible and selected endpoint counts. It
@@ -142,14 +144,11 @@ network endpoint becoming reachable.
 
 ## Runtime modes and installation
 
-P0 is BYO: generate/publish config while the user manages engine workload, proxy
-exposure, config consumption, and reload. It is not an automatically configured
-cluster egress path. Explicit application proxy use comes first.
-
-P1 optional managed runtimes may own Deployments, Services, Secrets, credential-free
-ConfigMaps, ServiceAccounts, and PodDisruptionBudgets. Resolve configuration reload,
-activation, image versions/digests, ownership, resources, and rollout readiness
-before managing them. A PDB does not make a single replica highly available.
+M6 BYO generates/publishes config while the user manages engine workload, proxy
+exposure, config consumption, and reload. M7 managed mode adds the bounded owned
+resource set below. Neither mode is an automatically configured cluster egress path;
+explicit application proxy use comes first. Replicas, PDB and Pod scheduling controls
+remain later work; a PDB alone would not make a single replica highly available.
 
 Use least-privilege RBAC and a namespace-scoped initial installation where practical;
 installation permissions for CRDs differ from runtime permissions. No wildcard
@@ -171,8 +170,9 @@ Managed mode owns one immutable generated `kubernetes.io/basic-auth` Secret,
 bounded immutable generation Secrets, one Deployment, one ClusterIP Service and one
 ingress-only NetworkPolicy. Every child has the exact Gateway controller owner;
 same-name unowned objects are conflicts. Credentials are generated with secure
-randomness, never enter API status/metadata/args, and rotate only when the auth
-Secret is deliberately deleted. Cross-namespace and user-provided auth are not M7.
+randomness and never enter API status/metadata/args. They remain stable for the
+Gateway lifetime; a deleted auth Secret is repaired from protected generation data.
+Cross-namespace, user-provided auth and coordinated rotation are not M7.
 
 The Deployment uses the exact configured EgressFox release image, fixed engine
 executable/arguments, one replica, `maxUnavailable: 0` and `maxSurge: 1`. It has no
