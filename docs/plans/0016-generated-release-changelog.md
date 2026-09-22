@@ -1,6 +1,6 @@
 # Generated changelog from Git history
 
-Status: in progress. Date: 2026-09-23. Branch: `codex/generated-release-changelog`.
+Status: complete. Date: 2026-09-23. Branch: `codex/generated-release-changelog`.
 Baseline: `c934859`, continuing the unmerged pre-release qualification branch.
 
 ## Objective and boundaries
@@ -25,13 +25,13 @@ release preparation runs from a dirty tree, main, or an existing tag.
 - [x] Implement deterministic commit selection, grouping and changelog rendering.
 - [x] Add explicit preparation/commit command and read-only validation/preview tests.
 - [x] Replace manual changelog governance, align release documentation and workflow.
-- [ ] Generate first release notes on this branch, run full relevant validation and
+- [x] Generate first release notes on this branch, run full relevant validation and
   non-publishing dry-run, review commits and leave a clean branch.
 
 ## Progress and evidence
 
-The current PR check requires agent-written `Unreleased` entries. The release job
-already extracts its version section, but the checked-in first-release section was
+At baseline, the PR check required agent-written `Unreleased` entries. The release job
+already extracted its version section, but the checked-in first-release section was
 manually composed. No release tags exist locally or on the read-only remote lookup.
 The new Python generator produces Added, Changed, Fixed and Security groups from
 eligible history. Its temporary-repository tests cover first and later releases,
@@ -40,12 +40,16 @@ preparation commit and a stable tagged check. The read-only PR workflow retains 
 existing required-check name and tests the generator without modifying source.
 Before release preparation, `make fmt`, `make docs`, `make release-validate` and
 `make check` passed; 17 Python release tests passed. The first-release preview starts
-at repository root and contains 14 Added, 8 Fixed and 13 Security entries. The
-Kubernetes 1.32/1.34/1.37 compatibility matrix passed. The explicit preparation
-and final clean-commit dry-run remain to be completed.
+at repository root. The Kubernetes 1.32/1.34/1.37 compatibility matrix passed.
+Commit `205792b` implements the generator; explicit preparation created changelog-only
+commit `8961b8d`. Its section has 15 Added, 8 Fixed and 13 Security entries, with
+the leading commit emoji exactly once. `release-prepared-check` passed. The notes
+extractor emitted those same groups and entries. A full nonpublishing dry run on the
+clean prepared commit passed, including image construction, SBOMs, scans, Helm,
+source/license archives and checksums. No release tag or remote write occurred.
 
 ## Resume and handoff
 
-Implement and test the generator, update repository contracts, then invoke release
-preparation as the final source-changing step before qualification. Do not tag,
-merge, push or publish.
+Generation and qualification are complete. For a later version, update the release
+manifest/chart, commit, run explicit preparation on a clean branch and then qualify
+that prepared commit. Never run preparation in ordinary CI or publication.

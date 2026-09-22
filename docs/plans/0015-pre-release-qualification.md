@@ -1,6 +1,7 @@
 # First public development release qualification
 
-Status: in progress. Date: 2026-09-23. Branch: `codex/pre-release-qualification`.
+Status: complete with external release gates. Date: 2026-09-23. Branches:
+`codex/pre-release-qualification`, then `codex/generated-release-changelog`.
 Baseline: `ed163a1`; clean `main`, eight local commits ahead of `origin/main`, no local tags.
 
 ## Objective and boundaries
@@ -12,17 +13,17 @@ obligations. ADRs 0012 and 0014 and the release guide own the release contract.
 
 ## Decisions and entry gates
 
-The checked workflow currently pushes GHCR before checking the GitHub Release and
-does not check the registry version tag. This confirms an immutability defect.
+At baseline, the checked workflow pushed GHCR before checking the GitHub Release and
+did not check the registry version tag. This confirmed an immutability defect.
 `release/manifest.json` defines `v0.1.0-dev.1` as the first version. The changelog
-is maintained, but release creation uses independently generated GitHub notes.
+was manually maintained, but release creation used independently generated GitHub notes.
 These are corrective maintenance issues; no product architecture decision is needed.
 
 ## Checkpoints
 
 - [x] Fail-closed release preflight and workflow ordering with tests.
 - [x] Changelog-based release notes and accurate release documentation.
-- [ ] History/security audit, full relevant validation, clean committed handoff.
+- [x] History/security audit, full relevant validation, clean committed handoff.
 
 ## Progress and evidence
 
@@ -60,9 +61,14 @@ its inspected text entries had no high-confidence secret markers. The archive re
 in history because this task forbids history rewriting. The scan is heuristic, not a
 guarantee that no secret exists.
 
+The full Kubernetes 1.32, 1.34 and 1.37 envtest, Helm and kind matrix passed.
+The follow-on generated-changelog work is recorded in [plan 0016](0016-generated-release-changelog.md).
+A second full nonpublishing dry run passed on clean `8961b8d`, after the explicit
+changelog preparation commit, including the multi-platform OCI image, SPDX SBOMs,
+Grype scans, source archives, Helm package and verified checksums.
+
 ## Resume and handoff
 
-Complete the full Kubernetes profile matrix and run the full dry-run on the final
-clean commit. Inspect the final diff, record results, and leave the task branch
-committed and clean. External repository protection and GHCR settings still require
-maintainer verification before the first public release.
+The local audit and qualification are complete. External repository protection,
+release-environment approval and GHCR settings still require maintainer verification
+before the first public release. No tag, push, merge or publication occurred.
