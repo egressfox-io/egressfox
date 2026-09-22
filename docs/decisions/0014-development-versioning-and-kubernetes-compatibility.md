@@ -38,12 +38,26 @@ tag on the selected commit; prerelease channels become GitHub prereleases and a
 stable tag becomes a GitHub release. Generated GitHub notes are release notes, with
 maintainer review required before protected publication.
 
-An untagged Git build is `0.1.0-dev.1+g<12-lowercase-commit-characters>` and a
-non-Git local build is `0.1.0-dev.1+local`. SemVer build metadata does not affect
-precedence and is never a publishable release tag. `make build` injects that bounded
-version together with full revision and commit timestamp into the operator's
-existing `--version` output. Release dry runs require an explicit allowed tag and
-therefore cannot accidentally create artifacts described as an official release.
+A published version is immutable: it identifies exactly one commit, image digest and
+release file set. Publication refuses a target GitHub Release that already exists and
+uploads assets without clobbering, so an existing version can be neither replaced nor
+recreated. Every change advances the version — `v0.1.0-dev.1` → `v0.1.0-dev.2` →
+`v0.1.0-dev.3` → `v0.1.0-alpha.1`. Recovery from a defective publication is a new
+version; deleting, editing or regenerating a published one is not a supported
+operation. Repository tooling validates that the protected workflow keeps refusing
+an existing release, never passes `--clobber`, and keeps its exact-tag,
+clean-tree and protected-environment gates.
+
+An untagged Git build is `0.1.0-dev.1+g<12-lowercase-commit-characters>`, a
+non-Git local build is `0.1.0-dev.1+local`, and an untagged build whose tree has
+non-ignored changes appends `.dirty` to that metadata. SemVer build metadata does not
+affect precedence and is never a publishable release tag. Ignored build/release
+output does not mark a tree dirty. `make build` injects that bounded version together
+with full revision and commit timestamp into the operator's existing `--version`
+output. A tagged commit reports exactly its release version with no metadata, is
+never built from a dirty tree, and a release dry run requires both an explicit
+allowed tag that is present on `HEAD` and a clean working tree, so qualification
+artifacts cannot accidentally describe an unreleased or modified source state.
 
 The Kubernetes compatibility contract has a tested minimum of 1.32 and release
 qualification profiles 1.32, 1.34 and 1.37. `make test-envtest`, `make helm-check`
@@ -65,6 +79,12 @@ Maintainers add a profile by updating one reviewed manifest record with official
 artifact provenance and running the full matrix before documenting support. The
 oldest profile makes ordinary CI more conservative while keeping expensive
 multi-cluster E2E out of every pull request.
+
+Version identity now fails closed at every boundary: a dirty tree cannot produce an
+official or release-qualification identity, an untagged commit cannot claim a
+released version, and a published version cannot be published again. Correcting a
+defective snapshot therefore costs a version increment, and immutable release
+identity stays worth verifying.
 
 The existing [ADR 0012](0012-release-distribution-and-provenance.md) remains the
 authority for redistribution, SBOMs, vulnerability handling, signing and

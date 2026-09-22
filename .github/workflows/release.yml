@@ -134,6 +134,12 @@ jobs:
             *-dev.*|*-alpha.*|*-beta.*) prerelease=--prerelease ;;
             *) prerelease= ;;
           esac
-          gh release view "$VERSION" >/dev/null 2>&1 || \
-            gh release create "$VERSION" --verify-tag --generate-notes $prerelease
-          gh release upload "$VERSION" dist/release/* --clobber
+          # A published version is immutable: never replace, delete or recreate
+          # an existing release or its assets. Publish a new version instead.
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "release $VERSION already exists; published versions are immutable" >&2
+            echo "publish a new version such as the next -dev.N snapshot instead" >&2
+            exit 1
+          fi
+          gh release create "$VERSION" --verify-tag --generate-notes $prerelease
+          gh release upload "$VERSION" dist/release/*

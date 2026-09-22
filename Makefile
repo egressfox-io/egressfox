@@ -8,6 +8,7 @@ K8S_RELEASE_VALIDATION := $(shell $(GO) run ./tools/releasectl kubernetes --fiel
 HELM ?= helm
 DOCKER ?= docker
 IMG ?= egressfox:dev
+# Untagged builds append the source commit; a dirty tree appends .dirty.
 BUILD_VERSION ?= $(shell $(GO) run ./tools/releasectl build-version --root .)
 BUILD_REVISION ?= $(shell git rev-parse HEAD)
 BUILD_CREATED ?= $(shell git show -s --format=%cI HEAD)
@@ -29,8 +30,8 @@ help:
 	  'make build      Compile the operator and repository tools' \
 	  'make docs       Check repository Markdown links and local heading anchors' \
 	  'make vuln       Run pinned govulncheck (requires network access)' \
-	  'make release-validate Validate release manifests, notices, and version flow' \
-	  'make release-dry-run Build and inspect release artifacts without publishing'
+	  'make release-validate Validate release manifests, notices, version flow, and publication immutability' \
+	  'make release-dry-run VERSION=vX.Y.Z[-dev.N] Build release artifacts from a clean tagged tree without publishing'
 
 fmt:
 	$(GOFMT) -w $$(git ls-files --cached --others --exclude-standard -- '*.go')
@@ -70,6 +71,7 @@ docker-build:
 
 release-validate:
 	$(GO) run ./tools/releasectl validate --root .
+	$(GO) run ./tools/releasectl release-guard
 
 release-dry-run: release-validate
 	./hack/release-dry-run.sh

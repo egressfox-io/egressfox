@@ -21,9 +21,17 @@ Allowed SemVer tags are `vX.Y.Z-dev.N`, `vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`, and
 stable `vX.Y.Z`. The tag without `v` becomes the operator version, OCI version/tag,
 packaged Helm `version`, `appVersion`, and default image tag. The full tagged commit
 becomes binary/OCI revision metadata, and its commit timestamp is the build/OCI
-creation input. Untagged builds carry only a local `+g<commit>` identity and cannot
-be release artifacts. Deploy by immutable image digest even though a human-readable
-tag exists. See [versioning](versioning.md).
+creation input. Untagged builds carry only a local `+g<commit>` identity, with
+`.dirty` appended when the source tree has non-ignored changes, and cannot be release
+artifacts. Deploy by immutable image digest even though a human-readable tag exists.
+See [versioning](versioning.md).
+
+A published version is immutable: one version, one commit, one image digest, one
+release file set. Publication refuses a version whose GitHub Release already exists
+and never clobbers existing assets, so a change requires the next version
+(`v0.1.0-dev.1` → `v0.1.0-dev.2` → `v0.1.0-alpha.1`). Neither the release workflow nor
+a maintainer recovery step deletes or edits a published release. `make release-validate`
+checks that the workflow keeps enforcing this contract.
 
 ## Inputs and reproducibility
 
@@ -62,6 +70,13 @@ Run from a clean tagged checkout for release evidence:
 ```sh
 VERSION=v0.1.0-dev.1 make release-dry-run
 ```
+
+The requested version must be the release tag on `HEAD` and the working tree must
+contain no non-ignored change; otherwise the dry run fails closed before building
+anything. In CI the tag exists before validation; locally it must exist first, and
+the tag is never created or published by this repository tooling. Ignored output
+under `dist/`, `.cache/` and `bin/` never counts as a source change, so repeated dry
+runs stay repeatable. There is deliberately no dirty override: commit or stash first.
 
 This bootstraps checksum-pinned Helm 4.3.0, Syft 1.52.0, Grype 0.119.0 and Cosign
 3.1.3 into the ignored `.cache` directory; validates the manifest/notices; builds
@@ -158,6 +173,8 @@ does not establish trust: the repository and workflow identity must match.
 ## First-release acceptance checklist
 
 - [ ] Tagged checkout and working tree are clean; tag/version/commit/timestamp agree.
+- [ ] The requested version is the release tag on `HEAD`, and no GitHub Release or
+  asset for it exists; a published version is never replaced, recreated or reuploaded.
 - [ ] `make generate`, `make manifests`, `make check`, `make k8s-compat`,
   `make vuln` and `git diff --check` pass.
 - [ ] kind install/upgrade/RBAC/traffic/LKG E2E passes on Kubernetes 1.32, 1.34

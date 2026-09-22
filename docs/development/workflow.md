@@ -32,8 +32,8 @@ VERSION=v0.1.0-dev.1 make release-dry-run
 | `make docs` | Offline repository-local Markdown file/heading-link checks |
 | `make check` | Lint, tests, build, docs, and unstaged/staged whitespace checks |
 | `make vuln` | Pinned govulncheck from Makefile; requires module/vulnerability database access |
-| `make release-validate` | Validate engine/tool metadata, notices and Helm image-version flow without network access |
-| `make release-dry-run` | Construct binaries, source/license files, SPDX SBOMs, image, Helm package, scans and checksums without publishing |
+| `make release-validate` | Validate engine/tool metadata, notices, Helm image-version flow and publication immutability without network access |
+| `make release-dry-run` | Construct binaries, source/license files, SPDX SBOMs, image, Helm package, scans and checksums from a clean tree tagged with `VERSION`, without publishing |
 | `make k8s-compat` | Run envtest, Helm and kind E2E across all release-qualification Kubernetes profiles |
 
 The module's direct and transitive dependencies are pinned by `go.mod`/`go.sum`. The

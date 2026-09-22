@@ -86,3 +86,29 @@ No further work remains in this milestone. Future maintainers should add a profi
 only through the manifest and complete `make k8s-compat`; 1.33, 1.35 and 1.36 remain
 outside the independently tested contract. M8 resilient HTTP source refresh remains
 the next product implementation milestone.
+
+## Post-completion hardening: release integrity
+
+Date: 2026-09-22. Same branch, before merge. Pre-merge fix-up of four release
+integrity gaps found by review; no new product behavior and no change to the
+Kubernetes contract.
+
+- Published versions are immutable. The protected workflow previously created a
+  release only when missing and then uploaded assets with `--clobber`, so a
+  republished version silently replaced existing artifacts. It now refuses an
+  existing release with an explicit error and uploads without clobbering; no
+  delete, edit or recreate path exists. `releasectl release-guard` statically
+  validates those properties and runs through `make release-validate`, which
+  `make check` and the release validation job both invoke.
+- Dirty development builds are marked. `internal/buildinfo` resolves one identity:
+  a release tag on `HEAD` → `0.1.0-dev.1`; an untagged clean commit →
+  `0.1.0-dev.1+g<commit>`; the same commit with non-ignored changes →
+  `0.1.0-dev.1+g<commit>.dirty`. Ignored `dist/`, `.cache/` and `bin/` output never
+  marks the tree dirty, and a tagged identity from a dirty tree fails.
+- Release qualification requires a clean, exactly tagged commit.
+  `hack/release-dry-run.sh` fails closed unless `VERSION` is the release tag on
+  `HEAD` and `git status --porcelain` is empty. There is no dirty override; local
+  `dist/` output stays repeatable because immutability applies to publication.
+- Focused tests cover the clean, dirty, tagged, ambiguous-tag, ambiguous-version,
+  dirty-qualification, and workflow-refusal cases, plus a mutation-driven check of
+  the publication contract.
