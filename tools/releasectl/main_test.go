@@ -179,6 +179,13 @@ func TestReleaseWorkflowRejectsConcurrentPublication(t *testing.T) {
 	}
 }
 
+func TestReleaseWorkflowNeverCommitsPreparation(t *testing.T) {
+	changed := strings.Replace(publicationWorkflow(), "        run: make release-dry-run", "        run: make release-prepare", 1)
+	if err := releaseWorkflowChecks(changed); err == nil {
+		t.Fatal("public release workflow must never prepare a changelog commit")
+	}
+}
+
 func TestReleaseWorkflowRejectsSilentOverwrite(t *testing.T) {
 	// The original pre-merge shape: create only when missing, then always
 	// upload with clobbering.

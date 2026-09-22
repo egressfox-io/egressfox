@@ -21,6 +21,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0013](0013-runtime-standalone-architecture.md) | Complete | Future standalone, runtime, artifact publication, composition and availability architecture |
 | [0014](0014-changelog-governance.md) | Complete | Initial changelog, maintainer governance and pull-request enforcement |
 | [0015](0015-pre-release-qualification.md) | In progress | First public development release audit and corrective maintenance |
+| [0016](0016-generated-release-changelog.md) | In progress | Generate and commit release notes from semantic Git history |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

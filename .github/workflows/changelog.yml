@@ -3,7 +3,7 @@ name: Changelog
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -22,14 +22,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.27.1'
-          cache: false
-      - name: Test changelog validator
-        run: go test ./tools/changelogcheck
-      - name: Validate pull request changelog
-        env:
-          CHANGELOG_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          CHANGELOG_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: go run ./tools/changelogcheck
+      - name: Test read-only release-note generation
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s hack -p 'test_release_*.py'
+      - name: Preview current Git history without modifying source
+        run: PYTHONDONTWRITEBYTECODE=1 python3 hack/generate-changelog.py --preview >/dev/null

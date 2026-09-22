@@ -14,7 +14,7 @@ BUILD_REVISION ?= $(shell git rev-parse HEAD)
 BUILD_CREATED ?= $(shell git show -s --format=%cI HEAD)
 BUILD_LDFLAGS := -s -w -X github.com/egressfox-io/egressfox/internal/buildinfo.version=$(BUILD_VERSION) -X github.com/egressfox-io/egressfox/internal/buildinfo.revision=$(BUILD_REVISION) -X github.com/egressfox-io/egressfox/internal/buildinfo.created=$(BUILD_CREATED)
 
-.PHONY: help fmt fmt-check vet lint test test-envtest build build-operator build-tools generate manifests generate-check helm-check docker-build e2e-kind k8s-api-compat k8s-e2e-compat k8s-compat docs check vuln release-validate release-dry-run
+.PHONY: help fmt fmt-check vet lint test test-envtest build build-operator build-tools generate manifests generate-check helm-check docker-build e2e-kind k8s-api-compat k8s-e2e-compat k8s-compat docs check vuln release-validate release-prepare release-prepared-check release-dry-run
 
 help:
 	@printf '%s\n' \
@@ -31,6 +31,8 @@ help:
 	  'make docs       Check repository Markdown links and local heading anchors' \
 	  'make vuln       Run pinned govulncheck (requires network access)' \
 	  'make release-validate Validate release manifests, notices, version flow, and publication immutability' \
+	  'make release-prepare VERSION=vX.Y.Z[-dev.N] Generate and commit release notes on a dedicated clean branch' \
+	  'make release-prepared-check VERSION=vX.Y.Z[-dev.N] Verify checked-in notes match Git history' \
 	  'make release-dry-run VERSION=vX.Y.Z[-dev.N] Qualify a clean candidate commit for the planned version without publishing'
 
 fmt:
@@ -74,7 +76,13 @@ release-validate:
 	$(GO) run ./tools/releasectl release-guard
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s hack -p 'test_release_*.py'
 
-release-dry-run: release-validate
+release-prepare: release-validate
+	bash hack/release-prepare.sh
+
+release-prepared-check:
+	python3 hack/generate-changelog.py --version "$(VERSION)" --check
+
+release-dry-run: release-validate release-prepared-check
 	./hack/release-dry-run.sh
 
 e2e-kind:

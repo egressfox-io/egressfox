@@ -49,42 +49,26 @@ The detailed Git contract is in the [development workflow](docs/development/work
 
 ## Changelog
 
-For every pull request or milestone, determine whether the change affects users,
-operators, or downstream integrators. Notable functionality, behavior changes,
-user-visible fixes, security fixes, breaking API or configuration changes,
-compatibility changes, operationally significant improvements, deprecations, and
-removals require a factual entry in the `## [Unreleased]` section of
-[CHANGELOG.md](CHANGELOG.md), in the same branch and task-owned commit. Describe
-implemented behavior, group related changes, and do not write one entry per commit.
+`CHANGELOG.md` is generated from Git history during explicit release preparation.
+Coding agents and contributors do not maintain `Unreleased` entries by hand. Write
+accurate emoji-prefixed Conventional Commit subjects for user-facing changes:
+`feat`, `fix`, `perf` and `revert` become public notes; security fixes are grouped
+separately. Documentation, tests, routine CI/build/dependency changes and internal
+refactors are excluded. A rare eligible commit may opt out with `Changelog: skip`
+in its body or `[skip changelog]` in its subject; explain the reason in that commit.
+Do not use the marker to hide a user-visible fix or compatibility change.
 
-Purely internal refactoring, routine dependency updates, formatting, test-only work,
-and minor documentation fixes normally need no entry. If there is no entry, explain
-why in the pull request. The changelog workflow automatically exempts changes
-limited to `docs/plans/`, `docs/decisions/`, `docs/development/`, the documentation
-map, `.github/ISSUE_TEMPLATE/*.md`, contributor/agent/maintainer guidance, the pull
-request template, or Go `*_test.go` files. Other paths, including product, security,
-compatibility, operational, and release documentation, are treated as ambiguous: add
-an entry or request a maintainer-authorized exemption.
-
-Finalizing a reviewed version section before tagging also satisfies the changelog
-check; the release notes are extracted from that exact section. The
-`No changelog entry is required` checkbox is a request, not approval. Add a
-brief reason; a maintainer must review the request and apply the `no-changelog`
-label. A label alone, an unchecked box, or a reason without the label is not an
-exemption. Do not use PR titles, branch names, or free-form bypass text.
-
-Before marking a milestone complete, agents must inspect the changelog, decide
-whether an entry is required, verify that it describes implemented behavior, include
-it in task-owned commits, and state the changelog decision in the final handoff. A
-milestone with a notable change is not complete until this is done. Internal
-milestone completion and release dry-runs do not create a versioned section.
-
-Before tagging a reviewed release candidate, move its applicable entries from
-`Unreleased` into a versioned section using the exact planned version, and leave a
-fresh `Unreleased` section. The section prepares the release; GitHub Releases records
-the publication date. Preserve prior history. Never invent a publication or feature.
-The published release description is extracted from that section; see the
-[versioning guide](docs/operations/versioning.md).
+On a dedicated release-preparation branch, a maintainer runs
+`VERSION=vX.Y.Z... make release-prepare` from a clean worktree. This generates the
+new section from commits after the nearest previous release tag (or repository root
+for the first release) and commits only `CHANGELOG.md`. Review the generated text
+and correct misleading commit subjects through a new follow-up commit before
+preparation; do not rewrite shared history or hand-edit release entries. If a new
+eligible commit follows preparation, rerun the command before tagging. The tagged
+source must contain the generated section. `make release-prepared-check` compares it
+with Git history without editing files. Ordinary CI and public release publication
+never create release-preparation commits. GitHub Release Notes use the same section;
+see the [release guide](docs/operations/releasing.md).
 
 ## Validation
 

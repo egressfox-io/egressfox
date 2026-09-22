@@ -19,11 +19,8 @@ use “none” where appropriate. Call out generated files that changed.
 - [ ] No credentials, subscriptions, Secret contents, private revisions, or generated operational configuration are included.
 - [ ] Compatibility and security implications are stated above.
 
-## Changelog
+## Release notes
 
-- [ ] CHANGELOG.md updated with release notes.
-- [ ] No changelog entry is required.
-
-If no entry is required, explain why:
-
-Reason:
+Release notes are generated from emoji Conventional Commits during explicit release
+preparation. Describe user-facing changes clearly in commit subjects; do not edit
+`CHANGELOG.md` for an ordinary pull request.

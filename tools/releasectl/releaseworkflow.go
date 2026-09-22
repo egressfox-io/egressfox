@@ -54,6 +54,11 @@ func (step publishStep) shell() string {
 // reindenting, requoting, comment or flag-order changes never fail CI while a
 // lost guarantee does.
 func releaseWorkflowChecks(content string) error {
+	for _, forbidden := range []string{"release-prepare", "git commit", "git push", "git tag "} {
+		if strings.Contains(content, forbidden) {
+			return fmt.Errorf("release workflow must not run %q", forbidden)
+		}
+	}
 	if !strings.Contains(content, "group: release-publication") ||
 		!strings.Contains(content, "cancel-in-progress: false") ||
 		!strings.Contains(content, "queue: max") {

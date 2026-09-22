@@ -60,7 +60,8 @@ tag is created only for publication and is not a prerequisite for building evide
 
 | Step | Required |
 | --- | --- |
-| `make release-dry-run` | Clean worktree, and `VERSION` equal to the planned release version (`release.developmentVersion` in `release/manifest.json`, which the chart mirrors) |
+| `make release-prepare` | Dedicated clean branch, no target tag, and `VERSION` equal to the planned release version; generates and commits `CHANGELOG.md` |
+| `make release-dry-run` | Clean worktree, prepared changelog matching Git history, and `VERSION` equal to the planned release version (`release.developmentVersion` in `release/manifest.json`, which the chart mirrors) |
 | Publication | Exact existing Git tag for that version on the selected commit, clean source, approval of the protected `release` environment, and an immutable version that has never been published |
 
 Dry-run qualification on a clean untagged commit reports the commit-derived identity
@@ -71,30 +72,33 @@ the privileged job, and refuses a version that already exists.
 ## Maintainer release sequence
 
 1. Choose an allowed version and update `release/manifest.json` plus the chart's
-   `version`/`appVersion` to it in a reviewed commit; do not tag from a pull request.
-2. Run `VERSION=vX.Y.Z-alpha.N make release-dry-run` from that clean commit. The
+   `version`/`appVersion` to it in a reviewed commit on a dedicated branch; do not
+   tag from a pull request.
+2. Run `VERSION=vX.Y.Z-dev.N make release-prepare` on that clean branch. Review the
+   generated section and its task-owned changelog commit. It contains only eligible
+   commits since the nearest previous release tag, or the repository root for the
+   first release. This command is never run by ordinary CI or publication.
+3. Run `VERSION=vX.Y.Z-dev.N make release-dry-run` from the prepared clean commit. The
    requested version must match the planned release version, and the dry run fails
    closed on any non-ignored source change. No Git tag is needed for this step, and
    there is no dirty override: commit or stash first.
-3. Review the release acceptance checklist, compatibility evidence, SBOMs,
-   vulnerability reports, notices and generated GitHub release notes.
-4. Create the matching signed or reviewed Git tag on that exact reviewed commit by
+4. Review the release acceptance checklist, compatibility evidence, SBOMs,
+   vulnerability reports, notices and generated changelog notes.
+5. Create the matching signed or reviewed Git tag on that exact reviewed commit by
    the project’s normal maintainer process, then manually dispatch the protected
    release workflow on the tag. Its non-publishing validation is separate from the
    privileged publication job, which refuses an existing release.
-5. For a published release, verify the tag, immutable image digest, provenance,
+6. For a published release, verify the tag, immutable image digest, provenance,
    signatures, checksums and Helm metadata as described in the
    [release guide](releasing.md).
 
-`CHANGELOG.md` is the maintained development record: add notable changes under
-`Unreleased` during ordinary development. Before tagging, finalize the applicable
-entries under `## [vX.Y.Z...]` in the reviewed commit and leave a fresh `Unreleased`
-section. The version section is a prepared release candidate, not a claim of
-publication; GitHub Releases records the actual publication date. The workflow
-extracts exactly that section into release notes and rejects a missing, duplicate or
-empty section before image publication. It never generates a second narrative from
-pull requests. Preserve the leading semantic emoji from each Conventional Commit
-subject exactly once in reader-facing entries.
+`CHANGELOG.md` is generated, not maintained entry by entry. `make release-prepare`
+uses emoji Conventional Commits and writes the target `## [vX.Y.Z...]` section,
+preserving earlier release sections and an empty `Unreleased` heading. The prepared
+section is not a claim of publication; GitHub Releases records the actual date.
+`make release-prepared-check` confirms it still matches the tagged history. The
+workflow extracts exactly that section into GitHub Release Notes; it never generates
+a second narrative from pull requests or commits release files during publication.
 
 ## Updating the development line
 

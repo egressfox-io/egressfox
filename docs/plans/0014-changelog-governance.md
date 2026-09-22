@@ -2,6 +2,10 @@
 
 Status: complete. Prepared: 2026-09-23.
 
+Historical record: the manual-entry governance and validator described below were
+superseded by [plan 0016](0016-generated-release-changelog.md). Keep this record as
+evidence of the earlier implementation, not as current release instructions.
+
 ## Objective
 
 Establish a factual initial `CHANGELOG.md`, a permanent maintenance contract,

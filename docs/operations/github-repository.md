@@ -31,8 +31,8 @@ Use this restrained set rather than unrelated discovery or VPN-bypass terms.
 - **Projects:** leave disabled until a maintained public planning board exists.
 - **Wiki:** disable; versioned documentation in `docs/` is authoritative.
 
-`CHANGELOG.md` is the maintained record of notable development changes: new entries
-stay under `Unreleased` until a release candidate is finalized in a reviewed commit.
+`CHANGELOG.md` is generated from emoji Conventional Commits by explicit release
+preparation, then committed before the release tag.
 GitHub Releases remain the publication record and carry the release artifacts and
 notes extracted from the exact version section.
 Internal milestones and release dry-runs do not create published release entries.
@@ -54,28 +54,23 @@ Before the first public push or runtime release, maintainers should:
    pull requests after each has a successful run. Use pull requests for normal work
    and keep approval rules workable for the single-maintainer project; do not require
    a second maintainer's code-owner approval for the sole maintainer's own changes.
-3. Create the `no-changelog` label with a description stating that it authorizes a
-   reviewed changelog exemption. Repository users with Triage, Write, Maintain, or
-   Admin access can apply labels; outside contributors with read access cannot apply
-   this label to their pull request in the base repository. The PR checkbox and
-   reason request an exemption but do not authorize one.
-4. Keep default Actions permissions read-only and disallow unreviewed third-party
+3. Keep default Actions permissions read-only and disallow unreviewed third-party
    Actions. Repository workflows already pin Actions by commit SHA.
-5. Enable private vulnerability reporting and security-alert notifications as
+4. Enable private vulnerability reporting and security-alert notifications as
    described in [SECURITY.md](../../SECURITY.md).
-6. Create the protected `release` environment with required reviewers and restrict
+5. Create the protected `release` environment with required reviewers and restrict
    release tags before enabling publication.
-7. Confirm GHCR package visibility, retention and repository inheritance before
+6. Confirm GHCR package visibility, retention and repository inheritance before
    publishing the first image. Limit package write/admin access to release maintainers;
    GHCR tag names are not treated as immutable by the workflow. If account settings
    offer tag immutability, enable it for version tags and verify it separately.
-8. Review the public Git history and repository contents once more before the initial
+7. Review the public Git history and repository contents once more before the initial
    push; do not rewrite authorship merely for presentation.
 
 The changelog workflow is `.github/workflows/changelog.yml`. After it reports its
 first successful check, add the exact **`Changelog validation`** status check to the
-`main` branch ruleset's required checks. The workflow runs on pull requests without
-path filters, so the status remains present for documentation-only and exempt work.
+`main` branch ruleset's required checks. The workflow tests read-only changelog
+generation on pull requests and never commits to a branch.
 `CODEOWNERS` identifies the current owner for review routing; it does not itself
 require approval.
 

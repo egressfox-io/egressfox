@@ -82,23 +82,19 @@ Follow the authoritative [development workflow](docs/development/workflow.md):
    current. Preserve/report unrelated pre-existing changes. Never automatically
    merge into main, push, destructively reset, force-push, or rewrite shared history.
 
-Before completing a pull request or milestone, assess whether it introduces notable
-user-facing changes. Add accurate entries under `CHANGELOG.md` → `Unreleased` in the
-same branch when required; a release-preparation change may instead be included in
-the reviewed version section before tagging. Otherwise record why no entry is needed.
-Changelog review is part of the definition of done. Follow the authoritative policy in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Write clear emoji-prefixed Conventional Commit subjects for user-facing changes.
+Do not manually edit `CHANGELOG.md` during ordinary implementation or CI. On a
+dedicated clean release-preparation branch, run `VERSION=vX.Y.Z... make release-prepare`
+to generate and commit the version section from Git history before tagging. Review
+the generated entries and record any exclusions in the commit message when needed.
+Follow the authoritative policy in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-When summarizing Conventional Commit subjects in the changelog or release notes,
-preserve the subject's leading semantic emoji exactly once. Remove the
-`type(scope):` prefix when turning a subject into a reader-facing entry, but do not
-add another emoji or rewrite the commit. For example, `✨ feat(gateway): add managed
-runtime` becomes `- ✨ Add managed runtime`. Keep the pull request title aligned with
-its Conventional Commit subject so GitHub-generated release notes retain that
-signal.
+The generator preserves each commit's leading semantic emoji exactly once and
+removes its `type(scope):` prefix; `✨ feat(gateway): add managed runtime` becomes
+`- ✨ Add managed runtime.` Keep pull request titles aligned with commit subjects.
 
-Release notes come from the reviewed `CHANGELOG.md` version section. Preserve
-semantic emojis exactly once and keep remote publication fail-closed: check GitHub
+Release notes come from the generated, reviewed `CHANGELOG.md` version section.
+Keep remote publication fail-closed: check GitHub
 Release and GHCR tag state before any write, reject partial publication and reruns,
 and never replace published artifacts. Never push, tag, merge, publish or change
 remote settings without explicit authorization. See the [release guide](docs/operations/releasing.md)

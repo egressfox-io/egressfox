@@ -81,15 +81,28 @@ integrity.
 
 ## Non-publishing dry run
 
-Run release qualification from a clean candidate commit:
+First generate and commit the changelog on a dedicated clean branch, then run release
+qualification from that prepared commit:
 
 ```sh
+VERSION=v0.1.0-dev.1 make release-prepare
+VERSION=v0.1.0-dev.1 make release-prepared-check
 VERSION=v0.1.0-dev.1 make release-dry-run
 ```
 
+`release-prepare` is an explicit local command. It groups eligible emoji
+Conventional Commits since the previous reachable SemVer release tag; for the first
+release it starts at repository root. It excludes routine documentation, tests,
+build, CI, dependency and internal refactor commits, removes duplicate descriptions,
+preserves each leading emoji once, and commits only `CHANGELOG.md`. Review the
+generated section and commit before making the tag. If another eligible commit lands,
+rerun preparation. Ordinary CI and the public release workflow only check/read the
+committed result; they never generate a preparation commit.
+
 The requested version must be the planned release version that
 `release/manifest.json` and the chart declare, and the working tree must contain no
-non-ignored change; otherwise the dry run fails closed before building anything. It
+non-ignored change; the committed changelog must match Git history. Otherwise the dry
+run fails closed before building anything. It
 does **not** require the Git tag: a dry run is pre-publication qualification, so the
 tag is created afterwards, for publication only, and this repository tooling never
 creates or pushes it. Ignored output under `dist/`, `.cache/` and `bin/` never counts
@@ -122,8 +135,9 @@ The workflow `.github/workflows/release.yml` exposes the same validation manuall
 including `make k8s-compat` across Kubernetes 1.32, 1.34 and 1.37.
 With `publish=false` it can run from a branch and has read-only repository permission;
 the requested version must still match the planned release version. Publication
-additionally requires the selected ref to be the exact existing version tag, an
-version absent from both GitHub Releases and GHCR, a clean source tree rechecked in the privileged job, and a
+additionally requires the selected ref to be the exact existing version tag, a
+version absent from both GitHub Releases and GHCR, a clean source tree rechecked
+in the privileged job, and a
 maintainer's approval of the protected `release` environment.
 
 ## Produced artifacts
@@ -203,6 +217,8 @@ does not establish trust: the repository and workflow identity must match.
 
 - [ ] Release qualification ran from a clean candidate commit with `VERSION` equal to
   the planned release version; the published tag is created afterwards on that commit.
+- [ ] `make release-prepare` committed the generated `CHANGELOG.md` before tagging;
+  `make release-prepared-check` passes and GitHub Release Notes match that section.
 - [ ] The published version is the exact existing tag on that commit, the source tree
   is clean, and no GitHub Release or GHCR version tag exists; a published version is never
   replaced, recreated or reuploaded.

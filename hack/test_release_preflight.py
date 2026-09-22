@@ -86,7 +86,8 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_repository_section_is_extractable(self):
         result = release_notes.notes(Path("CHANGELOG.md").read_text(), "v0.1.0-dev.1")
-        self.assertIn("🔒 Prevented", result)
+        self.assertIn("### Security", result)
+        self.assertIn("🔒", result)
         self.assertNotIn("Unreleased", result)
 
 

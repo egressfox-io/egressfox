@@ -21,6 +21,7 @@ make help
 make fmt
 make check
 make vuln
+VERSION=v0.1.0-dev.1 make release-prepare  # explicit release preparation only
 VERSION=v0.1.0-dev.1 make release-dry-run
 ```
 
@@ -34,7 +35,9 @@ VERSION=v0.1.0-dev.1 make release-dry-run
 | `make check` | Lint, tests, build, docs, and unstaged/staged whitespace checks |
 | `make vuln` | Pinned govulncheck from Makefile; requires module/vulnerability database access |
 | `make release-validate` | Validate engine/tool metadata, notices, Helm image-version flow and publication immutability without network access |
-| `make release-dry-run` | Qualify a clean candidate commit for the planned `VERSION` (no Git tag needed) by constructing binaries, source/license files, SPDX SBOMs, image, Helm package, scans and checksums without publishing |
+| `make release-prepare` | On a dedicated clean branch, generate and commit the planned version's changelog section from Git history; never run in ordinary CI or publication |
+| `make release-prepared-check` | Read-only check that the committed changelog matches the Git range and planned version |
+| `make release-dry-run` | Qualify a clean prepared commit for the planned `VERSION` (no Git tag needed) by constructing binaries, source/license files, SPDX SBOMs, image, Helm package, scans and checksums without publishing |
 | `make k8s-compat` | Run envtest, Helm and kind E2E across all release-qualification Kubernetes profiles |
 
 The module's direct and transitive dependencies are pinned by `go.mod`/`go.sum`. The
@@ -168,10 +171,11 @@ absolute paths and bare nonportable file links in repository documentation.
 ## Definition of done
 
 - Scope and invariants respected; implemented/planned/future wording is accurate.
-- Review [the changelog policy](../../CONTRIBUTING.md#changelog): add a factual
-  `CHANGELOG.md` entry under `Unreleased` for notable changes, or record why no
-  entry is required. Mention the decision in the final handoff; milestone completion
-  does not create a release section.
+- Review [the changelog policy](../../CONTRIBUTING.md#changelog): user-facing
+  commits need accurate emoji Conventional Commit subjects. Only the explicit
+  release-preparation command generates and commits `CHANGELOG.md`; ordinary task
+  work and CI do not edit it. Mention any intentional excluded subject in the
+  handoff.
 - Behavior changes have meaningful tests from the [testing strategy](testing.md).
 - Relevant designs, API compatibility notes, threat model, ADRs, and plan are current.
 - Documented applicable commands run successfully; blocked/unavailable checks are
