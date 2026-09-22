@@ -198,7 +198,8 @@ Fix-up validation:
   and whitespace checks. It ran with the permission needed by localhost-only tests.
 - `git diff --check` — passed, including after the unrelated additions appeared.
 
-Fix-up commit ID is added after the documentation checkpoint is committed.
+Fix-up implementation commit: `b9e5e62` (`📝 docs(architecture): clarify
+activation and standalone contracts`).
 
 An unrelated tracked README footer change and untracked `.github/CODEOWNERS` and
 `MAINTAINERS.md` appeared after baseline discovery. The files are preserved and
