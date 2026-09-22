@@ -51,16 +51,27 @@ func TestPinnedNativeValidation(t *testing.T) {
 			if binary == "" {
 				t.Skipf("set %s to run pinned native validation", test.env)
 			}
-			candidate, err := test.renderer.Render(testGateway(t, false))
-			if err != nil {
-				t.Fatal(err)
-			}
 			checker, err := artifact.NewNativeChecker(test.profile, binary, 10*time.Second)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := artifact.Validate(context.Background(), candidate, checker); err != nil {
-				t.Fatal(err)
+			managed := testGatewayWithListener(t, false, func(t testing.TB) policy.Listener {
+				listener, err := policy.NewManagedSOCKSListener(1080, "egressfox", "synthetic-password-0123456789")
+				if err != nil {
+					t.Fatal(err)
+				}
+				return listener
+			})
+			for name, gateway := range map[string]policy.Gateway{"byo": testGateway(t, false), "managed-authenticated": managed} {
+				t.Run(name, func(t *testing.T) {
+					candidate, err := test.renderer.Render(gateway)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := artifact.Validate(context.Background(), candidate, checker); err != nil {
+						t.Fatal(err)
+					}
+				})
 			}
 		})
 	}

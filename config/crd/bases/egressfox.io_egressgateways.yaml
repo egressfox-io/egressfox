@@ -27,8 +27,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: EgressGateway requests validated engine configuration publication;
-          it owns no engine workload.
+        description: |-
+          EgressGateway requests validated engine configuration publication and may
+          explicitly opt into one operator-managed engine workload.
         properties:
           apiVersion:
             description: |-
@@ -57,6 +58,8 @@ spec:
                 - SingBox
                 type: string
               listener:
+                description: Listener is BYO-only. Managed mode owns a fixed authenticated
+                  Pod listener.
                 properties:
                   address:
                     default: 127.0.0.1
@@ -85,15 +88,36 @@ spec:
                 required:
                 - name
                 type: object
+              runtime:
+                description: Runtime omitted means BYO for backward compatibility.
+                properties:
+                  managed:
+                    description: |-
+                      ManagedRuntimeSpec opts a Gateway into the release-controlled M7 runtime.
+                      M7 intentionally exposes no Pod template, image, replica or Service knobs.
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: runtime must select managed mode
+                  rule: has(self.managed)
             required:
             - engine
-            - outputSecretName
             - poolRef
             type: object
+            x-kubernetes-validations:
+            - message: outputSecretName is required for BYO mode and forbidden for
+                managed mode
+              rule: 'has(self.runtime) ? !has(self.outputSecretName) : has(self.outputSecretName)'
+            - message: listener is BYO-only and must be omitted for managed mode
+              rule: '!has(self.runtime) || !has(self.listener)'
           status:
             description: EgressGatewayStatus never reports credentials, endpoint IDs
               or artifact digests.
             properties:
+              activeGeneration:
+                type: string
+              clientAuthSecretName:
+                type: string
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -162,9 +186,16 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              publishedGeneration:
+                description: |-
+                  PublishedGeneration and ActiveGeneration are opaque, random Kubernetes
+                  object names. They are not content or credential digests.
+                type: string
               selectedEndpoints:
                 format: int32
                 type: integer
+              serviceName:
+                type: string
             type: object
         required:
         - spec

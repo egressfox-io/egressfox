@@ -19,6 +19,8 @@ COPY release ./release
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false \
     -ldflags="-s -w -X github.com/egressfox-io/egressfox/internal/buildinfo.version=${VERSION} -X github.com/egressfox-io/egressfox/internal/buildinfo.revision=${REVISION} -X github.com/egressfox-io/egressfox/internal/buildinfo.created=${CREATED}" \
     -o /out/egressfox-operator ./cmd/operator
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false \
+    -ldflags="-s -w -buildid=" -o /out/egressfox-healthcheck ./cmd/healthcheck
 RUN CGO_ENABLED=0 GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false -ldflags="-s -w" -o /out/releasectl ./tools/releasectl
 
 FROM build AS engine-build
@@ -56,6 +58,7 @@ LABEL org.opencontainers.image.title="EgressFox operator" \
       org.opencontainers.image.created="${CREATED}" \
       org.opencontainers.image.licenses="Apache-2.0 AND GPL-3.0-only AND GPL-3.0-or-later"
 COPY --from=build /out/egressfox-operator /usr/local/bin/egressfox-operator
+COPY --from=build /out/egressfox-healthcheck /usr/local/bin/egressfox-healthcheck
 COPY --from=engine-build /out/mihomo /usr/local/libexec/egressfox/mihomo
 COPY --from=engine-build /out/egressfox-engine-s /usr/local/libexec/egressfox/egressfox-engine-s
 COPY --from=materials /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt

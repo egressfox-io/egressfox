@@ -37,13 +37,15 @@ func (e *PipelineError) Code() string   { return e.code }
 func pipelineFailure(code string) error { return &PipelineError{code: code} }
 
 type PipelineConfig struct {
-	Client        client.Client
-	Reader        client.Reader
-	Scheme        *runtime.Scheme
-	Store         *state.Store
-	MihomoBinary  string
-	SingBoxBinary string
-	Now           func() time.Time
+	Client         client.Client
+	Reader         client.Reader
+	Scheme         *runtime.Scheme
+	Store          *state.Store
+	MihomoBinary   string
+	SingBoxBinary  string
+	ManagedImage   string
+	ManagedRuntime *ManagedRuntime
+	Now            func() time.Time
 }
 
 // Pipeline composes existing M1-M5 services. Its only Kubernetes concerns are
@@ -55,17 +57,19 @@ type Pipeline struct {
 	store         *state.Store
 	mihomoBinary  string
 	singBoxBinary string
+	managed       *ManagedRuntime
 	now           func() time.Time
 	mu            sync.Mutex
 	cursors       map[types.UID]int
 }
 
 type GatewayOutcome struct {
-	Eligible    int
-	Selected    int
-	Published   bool
-	Changed     bool
-	RetainedLKG bool
+	Eligible            int
+	Selected            int
+	Published           bool
+	Changed             bool
+	RetainedLKG         bool
+	PublishedGeneration string
 }
 
 func NewPipeline(config PipelineConfig) (*Pipeline, error) {
@@ -80,8 +84,18 @@ func NewPipeline(config PipelineConfig) (*Pipeline, error) {
 	if reader == nil {
 		reader = config.Client
 	}
-	return &Pipeline{client: config.Client, reader: reader, scheme: config.Scheme, store: config.Store, mihomoBinary: config.MihomoBinary, singBoxBinary: config.SingBoxBinary, now: now, cursors: map[types.UID]int{}}, nil
+	managed := config.ManagedRuntime
+	if managed == nil {
+		var err error
+		managed, err = NewManagedRuntime(ManagedRuntimeConfig{Client: config.Client, Scheme: config.Scheme, Image: config.ManagedImage})
+		if err != nil {
+			return nil, pipelineFailure("managed_runtime")
+		}
+	}
+	return &Pipeline{client: config.Client, reader: reader, scheme: config.Scheme, store: config.Store, mihomoBinary: config.MihomoBinary, singBoxBinary: config.SingBoxBinary, managed: managed, now: now, cursors: map[types.UID]int{}}, nil
 }
+
+func (p *Pipeline) ManagedRuntime() *ManagedRuntime { return p.managed }
 
 func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGateway, pool *egressv1alpha1.ProxyPool) (GatewayOutcome, error) {
 	if gateway == nil || pool == nil || gateway.Namespace != pool.Namespace || gateway.Spec.PoolRef.Name != pool.Name {
@@ -140,25 +154,47 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if pool.Spec.Selection.TopN > 0 {
 		selectionPolicy.TopN = int(pool.Spec.Selection.TopN)
 	}
-	listenerAddress := gateway.Spec.Listener.Address
-	if listenerAddress == "" {
-		listenerAddress = "127.0.0.1"
-	}
-	listenerPort := int(gateway.Spec.Listener.Port)
-	if listenerPort == 0 {
-		listenerPort = 1080
-	}
-	listener, err := policy.NewSOCKSListener(listenerAddress, listenerPort)
-	if err != nil {
-		return GatewayOutcome{}, pipelineFailure("listener")
-	}
 	inputRevisions := poolResult.SourceRevisions
 	inputRevisions[targetName] = targetRevision
+	var listener policy.Listener
+	if IsManaged(gateway) {
+		var authName types.NamespacedName
+		var authRevision ResourceRevision
+		listener, authName, authRevision, err = p.managed.Prepare(ctx, gateway)
+		if err != nil {
+			return GatewayOutcome{}, pipelineFailure(runtimeErrorCode(err))
+		}
+		inputRevisions[authName] = authRevision
+	} else {
+		listenerAddress := ""
+		listenerPort := 0
+		if gateway.Spec.Listener != nil {
+			listenerAddress = gateway.Spec.Listener.Address
+			listenerPort = int(gateway.Spec.Listener.Port)
+		}
+		if listenerAddress == "" {
+			listenerAddress = "127.0.0.1"
+		}
+		if listenerPort == 0 {
+			listenerPort = 1080
+		}
+		listener, err = policy.NewSOCKSListener(listenerAddress, listenerPort)
+		if err != nil {
+			return GatewayOutcome{}, pipelineFailure("listener")
+		}
+	}
 	guard, err := NewSnapshotGuard(p.reader, gateway, pool, inputRevisions)
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("snapshot_guard")
 	}
-	publisher, err := NewSecretPublisher(p.client, p.scheme, gateway, gateway.Spec.OutputSecretName, guard)
+	var publisher reconcile.Publisher
+	var generationPublisher *GenerationPublisher
+	if IsManaged(gateway) {
+		generationPublisher, err = p.managed.Publisher(gateway, guard)
+		publisher = generationPublisher
+	} else {
+		publisher, err = NewSecretPublisher(p.client, p.scheme, gateway, gateway.Spec.OutputSecretName, guard)
+	}
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("publisher")
 	}
@@ -196,7 +232,19 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 			eligible++
 		}
 	}
-	return GatewayOutcome{Eligible: eligible, Selected: len(result.Decision.Selected), Published: result.Published, Changed: result.Changed, RetainedLKG: result.RetainedLKG}, nil
+	outcome := GatewayOutcome{Eligible: eligible, Selected: len(result.Decision.Selected), Published: result.Published, Changed: result.Changed, RetainedLKG: result.RetainedLKG}
+	if generationPublisher != nil {
+		outcome.PublishedGeneration = generationPublisher.GenerationName()
+	}
+	return outcome, nil
+}
+
+func runtimeErrorCode(err error) string {
+	var coded interface{ Code() string }
+	if errors.As(err, &coded) {
+		return coded.Code()
+	}
+	return "managed_runtime"
 }
 
 func reconcileStageCode(stage string) string {

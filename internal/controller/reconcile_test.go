@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	egressv1alpha1 "github.com/egressfox-io/egressfox/api/v1alpha1"
@@ -49,8 +50,44 @@ type fakePipeline struct {
 	err     error
 }
 
+type fakeRuntime struct {
+	outcome operatoradapter.RuntimeOutcome
+	err     error
+}
+
+func (r fakeRuntime) Reconcile(context.Context, *egressv1alpha1.EgressGateway, string) (operatoradapter.RuntimeOutcome, error) {
+	return r.outcome, r.err
+}
+
+func (fakeRuntime) Cleanup(context.Context, *egressv1alpha1.EgressGateway) error { return nil }
+
 func (p fakePipeline) Run(context.Context, *egressv1alpha1.EgressGateway, *egressv1alpha1.ProxyPool) (operatoradapter.GatewayOutcome, error) {
 	return p.outcome, p.err
+}
+
+func TestGatewayReconcileSeparatesDesiredActivationFromLKGReadiness(t *testing.T) {
+	scheme := controllerScheme(t)
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress"}}
+	gateway := &egressv1alpha1.EgressGateway{ObjectMeta: metav1.ObjectMeta{Name: "gateway", Namespace: "egress"}, Spec: egressv1alpha1.EgressGatewaySpec{PoolRef: egressv1alpha1.LocalReference{Name: "pool"}, Runtime: &egressv1alpha1.GatewayRuntimeSpec{Managed: &egressv1alpha1.ManagedRuntimeSpec{}}}, Status: egressv1alpha1.EgressGatewayStatus{ActiveGeneration: "old-generation"}}
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gateway).WithObjects(pool, gateway).Build()
+	reconciler := &controller.EgressGatewayReconciler{
+		Client: kubeClient, Scheme: scheme,
+		Pipeline: fakePipeline{outcome: operatoradapter.GatewayOutcome{Eligible: 2, Selected: 1, Published: true, Changed: true, PublishedGeneration: "new-generation"}},
+		Runtime:  fakeRuntime{outcome: operatoradapter.RuntimeOutcome{PublishedGeneration: "new-generation", ActiveGeneration: "old-generation", ServiceName: "gateway-proxy", ClientAuthSecretName: "gateway-auth", RuntimeReady: true, Degraded: true, Reason: "ProgressDeadlineExceeded"}},
+	}
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "egress", Name: "gateway"}}); err != nil {
+		t.Fatal(err)
+	}
+	current := &egressv1alpha1.EgressGateway{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(gateway), current); err != nil {
+		t.Fatal(err)
+	}
+	if !conditionTrue(current.Status.Conditions, controller.ConditionPublished) || conditionTrue(current.Status.Conditions, controller.ConditionActivated) || !conditionTrue(current.Status.Conditions, controller.ConditionRuntimeReady) || !conditionTrue(current.Status.Conditions, controller.ConditionDegraded) || conditionTrue(current.Status.Conditions, controller.ConditionReady) {
+		t.Fatalf("misleading managed conditions: %#v", current.Status.Conditions)
+	}
+	if current.Status.PublishedGeneration != "new-generation" || current.Status.ActiveGeneration != "old-generation" {
+		t.Fatalf("generation attribution = %#v", current.Status)
+	}
 }
 
 func TestGatewayReconcilePublishesTruthfulConditions(t *testing.T) {

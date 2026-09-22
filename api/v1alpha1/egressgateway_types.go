@@ -45,15 +45,34 @@ type ListenerSpec struct {
 	Port int32 `json:"port,omitempty"`
 }
 
+// ManagedRuntimeSpec opts a Gateway into the release-controlled M7 runtime.
+// M7 intentionally exposes no Pod template, image, replica or Service knobs.
+type ManagedRuntimeSpec struct{}
+
+// GatewayRuntimeSpec is a discriminated runtime union. Omission preserves the
+// M6 BYO contract; a present value must select managed mode.
+// +kubebuilder:validation:XValidation:rule="has(self.managed)",message="runtime must select managed mode"
+type GatewayRuntimeSpec struct {
+	Managed *ManagedRuntimeSpec `json:"managed,omitempty"`
+}
+
 // EgressGatewaySpec binds one pool to a pinned engine renderer and owned output Secret.
+// +kubebuilder:validation:XValidation:rule="has(self.runtime) ? !has(self.outputSecretName) : has(self.outputSecretName)",message="outputSecretName is required for BYO mode and forbidden for managed mode"
+// +kubebuilder:validation:XValidation:rule="!has(self.runtime) || !has(self.listener)",message="listener is BYO-only and must be omitted for managed mode"
 type EgressGatewaySpec struct {
 	PoolRef LocalReference `json:"poolRef"`
 	// +kubebuilder:validation:Enum=Mihomo;SingBox
-	Engine   Engine       `json:"engine"`
-	Listener ListenerSpec `json:"listener,omitempty"`
+	Engine Engine `json:"engine"`
+	// Listener is BYO-only. Managed mode owns a fixed authenticated Pod listener.
+	// +optional
+	Listener *ListenerSpec `json:"listener,omitempty"`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
-	OutputSecretName string `json:"outputSecretName"`
+	// +optional
+	OutputSecretName string `json:"outputSecretName,omitempty"`
+	// Runtime omitted means BYO for backward compatibility.
+	// +optional
+	Runtime *GatewayRuntimeSpec `json:"runtime,omitempty"`
 }
 
 // EgressGatewayStatus never reports credentials, endpoint IDs or artifact digests.
@@ -62,6 +81,12 @@ type EgressGatewayStatus struct {
 	EligibleEndpoints  int32        `json:"eligibleEndpoints,omitempty"`
 	SelectedEndpoints  int32        `json:"selectedEndpoints,omitempty"`
 	LastPublishedTime  *metav1.Time `json:"lastPublishedTime,omitempty"`
+	// PublishedGeneration and ActiveGeneration are opaque, random Kubernetes
+	// object names. They are not content or credential digests.
+	PublishedGeneration  string `json:"publishedGeneration,omitempty"`
+	ActiveGeneration     string `json:"activeGeneration,omitempty"`
+	ServiceName          string `json:"serviceName,omitempty"`
+	ClientAuthSecretName string `json:"clientAuthSecretName,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -73,7 +98,8 @@ type EgressGatewayStatus struct {
 // +kubebuilder:printcolumn:name="Published",type=string,JSONPath=`.status.conditions[?(@.type=="Published")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// EgressGateway requests validated engine configuration publication; it owns no engine workload.
+// EgressGateway requests validated engine configuration publication and may
+// explicitly opt into one operator-managed engine workload.
 type EgressGateway struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitzero"`

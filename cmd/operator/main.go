@@ -39,13 +39,14 @@ func init() {
 }
 
 func main() {
-	var metricsAddress, healthAddress, statePath, mihomoBinary, singBoxBinary string
+	var metricsAddress, healthAddress, statePath, mihomoBinary, singBoxBinary, managedRuntimeImage string
 	var leaderElect, showVersion bool
 	flag.StringVar(&metricsAddress, "metrics-bind-address", ":8443", "HTTPS metrics bind address, or 0 to disable")
 	flag.StringVar(&healthAddress, "health-probe-bind-address", ":8081", "health and readiness bind address")
 	flag.StringVar(&statePath, "state-path", "/var/lib/egressfox/private/state.db", "protected SQLite state path")
 	flag.StringVar(&mihomoBinary, "mihomo-binary", "/usr/local/libexec/egressfox/mihomo", "absolute Mihomo-compatible v1.19.31 binary path")
 	flag.StringVar(&singBoxBinary, "sing-box-binary", "/usr/local/libexec/egressfox/egressfox-engine-s", "absolute sing-box-compatible v1.14.1 binary path")
+	flag.StringVar(&managedRuntimeImage, "managed-runtime-image", strings.TrimSpace(os.Getenv("EGRESSFOX_MANAGED_RUNTIME_IMAGE")), "trusted EgressFox release image used by managed engine Pods")
 	flag.BoolVar(&leaderElect, "leader-elect", true, "use Kubernetes Lease leader election")
 	flag.BoolVar(&showVersion, "version", false, "print build and supported-engine versions, then exit")
 	logOptions := zap.Options{Development: false}
@@ -91,7 +92,7 @@ func main() {
 	}
 	pipeline, err := operatoradapter.NewPipeline(operatoradapter.PipelineConfig{
 		Client: manager.GetClient(), Reader: manager.GetAPIReader(), Scheme: manager.GetScheme(), Store: store,
-		MihomoBinary: mihomoBinary, SingBoxBinary: singBoxBinary,
+		MihomoBinary: mihomoBinary, SingBoxBinary: singBoxBinary, ManagedImage: managedRuntimeImage,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create pipeline")
@@ -101,7 +102,7 @@ func main() {
 		setupLog.Error(err, "unable to register ProxyPool controller")
 		os.Exit(1)
 	}
-	if err := (&controller.EgressGatewayReconciler{Client: manager.GetClient(), Scheme: manager.GetScheme(), Pipeline: pipeline}).SetupWithManager(manager); err != nil {
+	if err := (&controller.EgressGatewayReconciler{Client: manager.GetClient(), Scheme: manager.GetScheme(), Pipeline: pipeline, Runtime: pipeline.ManagedRuntime()}).SetupWithManager(manager); err != nil {
 		setupLog.Error(err, "unable to register EgressGateway controller")
 		os.Exit(1)
 	}

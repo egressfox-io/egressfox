@@ -14,6 +14,9 @@ const (
 	ConditionSelectionReady     = "SelectionReady"
 	ConditionConfigurationValid = "ConfigurationValid"
 	ConditionPublished          = "Published"
+	ConditionActivated          = "Activated"
+	ConditionRuntimeReady       = "RuntimeReady"
+	ConditionDegraded           = "Degraded"
 )
 
 func condition(kind string, status metav1.ConditionStatus, reason, message string, generation int64, now time.Time) metav1.Condition {

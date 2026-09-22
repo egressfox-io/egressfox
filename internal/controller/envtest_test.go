@@ -112,4 +112,25 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	if owner := metav1.GetControllerOf(output); owner == nil || owner.UID != gateway.UID {
 		t.Fatal("published Secret does not have the exact Gateway controller owner")
 	}
+
+	managed := &egressv1alpha1.EgressGateway{ObjectMeta: metav1.ObjectMeta{Name: "managed", Namespace: "egress"}, Spec: egressv1alpha1.EgressGatewaySpec{PoolRef: egressv1alpha1.LocalReference{Name: "pool"}, Engine: egressv1alpha1.EngineSingBox, Runtime: &egressv1alpha1.GatewayRuntimeSpec{Managed: &egressv1alpha1.ManagedRuntimeSpec{}}}}
+	if err := kubeClient.Create(ctx, managed); err != nil {
+		t.Fatalf("managed Gateway rejected: %v", err)
+	}
+	contradictory := managed.DeepCopy()
+	contradictory.ResourceVersion = ""
+	contradictory.UID = ""
+	contradictory.Name = "contradictory"
+	contradictory.Spec.OutputSecretName = "must-not-coexist"
+	if err := kubeClient.Create(ctx, contradictory); err == nil {
+		t.Fatal("API server admitted managed and BYO output fields together")
+	}
+	emptyRuntime := managed.DeepCopy()
+	emptyRuntime.ResourceVersion = ""
+	emptyRuntime.UID = ""
+	emptyRuntime.Name = "empty-runtime"
+	emptyRuntime.Spec.Runtime = &egressv1alpha1.GatewayRuntimeSpec{}
+	if err := kubeClient.Create(ctx, emptyRuntime); err == nil {
+		t.Fatal("API server admitted an undiscriminated runtime union")
+	}
 }

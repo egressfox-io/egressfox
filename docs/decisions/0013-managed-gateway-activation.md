@@ -75,8 +75,9 @@ output. User-owned resources are never deleted.
 ### Generation and rollout
 
 Every distinct validated managed artifact is stored in a new immutable Secret.
-The API server assigns an opaque random name from a Gateway-derived `generateName`;
-the public generation identifier is that non-content-derived name. The protected
+The controller assigns an opaque cryptographically random suffix to a
+Gateway-derived name; the public generation identifier is that non-content-derived
+name. The protected
 receipt remains Secret data and no artifact digest appears in metadata or status.
 An identical artifact/auth input reuses the existing owned generation Secret.
 
