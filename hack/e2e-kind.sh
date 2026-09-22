@@ -42,8 +42,11 @@ helm upgrade --install egressfox charts/egressfox --namespace "$namespace" --cre
 sa="system:serviceaccount:${namespace}:egressfox-egressfox"
 test "$(kubectl auth can-i get secrets -n "$namespace" --as "$sa")" = yes
 test "$(kubectl auth can-i get secrets -n default --as "$sa")" = no
-test "$(kubectl auth can-i delete secrets -n "$namespace" --as "$sa")" = no
-test "$(kubectl auth can-i create deployments -n "$namespace" --as "$sa")" = no
+test "$(kubectl auth can-i delete secrets -n "$namespace" --as "$sa")" = yes
+test "$(kubectl auth can-i create deployments -n "$namespace" --as "$sa")" = yes
+test "$(kubectl auth can-i create deployments -n default --as "$sa")" = no
+test "$(kubectl auth can-i create statefulsets -n "$namespace" --as "$sa")" = no
+test "$(kubectl auth can-i get nodes --as "$sa")" = no
 
 uuid=11111111-1111-4111-8111-111111111111
 kubectl -n "$namespace" create secret generic proxy-server --from-literal=config.json="{\"log\":{\"level\":\"warn\"},\"inbounds\":[{\"type\":\"vless\",\"tag\":\"in\",\"listen\":\"::\",\"listen_port\":8443,\"users\":[{\"uuid\":\"$uuid\"}]}],\"outbounds\":[{\"type\":\"direct\",\"tag\":\"direct\"}]}"
@@ -70,7 +73,7 @@ kind: Service
 metadata: {name: proxy-server}
 spec:
   selector: {app: proxy-server}
-  ports: [{port: 8443, targetPort: 8443}]
+  ports: [{name: primary, port: 8443, targetPort: 8443}, {name: rollout, port: 8444, targetPort: 8443}]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -176,6 +179,142 @@ kubectl -n "$namespace" create secret generic subscription --from-literal=nodes=
 sleep 45
 after=$(kubectl -n "$namespace" get secret e2e-engine-config -o jsonpath='{.metadata.resourceVersion}')
 test "$before" = "$after"
+
+# Restore the admitted source before exercising the managed path.
+kubectl -n "$namespace" create secret generic subscription --from-literal=nodes="vless://${uuid}@${proxy_ip}:8443?encryption=none&security=none#managed" --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True proxypool/e2e --timeout=2m
+
+for engine in SingBox Mihomo; do
+  name=$(printf '%s' "$engine" | tr '[:upper:]' '[:lower:]')
+  kubectl -n "$namespace" apply -f - <<YAML
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata: {name: managed-${name}}
+spec:
+  poolRef: {name: e2e}
+  engine: ${engine}
+  runtime: {managed: {}}
+YAML
+  kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "egressgateway/managed-${name}" --timeout=5m
+  service=$(kubectl -n "$namespace" get "egressgateway/managed-${name}" -o jsonpath='{.status.serviceName}')
+  auth=$(kubectl -n "$namespace" get "egressgateway/managed-${name}" -o jsonpath='{.status.clientAuthSecretName}')
+  username=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "username" | base64decode}}')
+  password=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
+  test -n "$service"
+  test -n "$username"
+  test -n "$password"
+  if kubectl -n "$namespace" exec byo-engine -c client -- curl -sS --max-time 5 --socks5 "${service}:1080" "http://${target_ip}:8080/" >/dev/null 2>&1; then
+    echo "managed ${engine} accepted unauthenticated SOCKS" >&2
+    exit 1
+  fi
+  if kubectl -n "$namespace" exec byo-engine -c client -- curl -sS --max-time 5 --proxy "socks5://${username}:wrong-password@${service}:1080" "http://${target_ip}:8080/" >/dev/null 2>&1; then
+    echo "managed ${engine} accepted wrong SOCKS credentials" >&2
+    exit 1
+  fi
+  code=$(kubectl -n "$namespace" exec byo-engine -c client -- curl -sS --max-time 10 --proxy "socks5://${username}:${password}@${service}:1080" -o /dev/null -w '%{http_code}' "http://${target_ip}:8080/")
+  test "$code" = 200
+  deployment=$(kubectl -n "$namespace" get deployment -l "egressfox.io/gateway-uid=$(kubectl -n "$namespace" get "egressgateway/managed-${name}" -o jsonpath='{.metadata.uid}')" -o jsonpath='{.items[0].metadata.name}')
+  test "$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.spec.replicas}')" = 1
+  test "$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.spec.strategy.rollingUpdate.maxUnavailable}')" = 0
+  test "$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.spec.strategy.rollingUpdate.maxSurge}')" = 1
+  test "$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.spec.template.spec.hostNetwork}')" != true
+  test "$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.spec.template.spec.automountServiceAccountToken}')" = false
+  if kubectl -n "$namespace" get deployment "$deployment" -o json | grep -F "$password" >/dev/null; then
+    echo "managed credentials leaked into Deployment" >&2
+    exit 1
+  fi
+done
+
+# A quota-blocked surge makes the replacement fail while the old ready Pod and
+# its immutable generation remain available through the stable Service.
+gateway=managed-singbox
+old_generation=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.activeGeneration}')
+pod_limit=$(kubectl -n "$namespace" get pods --no-headers | wc -l | tr -d ' ')
+kubectl -n "$namespace" create quota block-managed-surge --hard="pods=${pod_limit}"
+kubectl -n "$namespace" create secret generic subscription --from-literal=nodes="vless://${uuid}@${proxy_ip}:8444?encryption=none&security=none#rollout" --dry-run=client -o yaml | kubectl apply -f -
+for _ in $(seq 1 180); do
+  published=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.publishedGeneration}')
+  [ -n "$published" ] && [ "$published" != "$old_generation" ] && break
+  sleep 1
+done
+test "$published" != "$old_generation"
+kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Degraded")].status}'=True "egressgateway/${gateway}" --timeout=4m
+test "$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.activeGeneration}')" = "$old_generation"
+test "$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.conditions[?(@.type=="Activated")].status}')" = False
+test "$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.conditions[?(@.type=="RuntimeReady")].status}')" = True
+kubectl -n "$namespace" get secret "$old_generation" >/dev/null
+service=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.serviceName}')
+auth=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.clientAuthSecretName}')
+username=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "username" | base64decode}}')
+password=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
+test "$(kubectl -n "$namespace" exec byo-engine -c client -- curl -sS --max-time 10 --proxy "socks5://${username}:${password}@${service}:1080" -o /dev/null -w '%{http_code}' "http://${target_ip}:8080/")" = 200
+kubectl -n "$namespace" delete quota block-managed-surge
+kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "egressgateway/${gateway}" --timeout=5m
+
+# Client-auth deletion repairs the same credentials from protected generation
+# data instead of exposing new credentials before an old Pod can accept them.
+active_generation=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.activeGeneration}')
+old_password=$password
+kubectl -n "$namespace" delete secret "$auth"
+for _ in $(seq 1 120); do
+  kubectl -n "$namespace" get secret "$auth" >/dev/null 2>&1 && break
+  sleep 1
+done
+password=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
+test "$password" = "$old_password"
+test "$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.activeGeneration}')" = "$active_generation"
+
+# Owned child deletion is repaired and an operator restart retains exact active
+# generation attribution without creating another immutable generation.
+kubectl -n "$namespace" delete service "$service"
+for _ in $(seq 1 120); do
+  kubectl -n "$namespace" get service "$service" >/dev/null 2>&1 && break
+  sleep 1
+done
+kubectl -n "$namespace" get service "$service" >/dev/null
+generation_count=$(kubectl -n "$namespace" get secrets -l "egressfox.io/gateway-uid=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.metadata.uid}'),egressfox.io/component=runtime-generation" --no-headers | wc -l | tr -d ' ')
+test "$generation_count" -le 2
+kubectl -n "$namespace" rollout restart deployment/egressfox-egressfox
+kubectl -n "$namespace" rollout status deployment/egressfox-egressfox --timeout=3m
+kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "egressgateway/${gateway}" --timeout=3m
+test "$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.activeGeneration}')" = "$active_generation"
+
+# Managed to BYO publishes the requested output first, removes only exact-owned
+# runtime children and clears the managed Service surface.
+managed_to_byo=managed-mihomo
+managed_to_byo_service=$(kubectl -n "$namespace" get egressgateway "$managed_to_byo" -o jsonpath='{.status.serviceName}')
+kubectl -n "$namespace" patch egressgateway "$managed_to_byo" --type=json -p='[{"op":"remove","path":"/spec/runtime"},{"op":"add","path":"/spec/outputSecretName","value":"managed-mihomo-byo-config"}]'
+for _ in $(seq 1 180); do
+  if kubectl -n "$namespace" get secret managed-mihomo-byo-config >/dev/null 2>&1 && ! kubectl -n "$namespace" get service "$managed_to_byo_service" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+kubectl -n "$namespace" get secret managed-mihomo-byo-config >/dev/null
+if kubectl -n "$namespace" get service "$managed_to_byo_service" >/dev/null 2>&1; then
+  echo "managed Service survived transition to BYO" >&2
+  exit 1
+fi
+test "$(kubectl -n "$namespace" get egressgateway "$managed_to_byo" -o jsonpath='{.status.conditions[?(@.type=="Activated")].status}')" = Unknown
+
+# BYO to managed retains the old owned output until managed activation, then
+# removes only that output. The user-created BYO Pod remains untouched.
+kubectl -n "$namespace" patch egressgateway e2e --type=json -p='[{"op":"remove","path":"/spec/listener"},{"op":"remove","path":"/spec/outputSecretName"},{"op":"add","path":"/spec/runtime","value":{"managed":{}}}]'
+for _ in $(seq 1 300); do
+  byo_to_managed_service=$(kubectl -n "$namespace" get egressgateway e2e -o jsonpath='{.status.serviceName}')
+  if [ -n "$byo_to_managed_service" ] && kubectl -n "$namespace" get service "$byo_to_managed_service" >/dev/null 2>&1 && ! kubectl -n "$namespace" get secret e2e-engine-config >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+test -n "$byo_to_managed_service"
+kubectl -n "$namespace" get service "$byo_to_managed_service" >/dev/null
+if kubectl -n "$namespace" get secret e2e-engine-config >/dev/null 2>&1; then
+  echo "BYO output survived completed transition to managed mode" >&2
+  exit 1
+fi
+kubectl -n "$namespace" get pod byo-engine >/dev/null
+kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True egressgateway/e2e --timeout=5m
 
 helm upgrade egressfox charts/egressfox --namespace "$namespace" --set-string image.repository="$image_repository" --set-string image.tag="$image_tag" --set image.pullPolicy=Never --wait --timeout 3m
 helm uninstall egressfox --namespace "$namespace"

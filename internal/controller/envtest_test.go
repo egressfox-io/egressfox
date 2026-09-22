@@ -1,13 +1,16 @@
 package controller_test
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,6 +29,10 @@ type envtestChecker struct{}
 func (envtestChecker) Check(context.Context, artifact.Candidate) (artifact.Evidence, error) {
 	return artifact.Evidence{ValidatorID: "test/envtest"}, nil
 }
+
+type envtestPublicationGate struct{}
+
+func (envtestPublicationGate) Check(context.Context) error { return nil }
 
 func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
@@ -47,6 +54,12 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	})
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	if err := egressv1alpha1.AddToScheme(scheme); err != nil {
@@ -132,5 +145,76 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	emptyRuntime.Spec.Runtime = &egressv1alpha1.GatewayRuntimeSpec{}
 	if err := kubeClient.Create(ctx, emptyRuntime); err == nil {
 		t.Fatal("API server admitted an undiscriminated runtime union")
+	}
+
+	// Exercise the managed adapter against a real API server. This verifies
+	// immutable Secret and owner-reference admission, create/no-op behavior and
+	// explicit managed-to-BYO cleanup without relying on fake-client semantics.
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(managed), managed); err != nil {
+		t.Fatal(err)
+	}
+	managedRuntime, err := operatoradapter.NewManagedRuntime(operatoradapter.ManagedRuntimeConfig{
+		Client: kubeClient,
+		Scheme: scheme,
+		Image:  "registry.example/egressfox@sha256:synthetic",
+		Random: bytes.NewReader(bytes.Repeat([]byte{0x51}, 128)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := managedRuntime.Prepare(ctx, managed); err != nil {
+		t.Fatal(err)
+	}
+	managedPublisher, err := managedRuntime.Publisher(managed, envtestPublicationGate{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managedCandidate, err := artifact.NewCandidate(artifact.SingBox1141, []byte(`{"inbounds":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	managedValidated, err := artifact.Validate(ctx, managedCandidate, envtestChecker{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := managedPublisher.Publish(ctx, managedValidated); err != nil {
+		t.Fatal(err)
+	}
+	generation := managedPublisher.GenerationName()
+	if generation == "" {
+		t.Fatal("managed publication did not assign a generation")
+	}
+	if _, err := managedRuntime.Reconcile(ctx, managed, generation); err != nil {
+		t.Fatal(err)
+	}
+	deployments := &appsv1.DeploymentList{}
+	if err := kubeClient.List(ctx, deployments, client.InNamespace(managed.Namespace), client.MatchingLabels{operatoradapter.GatewayUIDLabel: string(managed.UID)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(deployments.Items) != 1 {
+		t.Fatalf("managed Deployments = %d, want 1", len(deployments.Items))
+	}
+	deployment := &deployments.Items[0]
+	deploymentKey := client.ObjectKeyFromObject(deployment)
+	if owner := metav1.GetControllerOf(deployment); owner == nil || owner.UID != managed.UID {
+		t.Fatal("managed Deployment does not have the exact Gateway controller owner")
+	}
+	beforeRuntimeVersion := deployment.ResourceVersion
+	if _, err := managedRuntime.Reconcile(ctx, managed, generation); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubeClient.Get(ctx, deploymentKey, deployment); err != nil {
+		t.Fatal(err)
+	}
+	if deployment.ResourceVersion != beforeRuntimeVersion {
+		t.Fatalf("no-op managed reconcile wrote Deployment: %s -> %s", beforeRuntimeVersion, deployment.ResourceVersion)
+	}
+	if err := managedRuntime.Cleanup(ctx, managed); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubeClient.Get(ctx, deploymentKey, &appsv1.Deployment{}); err == nil {
+		t.Fatal("managed Deployment survived cleanup")
+	} else if client.IgnoreNotFound(err) != nil {
+		t.Fatalf("read managed Deployment after cleanup: %v", err)
 	}
 }
