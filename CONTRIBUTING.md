@@ -11,7 +11,7 @@ not implemented features.
 
 ## Development prerequisites
 
-- Git and Make.
+- Git, Make and Python 3.9 or newer (release preflight and notes validation).
 - The Go version in [go.mod](go.mod) — currently 1.27.1.
 - A C compiler for race-enabled tests.
 - Helm for chart linting and rendering.

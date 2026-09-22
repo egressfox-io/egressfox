@@ -84,8 +84,9 @@ Follow the authoritative [development workflow](docs/development/workflow.md):
 
 Before completing a pull request or milestone, assess whether it introduces notable
 user-facing changes. Add accurate entries under `CHANGELOG.md` → `Unreleased` in the
-same branch when required; otherwise record why no entry is needed. Changelog review
-is part of the definition of done. Follow the authoritative policy in
+same branch when required; a release-preparation change may instead be included in
+the reviewed version section before tagging. Otherwise record why no entry is needed.
+Changelog review is part of the definition of done. Follow the authoritative policy in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 When summarizing Conventional Commit subjects in the changelog or release notes,

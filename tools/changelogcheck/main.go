@@ -231,11 +231,7 @@ func preparedReleaseDelta(baseLog, headLog *string) (bool, error) {
 		if strings.Contains(base, heading) {
 			continue
 		}
-		end := len(*headLog)
-		if next := majorHeadingPattern.FindStringIndex((*headLog)[match[1]:]); next != nil {
-			end = match[1] + next[0]
-		}
-		section := "## [Unreleased]" + (*headLog)[match[1]:end]
+		section := "## [Unreleased]" + (*headLog)[match[1]:]
 		entries, _, err := unreleasedEntries(section)
 		if err != nil {
 			return false, err

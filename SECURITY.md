@@ -1,19 +1,20 @@
 # Security policy
 
-EgressFox is preparing its first alpha runtime release. It has no production
+EgressFox is preparing its first development runtime release. It has no production
 certification, security guarantee, or response-time SLA.
 
 ## Supported versions
 
-No public release exists yet. After publication, only the latest alpha prerelease
-will receive security fixes; older prereleases and arbitrary source snapshots are
+No public release exists yet. After publication, only the latest development
+prerelease (`dev`, `alpha` or `beta`) will receive security fixes; older prereleases
+and arbitrary source snapshots are
 unsupported. [GitHub Releases](https://github.com/egressfox-io/egressfox/releases)
 will be the authority for the currently supported version.
 
 | Version | Security support |
 | --- | --- |
-| Latest published alpha | Supported once a release exists |
-| Earlier alphas | Unsupported |
+| Latest published development prerelease | Supported once a release exists |
+| Earlier prereleases | Unsupported |
 | Untagged source snapshots | Unsupported |
 
 ## Reporting a vulnerability

@@ -31,6 +31,11 @@ func publicationWorkflow() string {
 on:
   workflow_dispatch:
 
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+  queue: max
+
 jobs:
   validate:
     name: Non-publishing release validation
@@ -76,6 +81,10 @@ jobs:
 // flags and a different block-scalar modifier.
 func formatTolerantPublicationWorkflow() string {
 	return `name: Release validation and publication
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+  queue: max
 jobs:
   publish:
     name: Publish signed release
@@ -160,6 +169,13 @@ func TestReleaseWorkflowRejectsImageBeforePreflight(t *testing.T) {
 	changed = strings.Replace(changed, "      - name: Prepare remote publication", image+"      - name: Prepare remote publication", 1)
 	if err := releaseWorkflowChecks(changed); err == nil {
 		t.Fatal("image publication before preflight must fail")
+	}
+}
+
+func TestReleaseWorkflowRejectsConcurrentPublication(t *testing.T) {
+	changed := strings.Replace(publicationWorkflow(), "  group: release-publication", "  group: release-${{ inputs.version }}", 1)
+	if err := releaseWorkflowChecks(changed); err == nil {
+		t.Fatal("independent version groups must not publish concurrently")
 	}
 }
 

@@ -11,7 +11,7 @@ product is finished.
 M0–M5 are complete as of 2026-09-19. M6 (Kubernetes BYO operator and Secret
 delivery) and the post-M6 release-hardening milestone are complete as of 2026-09-21.
 The repository now contains the complete P0 control-plane path and a deliberate
-first-alpha release process with Q12 resolved, exact source/checksum provenance,
+release process for the first development version with Q12 resolved, exact source/checksum provenance,
 SBOMs, vulnerability gates, keyless signing/provenance design and a non-publishing
 dry run. P1 M7 adds the first explicit managed engine path and exact-generation
 activation. There is still no product CLI, managed HTTP source refresh,

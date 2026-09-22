@@ -10,8 +10,9 @@ Use macOS or Linux, Git, Make, and the Go version required by
 [go.mod](../../go.mod). Install Go from the official
 [download page](https://go.dev/dl/) and verify the published checksum. Release
 hardening was validated with Go 1.27.1. A C compiler is needed for Go's race detector; GitHub's
-Ubuntu runner includes one. No Kubernetes cluster, engine binary, Docker, Node,
-Python, or Rust installation is required for the current checks.
+Ubuntu runner includes one. Python 3.9 or newer is required for release preflight and notes
+tests. No Kubernetes cluster, engine binary, Docker, Node or Rust installation is
+required for the current checks.
 
 From the repository root:
 

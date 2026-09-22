@@ -1,6 +1,6 @@
 # Release and verification guide
 
-Status: first-alpha release contract. No release is created by the commands in the
+Status: first development release contract. No release is created by the commands in the
 dry-run section. [ADR 0012](../decisions/0012-release-distribution-and-provenance.md)
 owns redistribution and trust-boundary decisions; [ADR 0014](../decisions/0014-development-versioning-and-kubernetes-compatibility.md)
 owns development versioning and Kubernetes qualification.

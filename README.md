@@ -125,7 +125,8 @@ current compatibility promise.
 ## Evaluate locally
 
 There is no public image or chart download yet. To inspect the code and run the
-normal repository gate, install Git, Make, Go 1.27.1, Helm, and a C compiler:
+normal repository gate, install Git, Make, Python 3.9 or newer, Go 1.27.1, Helm,
+and a C compiler:
 
 ```sh
 git clone https://github.com/egressfox-io/egressfox.git

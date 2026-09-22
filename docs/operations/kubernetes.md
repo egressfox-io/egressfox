@@ -69,10 +69,12 @@ Discover the Service and credential Secret only after status reports them:
 
 ```sh
 gateway=external-api
-service=$(kubectl get egressgateway "$gateway" -o jsonpath='{.status.serviceName}')
-auth=$(kubectl get egressgateway "$gateway" -o jsonpath='{.status.clientAuthSecretName}')
-username=$(kubectl get secret "$auth" -o go-template='{{index .data "username" | base64decode}}')
-password=$(kubectl get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
+namespace=egressfox
+kubectl -n "$namespace" describe egressgateway "$gateway"
+service=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.serviceName}')
+auth=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.clientAuthSecretName}')
+username=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "username" | base64decode}}')
+password=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
 printf 'SOCKS endpoint: %s:1080; username: %s\n' "$service" "$username"
 ```
 
@@ -80,6 +82,9 @@ Do not print the password in normal automation or logs. A workload must read the
 same-namespace `kubernetes.io/basic-auth` Secret through its own least-privilege
 delivery path and explicitly configure `socks5h://username:password@SERVICE:1080`.
 EgressFox does not inject workloads or transparently redirect traffic.
+Check the `Published`, `Activated`, `RuntimeReady` and `Degraded` Conditions before
+connecting a client. The Service DNS name is `$service.$namespace.svc` from another
+namespace.
 
 The generated username is `egressfox`; the 32-byte random password is stable for
 the Gateway lifetime. M7 has no user-provided, scheduled or in-place credential

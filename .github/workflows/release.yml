@@ -87,7 +87,7 @@ jobs:
           python3 hack/release-preflight.py
       - name: Authenticate to GHCR
         run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: Build and push immutable multi-platform image
+      - name: Build and push versioned multi-platform image
         id: image
         run: |
           python3 hack/release-preflight.py
