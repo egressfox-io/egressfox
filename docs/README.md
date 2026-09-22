@@ -10,7 +10,7 @@ read the owning design and accepted decisions for the area they plan to change.
 | --- | --- |
 | Understand the product boundary | [Product](product.md) and [architecture](architecture.md) |
 | Evaluate or operate the Kubernetes integration | [Kubernetes operator guide](operations/kubernetes.md) and [samples](../config/samples/README.md) |
-| Verify a release or supported version | [Release guide](operations/releasing.md) |
+| Verify a release or supported version | [Release guide](operations/releasing.md), [versioning](operations/versioning.md), and [Kubernetes compatibility](operations/kubernetes-compatibility.md) |
 | Report or assess security concerns | [Security policy](../SECURITY.md) and [threat model](security/threat-model.md) |
 | Contribute a change | [Contributing](../CONTRIBUTING.md), [workflow](development/workflow.md), and [testing](development/testing.md) |
 | Configure the public GitHub repository | [Repository settings](operations/github-repository.md) |
@@ -35,6 +35,8 @@ read the owning design and accepted decisions for the area they plan to change.
 | Which tests and research experiments belong with a change? | [Testing](development/testing.md) |
 | How is substantial work planned and resumed? | [Execution plans](plans/README.md) |
 | How is a release built, accepted, published, and verified? | [Release guide](operations/releasing.md) |
+| What version forms are valid and how does identity flow through artifacts? | [Versioning](operations/versioning.md) |
+| Which Kubernetes versions are qualified and how are they tested? | [Kubernetes compatibility](operations/kubernetes-compatibility.md) |
 
 ## Reading status correctly
 

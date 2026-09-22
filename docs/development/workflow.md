@@ -20,7 +20,7 @@ make help
 make fmt
 make check
 make vuln
-VERSION=v0.1.0-alpha.1 make release-dry-run
+VERSION=v0.1.0-dev.1 make release-dry-run
 ```
 
 | Command | Behavior today |
@@ -28,12 +28,13 @@ VERSION=v0.1.0-alpha.1 make release-dry-run
 | `make fmt` | Format tracked and non-ignored new Go files with gofmt |
 | `make lint` | Non-mutating formatting check and `go vet ./...` |
 | `make test` | `go test -race -count=1 ./...`; covers repository tooling and all current Go domains |
-| `make build` | `go build -o bin/ ./...`; builds the operator and repository tooling |
+| `make build` | Builds the operator with bounded Git-derived version/revision metadata and the repository tooling |
 | `make docs` | Offline repository-local Markdown file/heading-link checks |
 | `make check` | Lint, tests, build, docs, and unstaged/staged whitespace checks |
 | `make vuln` | Pinned govulncheck from Makefile; requires module/vulnerability database access |
 | `make release-validate` | Validate engine/tool metadata, notices and Helm image-version flow without network access |
 | `make release-dry-run` | Construct binaries, source/license files, SPDX SBOMs, image, Helm package, scans and checksums without publishing |
+| `make k8s-compat` | Run envtest, Helm and kind E2E across all release-qualification Kubernetes profiles |
 
 The module's direct and transitive dependencies are pinned by `go.mod`/`go.sum`. The
 versioned `go run ...@version` security tool does not add a product dependency.
@@ -135,7 +136,8 @@ the core as a shortcut.
 ## CI and tool maintenance
 
 [Repository checks](../../.github/workflows/check.yml) run on pull requests, main
-pushes, and manual dispatch with read-only repository permissions and no secrets.
+pushes, scheduled/manual full-compatibility dispatch and with read-only repository
+permissions and no secrets.
 Actions are pinned to full commit IDs, following
 [GitHub's secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use).
 Do not switch to `pull_request_target` to execute untrusted code with privileges.

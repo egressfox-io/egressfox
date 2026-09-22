@@ -19,6 +19,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0011](0011-namespaced-byo-operator.md) | Namespace-scoped BYO operator and owned Secret publication | Accepted |
 | [0012](0012-release-distribution-and-provenance.md) | Engine redistribution, versioning, signing and provenance | Accepted |
 | [0013](0013-managed-gateway-activation.md) | Managed gateway ownership and exact-generation activation | Accepted |
+| [0014](0014-development-versioning-and-kubernetes-compatibility.md) | Development release identity and Kubernetes compatibility | Accepted |
 
 ## Adding a decision
 

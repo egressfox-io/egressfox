@@ -8,7 +8,9 @@ now are listed in [workflow](workflow.md). M4 adds resolver/authorization, sched
 budget, through-engine observation, SQLite migration/restart/retention and summary
 tests. M5 adds pure strategy/scenario replay, permutation fuzzing, exact transition
 boundaries, SQLite checkpoint recovery and both-renderer standalone reconciliation.
-M6 provides fake-client, pinned Kubernetes 1.37 envtest and kind v0.33.0 layers.
+M6 provides fake-client, pinned Kubernetes envtest and kind layers. The current
+release qualification profiles are 1.32, 1.34 and 1.37; see the
+[Kubernetes compatibility contract](../operations/kubernetes-compatibility.md).
 M7 extends them with exact-owned managed objects, authenticated listener readiness,
 both-engine traffic, failed-rollout LKG, repair, bounded generation and mode-transition
 coverage.
@@ -94,7 +96,8 @@ explains that it runs an API server and etcd without built-in controllers/kubele
 It cannot prove garbage collection, scheduling, mounted Secret propagation, or
 real runtime connectivity. Those require kind or another real cluster.
 
-Match envtest tooling/assets to the pinned generated controller-runtime/Kubernetes
+Match envtest tooling/assets to a reviewed pinned Kubernetes qualification profile;
+the server profile does not require changing the generated controller-runtime/Kubernetes
 dependency set. Scope and clean test resources; avoid assertions based on namespace
 garbage collection in envtest. Test that no-op reconciliation avoids status/write
 loops and that Secret dependency changes work without spec generation changes.

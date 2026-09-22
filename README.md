@@ -137,7 +137,7 @@ make test-envtest
 make e2e-kind
 ```
 
-The kind test creates an isolated Kubernetes 1.37.0 cluster, installs/upgrades the
+The kind test creates an isolated pinned Kubernetes 1.32 cluster by default, installs/upgrades the
 chart, checks negative RBAC and BYO compatibility, proxies controlled traffic
 through both managed engines, verifies authentication, failed-rollout LKG, repair,
 restart and mode transitions, and deletes the cluster when complete.
@@ -212,8 +212,9 @@ Read [SECURITY.md](SECURITY.md) before reporting a sensitive issue and see the
 ## Project status and roadmap
 
 P0 milestones M1–M6, post-M6 release hardening and P1 M7 managed
-gateway/activation are complete. The current API is `v1alpha1`, Kubernetes 1.37.0
-is the tested baseline, and the project is not production-certified. M8 resilient
+gateway/activation are complete. The current API is `v1alpha1`; Kubernetes 1.32,
+1.34 and 1.37 are the release-qualification profiles, and the project is not
+production-certified. M8 resilient
 HTTP source refresh is the next implementation unit. See the
 [P1 roadmap](docs/roadmap/p1.md).
 
@@ -223,7 +224,7 @@ HTTP source refresh is the next implementation unit. See the
 | --- | --- |
 | Product boundaries and architecture | [Product](docs/product.md) · [Architecture](docs/architecture.md) |
 | Kubernetes installation and operation | [Operator guide](docs/operations/kubernetes.md) |
-| Supported versions and release verification | [Release guide](docs/operations/releasing.md) |
+| Supported versions and release verification | [Release guide](docs/operations/releasing.md) · [Versioning](docs/operations/versioning.md) · [Kubernetes compatibility](docs/operations/kubernetes-compatibility.md) |
 | Security | [Security policy](SECURITY.md) · [Threat model](docs/security/threat-model.md) |
 | Decisions and roadmap | [ADR index](docs/decisions/README.md) · [Roadmap](docs/roadmap/README.md) |
 | Development | [Contributing](CONTRIBUTING.md) · [Testing](docs/development/testing.md) |

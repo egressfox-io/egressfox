@@ -26,9 +26,11 @@ preserves CRDs and the annotated PVC on uninstall and does not upgrade files und
 `crds/`. Apply a reviewed compatible CRD update before upgrading the chart. Alpha
 schema additions have no conversion webhook or automatic migration.
 
-The tested baseline is Kubernetes 1.37.0 with controller-runtime v0.25.1. Pinned
-1.37.0 envtest and kind v0.33.0 validation are available as `make test-envtest` and
-`make e2e-kind`. For Podman use
+The qualified Kubernetes profiles are 1.32, 1.34 and 1.37 with controller-runtime
+v0.25.1. The default is the minimum 1.32 profile; select another with
+`K8S_VERSION=1.34 make test-envtest helm-check e2e-kind`, or run
+`make k8s-compat` before a release. See the authoritative
+[Kubernetes compatibility contract](kubernetes-compatibility.md). For Podman use
 `KIND_EXPERIMENTAL_PROVIDER=podman CONTAINER_CLI=podman make e2e-kind`.
 
 `ProxyPool` references one to 32 same-namespace Secret keys containing explicit
@@ -200,7 +202,8 @@ admission resources or arbitrary cluster networking. The managed engine Pod rece
 no ServiceAccount token.
 
 Use `make generate-check`, `make helm-check`, `make test-envtest`, and
-`make e2e-kind`. The kind test covers chart upgrade, negative namespace/cluster
+`make e2e-kind`; `make k8s-compat` runs those Kubernetes layers across every
+release-qualification profile. The kind test covers chart upgrade, negative namespace/cluster
 RBAC, BYO regression, both managed engines, mandatory authentication, controlled
 traffic, exact-generation rollout failure/LKG and recovery, bounded generations,
 owned-resource repair, operator restart and both mode transitions.

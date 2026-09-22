@@ -4,7 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '17 4 * * 1'
   workflow_dispatch:
+    inputs:
+      full-kubernetes-compatibility:
+        description: Run the full pinned Kubernetes compatibility matrix
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -41,3 +49,17 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: make e2e-kind
+
+  kubernetes-compatibility:
+    if: ${{ github.event_name == 'schedule' || inputs.full-kubernetes-compatibility == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make k8s-compat

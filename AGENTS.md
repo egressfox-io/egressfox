@@ -67,6 +67,14 @@ Run `make fmt` after Go edits; `make check` runs formatting, vet, race tests, bu
 offline documentation links/anchors, and whitespace checks. Run `make vuln` for
 the online pinned vulnerability scan. `make help` lists available commands.
 
+Release identity and Kubernetes qualification are centralized in
+[`release/manifest.json`](release/manifest.json). Read the
+[versioning](docs/operations/versioning.md) and
+[Kubernetes compatibility](docs/operations/kubernetes-compatibility.md) contracts
+before changing release tooling. The default Kubernetes profile is 1.32; the
+release matrix is 1.32, 1.34 and 1.37 via `make k8s-compat`. Do not claim a profile
+passed until its envtest and kind evidence is recorded.
+
 These checks cover repository tooling and the M1–M6 endpoint, source, renderer,
 artifact, publication, observation, probe, history, selection and operator domains.
 Add relevant layers from the [test strategy](docs/development/testing.md) as behavior appears:

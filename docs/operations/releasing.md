@@ -2,7 +2,8 @@
 
 Status: first-alpha release contract. No release is created by the commands in the
 dry-run section. [ADR 0012](../decisions/0012-release-distribution-and-provenance.md)
-owns the durable redistribution, versioning and trust-boundary decisions.
+owns redistribution and trust-boundary decisions; [ADR 0014](../decisions/0014-development-versioning-and-kubernetes-compatibility.md)
+owns development versioning and Kubernetes qualification.
 
 ## Supported release contract
 
@@ -13,14 +14,16 @@ The initial public artifacts support exactly:
 | Mihomo | 1.19.31 / `egressfox.mihomo/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
 | sing-box | 1.14.1 / `egressfox.sing-box/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
 | Operator/runtime image | linux/amd64, linux/arm64 | Operator, readiness helper and source-built engine derivatives are compiled for both architectures; the same signed image is the M7 managed runtime authority |
-| Kubernetes | 1.37.0 | envtest and kind baseline; not a promise for every older or newer minor |
+| Kubernetes | 1.32, 1.34, 1.37 | Pinned envtest and kind release-qualification profiles; not a promise for every older or newer minor |
 | API | `egressfox.io/v1alpha1` | Alpha compatibility: review CRD diffs and release notes before every upgrade |
 
-SemVer tags use `v0.x.y-alpha.n`. The tag without `v` becomes the operator version,
-OCI version/tag, packaged Helm `version`, `appVersion`, and default image tag. The
-full tagged commit becomes binary/OCI revision metadata, and its commit timestamp is
-the build/OCI creation input. Release tooling rejects a non-alpha tag or abbreviated
-revision. Deploy by immutable image digest even though a human-readable tag exists.
+Allowed SemVer tags are `vX.Y.Z-dev.N`, `vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`, and
+stable `vX.Y.Z`. The tag without `v` becomes the operator version, OCI version/tag,
+packaged Helm `version`, `appVersion`, and default image tag. The full tagged commit
+becomes binary/OCI revision metadata, and its commit timestamp is the build/OCI
+creation input. Untagged builds carry only a local `+g<commit>` identity and cannot
+be release artifacts. Deploy by immutable image digest even though a human-readable
+tag exists. See [versioning](versioning.md).
 
 ## Inputs and reproducibility
 
@@ -57,7 +60,7 @@ integrity.
 Run from a clean tagged checkout for release evidence:
 
 ```sh
-VERSION=v0.1.0-alpha.1 make release-dry-run
+VERSION=v0.1.0-dev.1 make release-dry-run
 ```
 
 This bootstraps checksum-pinned Helm 4.3.0, Syft 1.52.0, Grype 0.119.0 and Cosign
@@ -75,7 +78,8 @@ temporarily unavailable, `RELEASE_SKIP_VULN=1` records a skip marker rather than
 false pass. Neither skip is acceptable in final release evidence. `DOCKER=podman`
 uses a temporary local Podman manifest instead of Docker Buildx.
 
-The workflow `.github/workflows/release.yml` exposes the same validation manually.
+The workflow `.github/workflows/release.yml` exposes the same validation manually,
+including `make k8s-compat` across Kubernetes 1.32, 1.34 and 1.37.
 With `publish=false` it can run from a branch and has read-only repository permission.
 With `publish=true`, the selected ref must be the exact existing version tag, the
 validation job must pass, and a maintainer must approve the protected `release`
@@ -111,8 +115,9 @@ and records its immutable digest. GitHub Actions OIDC obtains an ephemeral Sigst
 identity; no private key or registry token is committed. Cosign signs the digest and
 attests its SPDX SBOM. GitHub's attestation action creates build provenance for the
 image and release files, binding their digests to repository, commit, workflow and
-event. The workflow then creates a prerelease for the existing tag and uploads the
-checked files. It never creates or pushes a Git tag.
+event. The workflow then creates a prerelease for a `dev`, `alpha` or `beta` tag, or
+a stable release for a stable tag, and uploads the checked files. It never creates
+or pushes a Git tag.
 
 The workflow deliberately has no write permission at workflow or validation-job
 scope. Only the `publish` job, after the tag checks and protected-environment approval,
@@ -153,9 +158,10 @@ does not establish trust: the repository and workflow identity must match.
 ## First-release acceptance checklist
 
 - [ ] Tagged checkout and working tree are clean; tag/version/commit/timestamp agree.
-- [ ] `make generate`, `make manifests`, `make check`, `make test-envtest`,
+- [ ] `make generate`, `make manifests`, `make check`, `make k8s-compat`,
   `make vuln` and `git diff --check` pass.
-- [ ] kind install/upgrade/RBAC/traffic/LKG E2E passes on Kubernetes 1.37.0.
+- [ ] kind install/upgrade/RBAC/traffic/LKG E2E passes on Kubernetes 1.32, 1.34
+  and 1.37.
 - [ ] Both Linux operator binaries rebuild identically and report exact metadata.
 - [ ] Both input source archives, both licenses, all declared build inputs and the
   reference upstream binary checksums match the manifest; modified-source notices were reviewed.
