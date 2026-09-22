@@ -6,14 +6,21 @@ import (
 	"testing"
 )
 
-func TestAlphaVersionContract(t *testing.T) {
-	for _, value := range []string{"v0.1.0-alpha.1", "v0.0.0-alpha.0", "v0.12.34-alpha.56"} {
-		if !alphaVersion.MatchString(value) {
-			t.Errorf("valid version rejected: %s", value)
+func TestReleaseVersionContract(t *testing.T) {
+	for _, test := range []struct{ value, class, normalized string }{
+		{"v0.1.0-dev.1", "dev", "0.1.0-dev.1"},
+		{"v0.1.0-alpha.1", "alpha", "0.1.0-alpha.1"},
+		{"v0.1.0-beta.1", "beta", "0.1.0-beta.1"},
+		{"v0.1.0", "stable", "0.1.0"},
+		{"v1.12.34", "stable", "1.12.34"},
+	} {
+		parsed, err := parseReleaseTag(test.value)
+		if err != nil || parsed.Class != test.class || parsed.Normalized != test.normalized {
+			t.Errorf("parseReleaseTag(%q) = %#v, %v", test.value, parsed, err)
 		}
 	}
-	for _, value := range []string{"0.1.0-alpha.1", "v1.0.0", "v0.1.0", "v0.1.0-beta.1", "v0.01.0-alpha.1"} {
-		if alphaVersion.MatchString(value) {
+	for _, value := range []string{"0.1.0-alpha.1", "v0.1.0-rc.1", "v0.01.0", "v0.1", "v0.1.0+build.1", "v0.1.0-dev.0"} {
+		if _, err := parseReleaseTag(value); err == nil {
 			t.Errorf("invalid version accepted: %s", value)
 		}
 	}

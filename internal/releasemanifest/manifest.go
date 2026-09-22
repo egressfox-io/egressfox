@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -33,8 +35,22 @@ type Manifest struct {
 }
 
 type Release struct {
-	Platforms         []string `json:"platforms"`
-	KubernetesVersion string   `json:"kubernetesVersion"`
+	DevelopmentVersion string                  `json:"developmentVersion"`
+	Platforms          []string                `json:"platforms"`
+	Kubernetes         KubernetesCompatibility `json:"kubernetes"`
+}
+
+type KubernetesCompatibility struct {
+	MinimumSupported  string              `json:"minimumSupported"`
+	ReleaseValidation []string            `json:"releaseValidation"`
+	Profiles          []KubernetesProfile `json:"profiles"`
+}
+
+type KubernetesProfile struct {
+	Minor          string            `json:"minor"`
+	EnvtestVersion string            `json:"envtestVersion"`
+	EnvtestSHA512  map[string]string `json:"envtestSHA512"`
+	KindNodeImage  string            `json:"kindNodeImage"`
 }
 
 type Engine struct {
@@ -115,8 +131,11 @@ func (manifest Manifest) Validate() error {
 	if manifest.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported release manifest schema %d", manifest.SchemaVersion)
 	}
-	if manifest.Release.KubernetesVersion == "" || !slices.Equal(manifest.Release.Platforms, []string{"linux/amd64", "linux/arm64"}) {
+	if !validDevelopmentVersion(manifest.Release.DevelopmentVersion) || !slices.Equal(manifest.Release.Platforms, []string{"linux/amd64", "linux/arm64"}) {
 		return errors.New("release contract must list linux/amd64 and linux/arm64 in order")
+	}
+	if err := manifest.Release.Kubernetes.Validate(); err != nil {
+		return fmt.Errorf("Kubernetes compatibility contract: %w", err)
 	}
 	expected := map[string]artifact.Profile{"mihomo": artifact.Mihomo11931, "sing-box": artifact.SingBox1141}
 	seenEngines := make(map[string]bool)
@@ -191,6 +210,72 @@ func (manifest Manifest) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (compatibility KubernetesCompatibility) Validate() error {
+	if compatibility.MinimumSupported == "" || len(compatibility.Profiles) == 0 || len(compatibility.ReleaseValidation) == 0 {
+		return errors.New("must declare minimum support, profiles, and release validation")
+	}
+	profiles := make(map[string]KubernetesProfile, len(compatibility.Profiles))
+	for _, profile := range compatibility.Profiles {
+		if !validKubernetesMinor(profile.Minor) || profile.EnvtestVersion != profile.Minor+".0" || profiles[profile.Minor].Minor != "" {
+			return fmt.Errorf("invalid or duplicate profile %q", profile.Minor)
+		}
+		if !validDigest(profile.KindNodeImage, "@sha256:", sha256.Size) {
+			return fmt.Errorf("profile %s has an unpinned kind node image", profile.Minor)
+		}
+		for _, platform := range []string{"darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64"} {
+			digest := profile.EnvtestSHA512[platform]
+			decoded, err := hex.DecodeString(digest)
+			if err != nil || len(decoded) != sha512.Size || digest != strings.ToLower(digest) {
+				return fmt.Errorf("profile %s has invalid envtest SHA-512 for %s", profile.Minor, platform)
+			}
+		}
+		if len(profile.EnvtestSHA512) != 4 {
+			return fmt.Errorf("profile %s has an unsupported envtest platform", profile.Minor)
+		}
+		profiles[profile.Minor] = profile
+	}
+	if _, ok := profiles[compatibility.MinimumSupported]; !ok {
+		return fmt.Errorf("minimum supported Kubernetes %s has no profile", compatibility.MinimumSupported)
+	}
+	seenValidation := make(map[string]bool, len(compatibility.ReleaseValidation))
+	for _, minor := range compatibility.ReleaseValidation {
+		if _, ok := profiles[minor]; !ok || seenValidation[minor] {
+			return fmt.Errorf("release validation Kubernetes %s has no profile", minor)
+		}
+		seenValidation[minor] = true
+	}
+	if !slices.IsSorted(compatibility.ReleaseValidation) {
+		return errors.New("release validation Kubernetes profiles must be sorted")
+	}
+	return nil
+}
+
+func (compatibility KubernetesCompatibility) Profile(minor string) (KubernetesProfile, error) {
+	for _, profile := range compatibility.Profiles {
+		if profile.Minor == minor {
+			return profile, nil
+		}
+	}
+	return KubernetesProfile{}, fmt.Errorf("unsupported Kubernetes version %q", minor)
+}
+
+func validDevelopmentVersion(value string) bool {
+	return regexp.MustCompile(`^v0\.[1-9][0-9]*\.[0-9]+-dev\.[1-9][0-9]*$`).MatchString(value)
+}
+
+func validKubernetesMinor(value string) bool {
+	return regexp.MustCompile(`^1\.[0-9]+$`).MatchString(value)
+}
+
+func validDigest(value, separator string, size int) bool {
+	parts := strings.Split(value, separator)
+	if len(parts) != 2 || parts[0] == "" || parts[1] != strings.ToLower(parts[1]) {
+		return false
+	}
+	decoded, err := hex.DecodeString(parts[1])
+	return err == nil && len(decoded) == size
 }
 
 func validateDownload(download Download, executable bool) error {

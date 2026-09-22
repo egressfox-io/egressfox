@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-version=${VERSION:-v0.0.0-alpha.0}
+: "${VERSION:?VERSION must be an explicit vX.Y.Z[-dev.N|-alpha.N|-beta.N] release tag}"
+version=$VERSION
 revision=${REVISION:-$(git rev-parse HEAD)}
 created=${CREATED:-$(git show -s --format=%cI "$revision")}
 source_date_epoch=${SOURCE_DATE_EPOCH:-$(git show -s --format=%ct "$revision")}
@@ -121,10 +122,12 @@ chart=$artifact_dir/egressfox-$normalized.tgz
 test -f "$chart"
 test "$("$helm" show chart "$chart" | awk '/^version:/ {print $2}')" = "$normalized"
 test "$("$helm" show chart "$chart" | awk '/^appVersion:/ {gsub(/\"/, "", $2); print $2}')" = "$normalized"
-"$helm" template egressfox "$chart" --namespace egressfox-system --kube-version 1.37.0 \
-  --set-string image.repository=ghcr.io/egressfox-io/egressfox >"$work_dir/chart.yaml"
-grep -F "image: \"ghcr.io/egressfox-io/egressfox:$normalized\"" "$work_dir/chart.yaml" >/dev/null
-"$helm" template egressfox "$chart" --namespace egressfox-system --kube-version 1.37.0 \
+for kubernetes_minor in $($go_command run ./tools/releasectl kubernetes --field release-validation); do
+  "$helm" template egressfox "$chart" --namespace egressfox-system --kube-version "$kubernetes_minor.0" \
+    --set-string image.repository=ghcr.io/egressfox-io/egressfox >"$work_dir/chart-$kubernetes_minor.yaml"
+  grep -F "image: \"ghcr.io/egressfox-io/egressfox:$normalized\"" "$work_dir/chart-$kubernetes_minor.yaml" >/dev/null
+done
+"$helm" template egressfox "$chart" --namespace egressfox-system --kube-version 1.32.0 \
   --set-string image.repository=ghcr.io/egressfox-io/egressfox \
   --set-string image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >"$work_dir/chart-digest.yaml"
 grep -F 'image: "ghcr.io/egressfox-io/egressfox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$work_dir/chart-digest.yaml" >/dev/null

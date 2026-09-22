@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -18,7 +19,7 @@ const defaultManifest = "release/manifest.json"
 
 func main() {
 	if len(os.Args) < 2 {
-		fail("usage: releasectl <validate|validate-version|metadata|fetch-engine|prepare-engine-source|overrides|engine-build|fetch-sources|fetch-licenses|install-tool>")
+		fail("usage: releasectl <validate|validate-version|build-version|kubernetes|metadata|fetch-engine|prepare-engine-source|overrides|engine-build|fetch-sources|fetch-licenses|install-tool>")
 	}
 	var err error
 	switch os.Args[1] {
@@ -26,6 +27,10 @@ func main() {
 		err = validate(os.Args[2:])
 	case "validate-version":
 		err = validateVersion(os.Args[2:])
+	case "build-version":
+		err = buildVersion(os.Args[2:])
+	case "kubernetes":
+		err = kubernetes(os.Args[2:])
 	case "metadata":
 		err = metadata(os.Args[2:])
 	case "fetch-engine":
@@ -92,6 +97,15 @@ func validateRepository(root string, manifest releasemanifest.Manifest) error {
 	if !regexp.MustCompile(`(?m)^\s*tag:\s*""\s*$`).Match(values) {
 		return fmt.Errorf("chart image tag must default to appVersion")
 	}
+	chart, err := os.ReadFile(filepath.Join(root, "charts", "egressfox", "Chart.yaml"))
+	if err != nil {
+		return fmt.Errorf("read chart metadata: %w", err)
+	}
+	developmentVersion := strings.TrimPrefix(manifest.Release.DevelopmentVersion, "v")
+	if !regexp.MustCompile(`(?m)^version:\s*`+regexp.QuoteMeta(developmentVersion)+`\s*$`).Match(chart) ||
+		!regexp.MustCompile(`(?m)^appVersion:\s*"`+regexp.QuoteMeta(developmentVersion)+`"\s*$`).Match(chart) {
+		return fmt.Errorf("chart version and appVersion must match release development version %s", developmentVersion)
+	}
 	goModule, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {
 		return fmt.Errorf("read go.mod: %w", err)
@@ -115,18 +129,36 @@ func validateRepository(root string, manifest releasemanifest.Manifest) error {
 	return nil
 }
 
-var alphaVersion = regexp.MustCompile(`^v0\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-alpha\.(0|[1-9][0-9]*)$`)
+var releaseTag = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(dev|alpha|beta)\.([1-9][0-9]*))?$`)
+
+type releaseVersion struct {
+	Normalized string
+	Class      string
+}
+
+func parseReleaseTag(value string) (releaseVersion, error) {
+	matches := releaseTag.FindStringSubmatch(value)
+	if matches == nil {
+		return releaseVersion{}, fmt.Errorf("release version %q is not an allowed SemVer tag", value)
+	}
+	class := "stable"
+	if matches[4] != "" {
+		class = matches[4]
+	}
+	return releaseVersion{Normalized: strings.TrimPrefix(value, "v"), Class: class}, nil
+}
 
 func validateVersion(arguments []string) error {
 	flags := flag.NewFlagSet("validate-version", flag.ContinueOnError)
-	version := flags.String("version", "", "v0.x.y-alpha.n release tag")
+	version := flags.String("version", "", "vX.Y.Z[-dev.N|-alpha.N|-beta.N] release tag")
 	revision := flags.String("revision", "", "40-character source commit")
 	created := flags.String("created", "", "RFC3339 creation time")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if !alphaVersion.MatchString(*version) {
-		return fmt.Errorf("release version %q is not v0.x.y-alpha.n", *version)
+	parsed, err := parseReleaseTag(*version)
+	if err != nil {
+		return err
 	}
 	decoded, err := hex.DecodeString(*revision)
 	if err != nil || len(decoded) != 20 || *revision != strings.ToLower(*revision) {
@@ -135,7 +167,116 @@ func validateVersion(arguments []string) error {
 	if _, err := time.Parse(time.RFC3339, *created); err != nil {
 		return fmt.Errorf("release creation time is not RFC3339: %w", err)
 	}
-	fmt.Println(strings.TrimPrefix(*version, "v"))
+	fmt.Println(parsed.Normalized)
+	return nil
+}
+
+func buildVersion(arguments []string) error {
+	flags := flag.NewFlagSet("build-version", flag.ContinueOnError)
+	root := flags.String("root", ".", "repository root")
+	manifestName := flags.String("manifest", defaultManifest, "release manifest relative to root")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("build-version accepts no positional arguments")
+	}
+	manifest, err := releasemanifest.Load(filepath.Join(*root, *manifestName))
+	if err != nil {
+		return err
+	}
+	return printBuildVersion(*root, manifest.Release.DevelopmentVersion)
+}
+
+func printBuildVersion(root, developmentTag string) error {
+	revision, err := gitOutput(root, "rev-parse", "HEAD")
+	if err != nil {
+		parsed, parseErr := parseReleaseTag(developmentTag)
+		if parseErr != nil {
+			return parseErr
+		}
+		fmt.Printf("%s+local\n", parsed.Normalized)
+		return nil
+	}
+	tags, err := gitOutput(root, "tag", "--points-at", "HEAD")
+	if err != nil {
+		return err
+	}
+	var releases []releaseVersion
+	for _, tag := range strings.Fields(tags) {
+		if parsed, parseErr := parseReleaseTag(tag); parseErr == nil {
+			releases = append(releases, parsed)
+		}
+	}
+	if len(releases) > 1 {
+		return fmt.Errorf("commit has multiple release tags")
+	}
+	if len(releases) == 1 {
+		fmt.Println(releases[0].Normalized)
+		return nil
+	}
+	parsed, err := parseReleaseTag(developmentTag)
+	if err != nil {
+		return err
+	}
+	if len(revision) < 12 {
+		return fmt.Errorf("Git returned a short revision")
+	}
+	fmt.Printf("%s+g%s\n", parsed.Normalized, revision[:12])
+	return nil
+}
+
+func gitOutput(root string, arguments ...string) (string, error) {
+	command := exec.Command("git", append([]string{"-C", root}, arguments...)...)
+	output, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("read Git identity: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func kubernetes(arguments []string) error {
+	flags := flag.NewFlagSet("kubernetes", flag.ContinueOnError)
+	manifestName := flags.String("manifest", defaultManifest, "release manifest")
+	minor := flags.String("version", "", "supported Kubernetes minor")
+	platform := flags.String("platform", releasemanifest.HostPlatform(), "host platform")
+	field := flags.String("field", "", "minimum-supported, release-validation, envtest-version, envtest-sha512, envtest-url, or kind-node-image")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	manifest, err := releasemanifest.Load(*manifestName)
+	if err != nil {
+		return err
+	}
+	compatibility := manifest.Release.Kubernetes
+	switch *field {
+	case "minimum-supported":
+		fmt.Println(compatibility.MinimumSupported)
+		return nil
+	case "release-validation":
+		fmt.Println(strings.Join(compatibility.ReleaseValidation, " "))
+		return nil
+	}
+	profile, err := compatibility.Profile(*minor)
+	if err != nil {
+		return err
+	}
+	switch *field {
+	case "envtest-version":
+		fmt.Println(profile.EnvtestVersion)
+	case "envtest-sha512":
+		digest, ok := profile.EnvtestSHA512[*platform]
+		if !ok {
+			return fmt.Errorf("Kubernetes %s has no envtest asset for %s", profile.Minor, *platform)
+		}
+		fmt.Println(digest)
+	case "envtest-url":
+		fmt.Printf("https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v%s/envtest-v%s-%s.tar.gz\n", profile.EnvtestVersion, profile.EnvtestVersion, strings.ReplaceAll(*platform, "/", "-"))
+	case "kind-node-image":
+		fmt.Println(profile.KindNodeImage)
+	default:
+		return fmt.Errorf("unsupported Kubernetes metadata field %q", *field)
+	}
 	return nil
 }
 

@@ -2,6 +2,8 @@
 set -eu
 
 kind=$(./hack/setup-kind.sh)
+go_command=${GO:-go}
+kubernetes_minor=${K8S_VERSION:-$($go_command run ./tools/releasectl kubernetes --field minimum-supported)}
 cluster=${KIND_CLUSTER:-egressfox-e2e}
 namespace=egressfox-e2e
 image=${EGRESSFOX_E2E_IMAGE:-egressfox:e2e}
@@ -11,7 +13,7 @@ if [ "${KIND_EXPERIMENTAL_PROVIDER:-}" = podman ] && [ "${image#*/}" = "$image" 
 fi
 image_repository=${image%:*}
 image_tag=${image##*:}
-node_image=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+node_image=$($go_command run ./tools/releasectl kubernetes --version "$kubernetes_minor" --field kind-node-image)
 image_archive=""
 cleanup() {
 	status=$?
@@ -27,6 +29,10 @@ trap cleanup EXIT INT TERM
 cleanup
 "$container_cli" build -t "$image" .
 "$kind" create cluster --name "$cluster" --image "$node_image" --wait 120s
+kubectl get --raw /version | tr -d '[:space:]' | grep -F "\"gitVersion\":\"v${kubernetes_minor}." >/dev/null || {
+  echo "kind server version does not match pinned Kubernetes $kubernetes_minor" >&2
+  exit 1
+}
 if [ "${KIND_EXPERIMENTAL_PROVIDER:-}" = podman ]; then
   image_archive="${TMPDIR:-/tmp}/egressfox-kind-image.$$.tar"
   "$container_cli" save -o "$image_archive" "$image"

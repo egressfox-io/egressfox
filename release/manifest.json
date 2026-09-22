@@ -1,8 +1,47 @@
 {
   "schemaVersion": 1,
   "release": {
+    "developmentVersion": "v0.1.0-dev.1",
     "platforms": ["linux/amd64", "linux/arm64"],
-    "kubernetesVersion": "1.37.0"
+    "kubernetes": {
+      "minimumSupported": "1.32",
+      "releaseValidation": ["1.32", "1.34", "1.37"],
+      "profiles": [
+        {
+          "minor": "1.32",
+          "envtestVersion": "1.32.0",
+          "envtestSHA512": {
+            "darwin/amd64": "a7824ff8ae9c5062bcbde243a7a3a1c76e02de0c92e2b332daf1954405aeded856023f277d74197862d0d5909e9e1dca451b5f2e84796e451ad6011ec98f8433",
+            "darwin/arm64": "728c66ef9c2503dd1eda1a398f57a04829ab7033e1007b5e23d6cc865e8ac5a753e4986847c8f5b76b3497ae4e3e468120e25ec5dfe3a3b1901d3ff20b97a7f9",
+            "linux/amd64": "3a9584af30d041c42893d8f7a860aa434976d4aee479cf2e9a50a9e5677dcc83d3012a2146a6feb5b2e95a7b3c6f657ae9c591745981262da8b06e4b61dcdf17",
+            "linux/arm64": "ce6e44c5a3e99b595138cde396c1b179095db477be8ccd9f05cbd135bc15c391000d6e146907922872f0199b9c13a7e8ab6b5402f8cae3522514f0ef65914000"
+          },
+          "kindNodeImage": "kindest/node:v1.32.11@sha256:5fc52d52a7b9574015299724bd68f183702956aa4a2116ae75a63cb574b35af8"
+        },
+        {
+          "minor": "1.34",
+          "envtestVersion": "1.34.0",
+          "envtestSHA512": {
+            "darwin/amd64": "e92e41a183e8504d3763bd5486418167ce4f6204556d3a53c7abc2e538da639db940f8a1764030d8bd5c5658cbc3eca35e1c1749290b74fc1653da6e517fc995",
+            "darwin/arm64": "b841e5ffa351b2ea1748093b612bc63e23a36362c90304cec498f1ee29c2858b63c146012a562f39d92031dba68a819a381d71c348b567c9de986c069edfce04",
+            "linux/amd64": "445b4dd543963744925fffd5225413d852821442b244db710057abc3a98cf5a1e139a43b4b97949010360a19a8ffab4971db97daba60d72ddf1cc260cbfe3844",
+            "linux/arm64": "06f3b72b133595f463849d8cde7c36307e2e51e1709bded1659694c1bd39491d3133d534d33a7c38df1136c314d1e1ad483684c519c0694f505b703ed2e44ef9"
+          },
+          "kindNodeImage": "kindest/node:v1.34.3@sha256:08497ee19eace7b4b5348db5c6a1591d7752b164530a36f855cb0f2bdcbadd48"
+        },
+        {
+          "minor": "1.37",
+          "envtestVersion": "1.37.0",
+          "envtestSHA512": {
+            "darwin/amd64": "19a2a5376a8aa57a7b25ec5198834db29bf2ba0d6ff572d7f45ba683b13fb14c3ebec8069e92db66c39f1c7a9cff1bc2be879e2aacdc9fa8b8a7e861959bdf7b",
+            "darwin/arm64": "fb38cfacdd71b5e97a4d4cceac861af5f55069cf783f0e49cf181bfc32eb3e557c2091a534dc5d38f1b92c5ba142bc1979f215a5385b3630ea6a661be6fa161b",
+            "linux/amd64": "1d1c453633b72c161a5d5a886cde7ac850be1a2ac796a9e1d4ffacacc64868295bdd2d57aa66cd0c158f5ce510f5dfe3fbc61ac21bd3dcfb875bd70658aa663a",
+            "linux/arm64": "ae6a670502988200b0131c943758cfd3d3a58cf4e6247ef7f0e6a6467f1cd9a333c802e86101f0446b1b92a0e327387224e1e44fe1a4693da0929c6e529cfe9a"
+          },
+          "kindNodeImage": "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5"
+        }
+      ]
+    }
   },
   "engines": [
     {

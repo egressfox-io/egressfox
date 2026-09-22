@@ -2,9 +2,9 @@ apiVersion: v2
 name: egressfox
 description: Namespace-scoped EgressFox managed and BYO egress control plane
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
-kubeVersion: ">=1.37.0-0"
+version: 0.1.0-dev.1
+appVersion: "0.1.0-dev.1"
+kubeVersion: ">=1.32.0-0"
 home: https://github.com/egressfox-io/egressfox
 sources:
   - https://github.com/egressfox-io/egressfox

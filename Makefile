@@ -3,12 +3,17 @@
 GO ?= go
 GOFMT ?= gofmt
 GOVULNCHECK_VERSION := v1.8.0
-ENVTEST_VERSION := 1.37.0
+K8S_VERSION ?= 1.32
+K8S_RELEASE_VALIDATION := $(shell $(GO) run ./tools/releasectl kubernetes --field release-validation)
 HELM ?= helm
 DOCKER ?= docker
 IMG ?= egressfox:dev
+BUILD_VERSION ?= $(shell $(GO) run ./tools/releasectl build-version --root .)
+BUILD_REVISION ?= $(shell git rev-parse HEAD)
+BUILD_CREATED ?= $(shell git show -s --format=%cI HEAD)
+BUILD_LDFLAGS := -s -w -X github.com/egressfox-io/egressfox/internal/buildinfo.version=$(BUILD_VERSION) -X github.com/egressfox-io/egressfox/internal/buildinfo.revision=$(BUILD_REVISION) -X github.com/egressfox-io/egressfox/internal/buildinfo.created=$(BUILD_CREATED)
 
-.PHONY: help fmt fmt-check vet lint test test-envtest build generate manifests generate-check helm-check docker-build e2e-kind docs check vuln release-validate release-dry-run
+.PHONY: help fmt fmt-check vet lint test test-envtest build build-operator build-tools generate manifests generate-check helm-check docker-build e2e-kind k8s-api-compat k8s-e2e-compat k8s-compat docs check vuln release-validate release-dry-run
 
 help:
 	@printf '%s\n' \
@@ -16,10 +21,11 @@ help:
 	  'make fmt        Format Go source' \
 	  'make lint       Check Go formatting and run go vet' \
 	  'make test       Run tests with the race detector' \
-	  'make test-envtest Run API/controller tests against pinned Kubernetes 1.37 envtest' \
+	  'make test-envtest K8S_VERSION=1.32 Run API/controller tests against a pinned supported Kubernetes version' \
 	  'make generate   Regenerate Kubernetes deepcopy code and CRDs/RBAC' \
-	  'make helm-check Lint and render the Helm chart for Kubernetes 1.37' \
+	  'make helm-check K8S_VERSION=1.32 Lint and render the Helm chart for a pinned supported Kubernetes version' \
 	  'make e2e-kind   Run the required kind lifecycle and RBAC suite' \
+	  'make k8s-compat Run envtest, Helm and kind E2E across all release-validation Kubernetes versions' \
 	  'make build      Compile the operator and repository tools' \
 	  'make docs       Check repository Markdown links and local heading anchors' \
 	  'make vuln       Run pinned govulncheck (requires network access)' \
@@ -42,7 +48,7 @@ test:
 	$(GO) test -race -count=1 ./...
 
 test-envtest:
-	@assets="$$(./hack/setup-envtest.sh)"; KUBEBUILDER_ASSETS="$$assets" $(GO) test -race -count=1 ./internal/controller/...
+	@assets="$$(K8S_VERSION=$(K8S_VERSION) ./hack/setup-envtest.sh)"; KUBEBUILDER_ASSETS="$$assets" $(GO) test -race -count=1 ./internal/controller/...
 
 generate:
 	$(GO) tool controller-gen object:headerFile=hack/boilerplate.go.txt paths=./api/...
@@ -56,11 +62,11 @@ generate-check: generate manifests
 	git diff --exit-code -- api config/crd/bases config/rbac/role.yaml charts/egressfox/crds
 
 helm-check:
-	$(HELM) lint charts/egressfox --kube-version $(ENVTEST_VERSION)
-	$(HELM) template egressfox charts/egressfox --namespace egressfox-system --kube-version $(ENVTEST_VERSION) >/dev/null
+	$(HELM) lint charts/egressfox --kube-version $(K8S_VERSION).0
+	$(HELM) template egressfox charts/egressfox --namespace egressfox-system --kube-version $(K8S_VERSION).0 >/dev/null
 
 docker-build:
-	$(DOCKER) build -t $(IMG) .
+	$(DOCKER) build -t $(IMG) --build-arg VERSION=$(BUILD_VERSION) --build-arg REVISION=$(BUILD_REVISION) --build-arg CREATED=$(BUILD_CREATED) .
 
 release-validate:
 	$(GO) run ./tools/releasectl validate --root .
@@ -69,10 +75,29 @@ release-dry-run: release-validate
 	./hack/release-dry-run.sh
 
 e2e-kind:
-	./hack/e2e-kind.sh
+	K8S_VERSION=$(K8S_VERSION) ./hack/e2e-kind.sh
+
+k8s-api-compat:
+	@set -e; for version in $(K8S_RELEASE_VALIDATION); do \
+	  $(MAKE) test-envtest K8S_VERSION=$$version; \
+	  $(MAKE) helm-check K8S_VERSION=$$version; \
+	done
+
+k8s-e2e-compat:
+	@set -e; for version in $(K8S_RELEASE_VALIDATION); do \
+	  $(MAKE) e2e-kind K8S_VERSION=$$version; \
+	done
+
+k8s-compat: k8s-api-compat k8s-e2e-compat
 
 build:
-	$(GO) build -o bin/ ./...
+	$(MAKE) build-operator build-tools
+
+build-operator:
+	$(GO) build -trimpath -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o bin/egressfox-operator ./cmd/operator
+
+build-tools:
+	$(GO) build -o bin/releasectl ./tools/releasectl
 
 docs:
 	$(GO) run ./tools/checkdocs
