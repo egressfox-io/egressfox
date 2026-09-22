@@ -36,7 +36,7 @@ RUN for dependency in $(/out/releasectl overrides --manifest /src/release/manife
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false \
       -ldflags="-s -w -buildid= -X github.com/sagernet/sing-box/constant.Version=1.14.1" -o /out/egressfox-engine-s ./cmd/sing-box
 
-FROM --platform=$BUILDPLATFORM alpine:3.23.6@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0 AS materials
+FROM --platform=$BUILDPLATFORM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS materials
 RUN apk add --no-cache ca-certificates=20260909-r0
 COPY --from=build /out/releasectl /usr/local/bin/releasectl
 COPY release/manifest.json /release/manifest.json
