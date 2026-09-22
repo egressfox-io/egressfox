@@ -3,10 +3,11 @@
 EgressFox is a Go control plane that derives desired Mihomo/sing-box configuration.
 M1–M5 provide the Kubernetes-independent endpoint, source, render, probe, history,
 selection and reconciliation pipeline. M6 adds a namespace-scoped BYO operator,
-generated alpha CRDs, owned Secret publication and Helm delivery. There is no
-product CLI, managed engine workload, activation acknowledgment or HA topology.
-The P1 product sequence is designed in `docs/roadmap/p1.md`; M7 is the next
-implementation milestone, but no P1 behavior exists yet.
+generated alpha CRDs, owned Secret publication and Helm delivery. M7 adds explicit
+single-replica managed Mihomo/sing-box workloads, authenticated ClusterIP SOCKS and
+exact-generation activation while preserving BYO. There is no product CLI, managed
+source refresh, rich routing or HA topology. The P1 product sequence is designed in
+`docs/roadmap/p1.md`; M8 is the next implementation milestone.
 Read the [documentation map](docs/README.md),
 [architecture](docs/architecture.md), and [current roadmap](docs/roadmap/README.md)
 before implementation. Planned features are not existing behavior.
@@ -74,5 +75,5 @@ SQLite integration, envtest, and real-cluster/traffic tests. Do not claim
 unavailable checks passed.
 Complete the workflow's definition of done before handoff. Completed execution
 records are indexed in [execution plans](docs/plans/README.md); the
-[P1 roadmap](docs/roadmap/p1.md) identifies M7 managed gateway/activation as the
+[P1 roadmap](docs/roadmap/p1.md) identifies M8 resilient HTTP source refresh as the
 next bounded implementation milestone.
