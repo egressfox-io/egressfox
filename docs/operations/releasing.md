@@ -30,8 +30,10 @@ A published version is immutable: one version, one commit, one image digest, one
 release file set. Publication refuses a version whose GitHub Release already exists
 and never clobbers existing assets, so a change requires the next version
 (`v0.1.0-dev.1` → `v0.1.0-dev.2` → `v0.1.0-alpha.1`). Neither the release workflow nor
-a maintainer recovery step deletes or edits a published release. `make release-validate`
-checks that the workflow keeps enforcing this contract.
+a maintainer recovery step deletes or edits a published release. Publication is
+strictly tag-bound and additionally requires a clean source tree and approval of the
+protected `release` environment; `make release-validate` checks that the workflow
+keeps enforcing this contract.
 
 ## Inputs and reproducibility
 
@@ -65,18 +67,27 @@ integrity.
 
 ## Non-publishing dry run
 
-Run from a clean tagged checkout for release evidence:
+Run release qualification from a clean candidate commit:
 
 ```sh
 VERSION=v0.1.0-dev.1 make release-dry-run
 ```
 
-The requested version must be the release tag on `HEAD` and the working tree must
-contain no non-ignored change; otherwise the dry run fails closed before building
-anything. In CI the tag exists before validation; locally it must exist first, and
-the tag is never created or published by this repository tooling. Ignored output
-under `dist/`, `.cache/` and `bin/` never counts as a source change, so repeated dry
-runs stay repeatable. There is deliberately no dirty override: commit or stash first.
+The requested version must be the planned release version that
+`release/manifest.json` and the chart declare, and the working tree must contain no
+non-ignored change; otherwise the dry run fails closed before building anything. It
+does **not** require the Git tag: a dry run is pre-publication qualification, so the
+tag is created afterwards, for publication only, and this repository tooling never
+creates or pushes it. Ignored output under `dist/`, `.cache/` and `bin/` never counts
+as a source change, so repeated dry runs stay repeatable. There is deliberately no
+dirty override: commit or stash first.
+
+Because qualification can run on an untagged commit, it reports the commit-derived
+identity `0.1.0-dev.1+g<commit>`; the release workflow, which runs from the exact tag,
+builds artifacts labeled exactly `0.1.0-dev.1`. Publication itself is strictly
+tag-bound: it requires an existing exact Git tag on the selected commit, a clean
+source tree rechecked in the privileged job, approval of the protected `release`
+environment, and a version that has never been published.
 
 This bootstraps checksum-pinned Helm 4.3.0, Syft 1.52.0, Grype 0.119.0 and Cosign
 3.1.3 into the ignored `.cache` directory; validates the manifest/notices; builds
@@ -95,10 +106,11 @@ uses a temporary local Podman manifest instead of Docker Buildx.
 
 The workflow `.github/workflows/release.yml` exposes the same validation manually,
 including `make k8s-compat` across Kubernetes 1.32, 1.34 and 1.37.
-With `publish=false` it can run from a branch and has read-only repository permission.
-With `publish=true`, the selected ref must be the exact existing version tag, the
-validation job must pass, and a maintainer must approve the protected `release`
-environment.
+With `publish=false` it can run from a branch and has read-only repository permission;
+the requested version must still match the planned release version. Publication
+additionally requires the selected ref to be the exact existing version tag, an
+unpublished version, a clean source tree rechecked in the privileged job, and a
+maintainer's approval of the protected `release` environment.
 
 ## Produced artifacts
 
@@ -172,9 +184,11 @@ does not establish trust: the repository and workflow identity must match.
 
 ## First-release acceptance checklist
 
-- [ ] Tagged checkout and working tree are clean; tag/version/commit/timestamp agree.
-- [ ] The requested version is the release tag on `HEAD`, and no GitHub Release or
-  asset for it exists; a published version is never replaced, recreated or reuploaded.
+- [ ] Release qualification ran from a clean candidate commit with `VERSION` equal to
+  the planned release version; the published tag is created afterwards on that commit.
+- [ ] The published version is the exact existing tag on that commit, the source tree
+  is clean, and no GitHub Release or asset for it exists; a published version is never
+  replaced, recreated or reuploaded.
 - [ ] `make generate`, `make manifests`, `make check`, `make k8s-compat`,
   `make vuln` and `git diff --check` pass.
 - [ ] kind install/upgrade/RBAC/traffic/LKG E2E passes on Kubernetes 1.32, 1.34

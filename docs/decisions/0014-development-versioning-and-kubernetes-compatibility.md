@@ -54,10 +54,18 @@ non-ignored changes appends `.dirty` to that metadata. SemVer build metadata doe
 affect precedence and is never a publishable release tag. Ignored build/release
 output does not mark a tree dirty. `make build` injects that bounded version together
 with full revision and commit timestamp into the operator's existing `--version`
-output. A tagged commit reports exactly its release version with no metadata, is
-never built from a dirty tree, and a release dry run requires both an explicit
-allowed tag that is present on `HEAD` and a clean working tree, so qualification
-artifacts cannot accidentally describe an unreleased or modified source state.
+output. A tagged commit reports exactly its release version with no metadata and is
+never built from a dirty tree.
+
+Qualification and publication have different requirements, and the tag is only part
+of publication. A release dry run is pre-publication qualification: it requires a
+clean working tree and a requested version equal to the planned release version in
+the manifest and chart, and deliberately works from an untagged candidate commit with
+the commit-derived identity above. Publication is strictly tag-bound: it requires the
+exact existing Git tag on the selected commit, a clean source tree rechecked in the
+privileged job, approval of the protected `release` environment, and a version that
+has never been published. Creating the tag is therefore part of publishing, not of
+building qualification evidence.
 
 The Kubernetes compatibility contract has a tested minimum of 1.32 and release
 qualification profiles 1.32, 1.34 and 1.37. `make test-envtest`, `make helm-check`
@@ -80,11 +88,12 @@ artifact provenance and running the full matrix before documenting support. The
 oldest profile makes ordinary CI more conservative while keeping expensive
 multi-cluster E2E out of every pull request.
 
-Version identity now fails closed at every boundary: a dirty tree cannot produce an
-official or release-qualification identity, an untagged commit cannot claim a
-released version, and a published version cannot be published again. Correcting a
-defective snapshot therefore costs a version increment, and immutable release
-identity stays worth verifying.
+Version identity now fails closed at every boundary: a dirty tree cannot produce a
+release-qualification identity, a version that is not the planned release version
+cannot be qualified or published, and a published version cannot be published again.
+Correcting a defective snapshot therefore costs a version increment, while
+pre-publication qualification stays possible on the reviewed candidate commit before
+its tag exists.
 
 The existing [ADR 0012](0012-release-distribution-and-provenance.md) remains the
 authority for redistribution, SBOMs, vulnerability handling, signing and

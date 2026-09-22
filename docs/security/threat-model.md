@@ -79,7 +79,7 @@ Trust boundaries:
 | Compromised GitHub Action or untrusted pull request seeking credentials | Full Action commit SHAs, `persist-credentials: false`, read-only PR/validation permissions, no PR release job, exact-tag check, protected `release` environment and job-local write/OIDC permissions |
 | Registry, signing identity or release-workflow compromise | Verify immutable digest plus expected repository/workflow/tag certificate identity and provenance; protected reviewers and transparency records limit but do not eliminate maintainer/GitHub compromise |
 | Duplicate, replaced or re-generated release artifacts for one version | Immutable published versions: publication refuses an existing version, never clobbers or recreates assets, and validates that workflow contract; a defective publication is superseded by the next version |
-| Artifact mislabeled as an official release while built from modified source | Build identity carries the source commit, appends `.dirty` for non-ignored working-tree changes, refuses a release identity from a dirty tree, and fails release qualification unless `VERSION` is the tag on `HEAD` with a clean tree |
+| Artifact mislabeled as an official release while built from modified source | Build identity carries the source commit and appends `.dirty` for non-ignored working-tree changes; release qualification fails closed unless the requested version is the planned release version and the tree is clean, and tagged publication additionally requires the exact existing tag |
 
 ## P1 controls and design gates
 

@@ -172,14 +172,17 @@ func checkReleaseVersion(version, revision, created string) (string, error) {
 }
 
 // buildVersion resolves the identity an artifact built from root must report.
-// --require-clean makes the check fail closed for release qualification and
-// --version requires the exact official version of the target commit.
+// buildVersion resolves the identity an artifact built from root must report.
+// --require-clean makes release qualification fail closed on any non-ignored
+// source change, and --version requires the resolved version to be that planned
+// release version. An untagged candidate commit is allowed here: pre-publication
+// qualification does not need the Git tag, which only publication requires.
 func buildVersion(arguments []string) (string, error) {
 	flags := flag.NewFlagSet("build-version", flag.ContinueOnError)
 	root := flags.String("root", ".", "repository root")
 	manifestName := flags.String("manifest", defaultManifest, "release manifest relative to root")
 	developmentVersion := flags.String("development-version", "", "planned development version; defaults to the release manifest value")
-	expected := flags.String("version", "", "required official release version; any other resolved identity fails")
+	expected := flags.String("version", "", "required planned release version; any other resolved version fails")
 	requireClean := flags.Bool("require-clean", false, "fail unless the source tree has no non-ignored changes")
 	if err := flags.Parse(arguments); err != nil {
 		return "", err
@@ -187,15 +190,15 @@ func buildVersion(arguments []string) (string, error) {
 	if flags.NArg() != 0 {
 		return "", fmt.Errorf("build-version accepts no positional arguments")
 	}
-	base := *developmentVersion
-	if base == "" {
+	declared := *developmentVersion
+	if declared == "" {
 		manifest, err := releasemanifest.Load(filepath.Join(*root, *manifestName))
 		if err != nil {
 			return "", err
 		}
-		base = manifest.Release.DevelopmentVersion
+		declared = manifest.Release.DevelopmentVersion
 	}
-	identity, err := buildinfo.ResolveIdentity(*root, base)
+	identity, err := buildinfo.ResolveIdentity(*root, declared)
 	if err != nil {
 		return "", err
 	}
@@ -207,13 +210,16 @@ func buildVersion(arguments []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		// Resolved identities carry build metadata when the exact commit has no
-		// release tag; that metadata does not change version precedence.
-		if resolved := strings.SplitN(identity.Version, "+", 2)[0]; resolved != wanted.Normalized {
-			if identity.Tagged {
-				return "", fmt.Errorf("release identity mismatch: requested %s but commit %s carries the release tag %s", wanted.Normalized, identity.Revision, identity.Version)
-			}
-			return "", fmt.Errorf("release identity mismatch: requested %s but this commit is not tagged with it and resolves to %s", wanted.Normalized, identity.EffectiveVersion())
+		// An untagged candidate commit appends build metadata; that metadata does
+		// not change version precedence. A commit whose release tag disagrees with
+		// the requested version is a real conflict and fails.
+		resolved := strings.SplitN(identity.Version, "+", 2)[0]
+		switch {
+		case resolved == wanted.Normalized:
+		case identity.Tagged:
+			return "", fmt.Errorf("release version conflict: requested %s but commit %s carries the release tag %s", wanted.Normalized, identity.Revision, identity.Version)
+		default:
+			return "", fmt.Errorf("release version mismatch: requested %s but the planned release version is %s (resolved identity %s)", wanted.Normalized, resolved, identity.EffectiveVersion())
 		}
 	}
 	return identity.EffectiveVersion(), nil

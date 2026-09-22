@@ -71,10 +71,11 @@ func (identity Identity) EffectiveVersion() string {
 }
 
 // ResolveIdentity determines the build identity of the repository at root.
-// developmentVersion is the planned development version from the release
-// manifest. A commit carrying an official release tag wins over the
-// development version, but a dirty tree never produces an official identity
-// and an untagged commit never claims a released one.
+// developmentVersion is the planned release version from the release manifest.
+// A commit carrying an official release tag reports that exact version;
+// otherwise the identity is the planned version plus source build metadata. A
+// dirty tree never produces an official identity, and an ambiguous or
+// conflicting tag fails instead of guessing.
 func ResolveIdentity(root, developmentVersion string) (Identity, error) {
 	parsed, err := ParseVersion(developmentVersion)
 	if err != nil {

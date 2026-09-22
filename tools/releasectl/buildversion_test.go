@@ -95,27 +95,67 @@ func TestBuildVersionRequireCleanRejectsDirtyTree(t *testing.T) {
 	}
 }
 
-func TestBuildVersionRequiresExactVersion(t *testing.T) {
+// TestBuildVersionAllowsUntaggedQualification pins the pre-publication contract:
+// release qualification runs from a clean candidate commit that does not carry
+// the version tag yet, and still reports the commit-derived identity.
+func TestBuildVersionAllowsUntaggedQualification(t *testing.T) {
 	root := identityFixture(t)
 	revision := fixtureGit(t, root, "rev-parse", "HEAD")
 	wantUntagged := "0.1.0-dev.1+g" + revision[:12]
 
 	for _, version := range []string{"0.1.0-dev.1", "v0.1.0-dev.1"} {
-		identity, err := resolveFixtureVersion(t, root, "--version", version)
+		identity, err := resolveFixtureVersion(t, root, "--version", version, "--require-clean")
 		if err != nil {
-			t.Fatalf("requested %s: %v", version, err)
+			t.Fatalf("clean untagged candidate must qualify for %s: %v", version, err)
 		}
 		if identity != wantUntagged {
 			t.Fatalf("requested %s resolved to %q, want %q", version, identity, wantUntagged)
 		}
 	}
-	for _, version := range []string{"0.1.0-dev.2", "0.1.0"} {
-		if identity, err := resolveFixtureVersion(t, root, "--version", version); err == nil {
-			t.Fatalf("untagged commit must not satisfy requested version %s, got %q", version, identity)
-		}
-	}
 	if _, err := resolveFixtureVersion(t, root, "--version", "0.1.0-dev.1.dirty"); err == nil {
 		t.Fatal("build metadata must not be accepted as a release version")
+	}
+}
+
+// TestBuildVersionRejectsUndeclaredVersion keeps qualification tied to the
+// planned release version instead of any inventable number.
+func TestBuildVersionRejectsUndeclaredVersion(t *testing.T) {
+	root := identityFixture(t)
+	for _, version := range []string{"0.1.0-dev.2", "0.1.0", "0.2.0-dev.1"} {
+		if identity, err := resolveFixtureVersion(t, root, "--version", version); err == nil {
+			t.Fatalf("planned version 0.1.0-dev.1 must not qualify as %s, got %q", version, identity)
+		}
+	}
+}
+
+// TestRereleaseWithAdvancedManifestWorks covers the post-publication workflow:
+// the planned version advances, and the next candidate qualifies without any
+// temporary tag while the published version stays untouched.
+func TestReleaseWithAdvancedManifestWorks(t *testing.T) {
+	root := identityFixture(t)
+	revision := fixtureGit(t, root, "rev-parse", "HEAD")
+	identity, err := buildVersion([]string{"--root", root, "--development-version", "v0.1.0-dev.2", "--version", "0.1.0-dev.2", "--require-clean"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "0.1.0-dev.2+g" + revision[:12]; identity != want {
+		t.Fatalf("next snapshot identity = %q, want %q", identity, want)
+	}
+	if _, err := buildVersion([]string{"--root", root, "--development-version", "v0.1.0-dev.2", "--version", "0.1.0-dev.1"}); err == nil {
+		t.Fatal("a superseded version must not qualify from the advanced development line")
+	}
+}
+
+// TestBuildVersionRejectsConflictingReleaseTag fails a commit whose release tag
+// disagrees with the requested version instead of silently relabeling it.
+func TestBuildVersionRejectsConflictingReleaseTag(t *testing.T) {
+	root := identityFixture(t)
+	command := exec.Command("git", "-C", root, "tag", "v0.1.0-dev.2")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git tag: %v\n%s", err, output)
+	}
+	if identity, err := resolveFixtureVersion(t, root, "--version", "0.1.0-dev.1"); err == nil {
+		t.Fatalf("conflicting release tag must fail, got %q", identity)
 	}
 }
 
@@ -131,6 +171,9 @@ func TestBuildVersionTaggedReleaseIsExact(t *testing.T) {
 	}
 	if identity != "0.1.0-dev.1" {
 		t.Fatalf("tagged build version = %q, want 0.1.0-dev.1", identity)
+	}
+	if strings.Contains(identity, "+") || strings.Contains(identity, ".dirty") {
+		t.Fatalf("tagged build version %q must not carry build metadata", identity)
 	}
 	if _, err := resolveFixtureVersion(t, root, "--version", "0.1.0-dev.2"); err == nil {
 		t.Fatal("a tagged commit must reject a different requested version")

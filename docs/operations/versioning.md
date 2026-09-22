@@ -51,18 +51,36 @@ assets are uploaded without clobbering, so an existing version can be neither
 replaced nor recreated. Recovery from a bad publication is a new version, never an
 edit or deletion of a published one.
 
+## Qualification and publication requirements
+
+Pre-publication qualification and publication have different requirements. A dry run
+prepares and inspects candidate artifacts; it does not need a Git tag, because the
+tag is created only for publication and is not a prerequisite for building evidence.
+
+| Step | Required |
+| --- | --- |
+| `make release-dry-run` | Clean worktree, and `VERSION` equal to the planned release version (`release.developmentVersion` in `release/manifest.json`, which the chart mirrors) |
+| Publication | Exact existing Git tag for that version on the selected commit, clean source, approval of the protected `release` environment, and an immutable version that has never been published |
+
+Dry-run qualification on a clean untagged commit reports the commit-derived identity
+`0.1.0-dev.1+g<commit>` in the artifacts. Publication is strictly tag-bound: the
+protected workflow runs only from the exact tag, rechecks the tag and a clean tree in
+the privileged job, and refuses a version that already exists.
+
 ## Maintainer release sequence
 
-1. Choose an allowed version and create the matching signed or reviewed Git tag by
-   the project’s normal maintainer process; do not create it from a pull request.
-2. Run `VERSION=vX.Y.Z-alpha.N make release-dry-run` from the exact tagged commit
-   with a clean working tree. The explicit version must be the release tag on `HEAD`,
-   and the dry run fails closed on any non-ignored source change. There is no dirty
-   override; commit or stash first.
+1. Choose an allowed version and update `release/manifest.json` plus the chart's
+   `version`/`appVersion` to it in a reviewed commit; do not tag from a pull request.
+2. Run `VERSION=vX.Y.Z-alpha.N make release-dry-run` from that clean commit. The
+   requested version must match the planned release version, and the dry run fails
+   closed on any non-ignored source change. No Git tag is needed for this step, and
+   there is no dirty override: commit or stash first.
 3. Review the release acceptance checklist, compatibility evidence, SBOMs,
    vulnerability reports, notices and generated GitHub release notes.
-4. Manually dispatch the protected release workflow on that exact tag. Its
-   non-publishing validation is separate from the privileged publication job.
+4. Create the matching signed or reviewed Git tag on that exact reviewed commit by
+   the project’s normal maintainer process, then manually dispatch the protected
+   release workflow on the tag. Its non-publishing validation is separate from the
+   privileged publication job, which refuses an existing release.
 5. For a published release, verify the tag, immutable image digest, provenance,
    signatures, checksums and Helm metadata as described in the
    [release guide](releasing.md).
@@ -81,8 +99,10 @@ commit that manually edits chart metadata for each release.
 
 `make release-validate` also runs `releasectl release-guard`, which fails when the
 publication workflow stops refusing an existing release, reintroduces asset
-clobbering, or loses its tag, clean-tree and protected-environment checks. Because
-`make check` and the release validation job both depend on it, an integrity
-regression fails ordinary CI as well as release qualification. Ordinary dry runs and
-local `dist/` directories remain repeatable because immutability applies to
-publication, not to local output.
+clobbering, or loses its exact-tag, clean-tree, publish-input or protected-environment
+checks. The guard reads workflow structure and shell tokens, so harmless YAML
+formatting changes never fail CI while a lost guarantee does. Because `make check`
+and the release validation job both depend on it, an integrity regression fails
+ordinary CI as well as release qualification. Ordinary dry runs and local `dist/`
+directories remain repeatable because immutability applies to publication, not to
+local output.

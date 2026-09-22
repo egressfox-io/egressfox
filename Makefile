@@ -31,7 +31,7 @@ help:
 	  'make docs       Check repository Markdown links and local heading anchors' \
 	  'make vuln       Run pinned govulncheck (requires network access)' \
 	  'make release-validate Validate release manifests, notices, version flow, and publication immutability' \
-	  'make release-dry-run VERSION=vX.Y.Z[-dev.N] Build release artifacts from a clean tagged tree without publishing'
+	  'make release-dry-run VERSION=vX.Y.Z[-dev.N] Qualify a clean candidate commit for the planned version without publishing'
 
 fmt:
 	$(GOFMT) -w $$(git ls-files --cached --others --exclude-standard -- '*.go')

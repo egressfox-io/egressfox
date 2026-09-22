@@ -105,10 +105,14 @@ Kubernetes contract.
   `0.1.0-dev.1+g<commit>`; the same commit with non-ignored changes →
   `0.1.0-dev.1+g<commit>.dirty`. Ignored `dist/`, `.cache/` and `bin/` output never
   marks the tree dirty, and a tagged identity from a dirty tree fails.
-- Release qualification requires a clean, exactly tagged commit.
-  `hack/release-dry-run.sh` fails closed unless `VERSION` is the release tag on
-  `HEAD` and `git status --porcelain` is empty. There is no dirty override; local
-  `dist/` output stays repeatable because immutability applies to publication.
-- Focused tests cover the clean, dirty, tagged, ambiguous-tag, ambiguous-version,
-  dirty-qualification, and workflow-refusal cases, plus a mutation-driven check of
-  the publication contract.
+- Release qualification is version-bound, not tag-bound.
+  `hack/release-dry-run.sh` fails closed unless `VERSION` equals the planned release
+  version in `release/manifest.json`/the chart and the tree is clean, so a dry run
+  works from a reviewed candidate commit before its tag exists. Publication stays
+  strictly tag-bound: the privileged job requires the exact existing tag, a clean
+  tree, the protected environment and an unpublished version. There is no dirty
+  override; local `dist/` output stays repeatable because immutability applies to
+  publication.
+- Focused tests cover the clean, dirty, tagged, ambiguous-tag, undeclared-version,
+  dirty-qualification, untagged-qualification and next-snapshot workflows, plus the
+  publication contract.
