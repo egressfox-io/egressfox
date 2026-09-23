@@ -15,7 +15,9 @@ release process for the first development version with Q12 resolved, exact sourc
 SBOMs, vulnerability gates, keyless signing/provenance design and a non-publishing
 dry run. P1 M7 adds the first explicit managed engine path and exact-generation
 activation; M8 adds managed conditional HTTP source refresh with a protected
-time-bounded cache. There is still no product CLI, cross-namespace API or HA topology.
+time-bounded cache, and its compatibility completion adds request profiles and
+bounded URI/JSON subscription decoding. There is still no product CLI,
+cross-namespace API or HA topology.
 
 **Next implementation milestone: P1 M9.** The authoritative
 [P1 product roadmap](p1.md) now orders managed runtime/activation, resilient source

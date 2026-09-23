@@ -26,6 +26,8 @@ type SourceFormat string
 const (
 	SourceFormatURIList       SourceFormat = "URIList"
 	SourceFormatBase64URIList SourceFormat = "Base64URIList"
+	SourceFormatJSON          SourceFormat = "JSON"
+	SourceFormatAuto          SourceFormat = "Auto"
 )
 
 type SelectionStrategy string
@@ -59,7 +61,7 @@ type SubscriptionSource struct {
 	// HTTP enables managed refresh from a Secret-backed URL.
 	// +optional
 	HTTP *HTTPSource `json:"http,omitempty"`
-	// +kubebuilder:validation:Enum=URIList;Base64URIList
+	// +kubebuilder:validation:Enum=URIList;Base64URIList;JSON;Auto
 	Format SourceFormat `json:"format"`
 	// AllowEmpty accepts an authoritative empty snapshot for this source.
 	// +optional
@@ -73,6 +75,14 @@ type HTTPSource struct {
 	URLSecretRef SecretKeyReference `json:"urlSecretRef"`
 	// +optional
 	AuthorizationSecretRef *SecretKeyReference `json:"authorizationSecretRef,omitempty"`
+	// SecretHeaders supplies credential-bearing provider headers from same-namespace Secrets.
+	// +kubebuilder:validation:MaxItems=8
+	// +optional
+	SecretHeaders []HTTPSecretHeader `json:"secretHeaders,omitempty"`
+	// Profile controls the static client identification sent to a subscription provider.
+	// Omission uses the documented default profile. Clean mode sends none of it.
+	// +optional
+	Profile *HTTPClientProfile `json:"profile,omitempty"`
 	// +optional
 	AllowHTTP bool `json:"allowHTTP,omitempty"`
 	// +optional
@@ -84,6 +94,42 @@ type HTTPSource struct {
 	// +kubebuilder:default="24h"
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1m') && duration(self) <= duration('168h')",message="maxStale must be between 1m and 168h"
 	MaxStale *metav1.Duration `json:"maxStale,omitempty"`
+}
+
+type HTTPSecretHeader struct {
+	// Name is a single HTTP header name, distinct from profile and transport fields.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	Name      string             `json:"name"`
+	SecretRef SecretKeyReference `json:"secretRef"`
+}
+
+// HTTPClientProfile contains non-credential static request attributes. Credential
+// headers remain Secret-backed through AuthorizationSecretRef.
+type HTTPClientProfile struct {
+	// +kubebuilder:validation:Enum=Default;Clean
+	// +optional
+	Mode string `json:"mode,omitempty"`
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
+	UserAgent string `json:"userAgent,omitempty"`
+	// +kubebuilder:validation:MaxLength=128
+	// +optional
+	HWID string `json:"hwid,omitempty"`
+	// +kubebuilder:validation:MaxLength=64
+	// +optional
+	DeviceOS string `json:"deviceOS,omitempty"`
+	// +kubebuilder:validation:MaxLength=64
+	// +optional
+	OSVersion string `json:"osVersion,omitempty"`
+	// +kubebuilder:validation:MaxLength=128
+	// +optional
+	DeviceModel string `json:"deviceModel,omitempty"`
+	// Headers are bounded non-credential static headers. Profile and transport
+	// controlled names are rejected by the adapter.
+	// +kubebuilder:validation:MaxProperties=16
+	// +optional
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 type ProbeSpec struct {

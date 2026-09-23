@@ -150,6 +150,16 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	if err != nil || stableAfter.Fingerprint != stable.Fingerprint {
 		t.Fatal("metadata-only update invalidated cache")
 	}
+	changedProfile := pool.DeepCopy()
+	changedProfile.Spec.Sources[0].HTTP.Profile = &egressv1alpha1.HTTPClientProfile{HWID: "fixed-client-identity"}
+	profileConfig, err := operatoradapter.ResolveHTTP(ctx, reader, changedProfile, changedProfile.Spec.Sources[0])
+	if err != nil || profileConfig.Fingerprint == stable.Fingerprint {
+		t.Fatal("profile change reused cache identity")
+	}
+	profileResult, err := operatoradapter.BuildPoolWithCache(ctx, reader, changedProfile, store, now.Add(4*time.Hour))
+	if err != nil || profileResult.Inventory.Len() != 0 {
+		t.Fatal("profile change reused cached subscription")
+	}
 	changedFormat := pool.DeepCopy()
 	changedFormat.Spec.Sources[0].Format = egressv1alpha1.SourceFormatBase64URIList
 	formatConfig, err := operatoradapter.ResolveHTTP(ctx, reader, changedFormat, changedFormat.Spec.Sources[0])
@@ -234,6 +244,45 @@ func TestHTTP304WithoutCacheFailsAfterOneUnconditionalRetry(t *testing.T) {
 	result, err := operatoradapter.BuildPoolWithCache(ctx, reader, pool, store, time.Now())
 	if err != nil || result.Inventory.Len() != 0 {
 		t.Fatalf("unexpected source state = %+v, %v", result.Sources, err)
+	}
+}
+
+func TestHTTPAutoFormatIgnoresIncorrectContentType(t *testing.T) {
+	uri := "vless://11111111-1111-4111-8111-111111111111@edge.example.com:443?security=tls"
+	body := "[\"" + uri + "\"]"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "auto-pool", Namespace: "egress", UID: "auto-pool-uid"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatAuto, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "value"}, AllowHTTP: true, AllowPrivateNetworks: true}}}}}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"value": []byte(server.URL)}}
+	reader := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(secret, pool).Build()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := state.Open(filepath.Join(dir, "state.db"), state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cache.Close()
+	now := time.Now()
+	if changed, err := operatoradapter.RefreshHTTP(context.Background(), reader, cache, pool, pool.Spec.Sources[0], now); err != nil || !changed {
+		t.Fatalf("JSON with text/plain rejected: %v", err)
+	}
+	result, err := operatoradapter.BuildPoolWithCache(context.Background(), reader, pool, cache, now)
+	if err != nil || result.Inventory.Len() != 1 {
+		t.Fatalf("JSON cache = %d, %v", result.Inventory.Len(), err)
+	}
+	identity := result.Inventory.Records()[0].Identity()
+	body = uri
+	if _, err := operatoradapter.RefreshHTTP(context.Background(), reader, cache, pool, pool.Spec.Sources[0], now.Add(time.Minute)); err != nil {
+		t.Fatalf("URI list rejected under JSON Content-Type: %v", err)
+	}
+	result, err = operatoradapter.BuildPoolWithCache(context.Background(), reader, pool, cache, now.Add(time.Minute))
+	if err != nil || result.Inventory.Len() != 1 || !identity.Equal(result.Inventory.Records()[0].Identity()) {
+		t.Fatal("equivalent JSON and URI responses changed canonical inventory")
 	}
 }
 

@@ -50,6 +50,9 @@ type outbound struct {
 	ServerPort uint16     `json:"server_port,omitempty"`
 	UUID       string     `json:"uuid,omitempty"`
 	Password   string     `json:"password,omitempty"`
+	Security   string     `json:"security,omitempty"`
+	AlterID    *int       `json:"alter_id,omitempty"`
+	Method     string     `json:"method,omitempty"`
 	Network    string     `json:"network,omitempty"`
 	TLS        *tlsConfig `json:"tls,omitempty"`
 	Transport  *transport `json:"transport,omitempty"`
@@ -62,8 +65,9 @@ type tlsConfig struct {
 	Insecure   bool   `json:"insecure"`
 }
 type transport struct {
-	Type string `json:"type"`
-	Path string `json:"path"`
+	Type    string            `json:"type"`
+	Path    string            `json:"path"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 type routeConfig struct {
 	Final                 string `json:"final"`
@@ -114,6 +118,16 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 	case endpoint.ProtocolTrojan:
 		result.Type = "trojan"
 		result.Password = configuration.Credential().Reveal()
+	case endpoint.ProtocolVMess:
+		result.Type = "vmess"
+		result.UUID = configuration.Credential().Reveal()
+		result.Security = configuration.Method()
+		zero := 0
+		result.AlterID = &zero
+	case endpoint.ProtocolShadowsocks:
+		result.Type = "shadowsocks"
+		result.Method = configuration.Method()
+		result.Password = configuration.Credential().Reveal()
 	default:
 		return outbound{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.protocol", Feature: configuration.Protocol().String()}
 	}
@@ -124,6 +138,9 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 	case endpoint.TransportTCP:
 	case endpoint.TransportWebSocket:
 		result.Transport = &transport{Type: "ws", Path: configuration.Transport().WebSocketPath()}
+		if host := configuration.Transport().WebSocketHost(); host != "" {
+			result.Transport.Headers = map[string]string{"Host": host}
+		}
 	default:
 		return outbound{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.transport", Feature: configuration.Transport().Kind().String()}
 	}

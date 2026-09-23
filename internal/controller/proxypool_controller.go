@@ -148,6 +148,9 @@ func (r *ProxyPoolReconciler) SetupWithManager(manager ctrl.Manager) error {
 				if source.HTTP.AuthorizationSecretRef != nil {
 					values = append(values, source.HTTP.AuthorizationSecretRef.Name)
 				}
+				for _, header := range source.HTTP.SecretHeaders {
+					values = append(values, header.SecretRef.Name)
+				}
 			}
 		}
 		values = append(values, pool.Spec.Probe.TargetSecretRef.Name)

@@ -25,6 +25,7 @@ read the owning design and accepted decisions for the area they plan to change.
 | What are the future standalone process, runtime and packaging boundaries? | [Runtime and standalone design](designs/runtime-and-standalone.md) |
 | How do artifacts, external publication, candidate composition and managed activation relate? | [Artifact publication and composition](designs/artifact-publication-and-composition.md) |
 | How should identity, normalization, provenance, and source refresh behave? | [Endpoints and sources](designs/endpoints-and-sources.md) |
+| Which subscription request profiles, envelopes and endpoints work? | [Subscription compatibility matrix](designs/subscription-compatibility.md) |
 | How should probes, history, adaptation, explanation, and metrics work? | [Observations and selection](designs/observations-and-selection.md) |
 | How do policy, engine differences, validation, and LKG publication work? | [Policy, renderers, publication](designs/policy-rendering-publication.md) |
 | How do CRDs, ownership, reconciliation, and runtime modes work? | [Kubernetes design](designs/kubernetes.md), [operator guide](operations/kubernetes.md) |

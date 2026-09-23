@@ -23,6 +23,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0015](0015-pre-release-qualification.md) | Complete, external gates remain | First public development release audit and corrective maintenance |
 | [0016](0016-generated-release-changelog.md) | Complete | Generate and commit release notes from semantic Git history |
 | [0017](0017-resilient-http-sources.md) | Complete | M8 resilient managed HTTP sources |
+| [0018](0018-subscription-compatibility.md) | Complete | M8 real-world subscription compatibility completion |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

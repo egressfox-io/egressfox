@@ -16,6 +16,8 @@ const (
 	ProtocolUnknown Protocol = iota
 	ProtocolVLESS
 	ProtocolTrojan
+	ProtocolVMess
+	ProtocolShadowsocks
 )
 
 func (p Protocol) String() string {
@@ -24,6 +26,10 @@ func (p Protocol) String() string {
 		return "vless"
 	case ProtocolTrojan:
 		return "trojan"
+	case ProtocolVMess:
+		return "vmess"
+	case ProtocolShadowsocks:
+		return "shadowsocks"
 	default:
 		return "unknown"
 	}
@@ -65,6 +71,21 @@ func NewTrojanCredential(password string) (Credential, error) {
 	return Credential{protocol: ProtocolTrojan, secret: &credentialSecret{value: password}}, nil
 }
 
+func NewVMessCredential(userID string) (Credential, error) {
+	canonical, err := canonicalUUID(userID)
+	if err != nil {
+		return Credential{}, err
+	}
+	return Credential{protocol: ProtocolVMess, secret: &credentialSecret{value: canonical}}, nil
+}
+
+func NewShadowsocksCredential(password string) (Credential, error) {
+	if password == "" || len(password) > 4096 || !utf8.ValidString(password) {
+		return Credential{}, invalid("shadowsocks.password", "must be valid UTF-8 and 1–4096 bytes")
+	}
+	return Credential{protocol: ProtocolShadowsocks, secret: &credentialSecret{value: password}}, nil
+}
+
 func canonicalUUID(raw string) (string, error) {
 	if len(raw) != 36 || raw[8] != '-' || raw[13] != '-' || raw[18] != '-' || raw[23] != '-' {
 		return "", invalid("vless.user_id", "must be a hyphenated UUID")
@@ -94,7 +115,7 @@ func (c Credential) Reveal() string {
 }
 
 func (c Credential) valid() bool {
-	return c.secret != nil && c.secret.value != "" && (c.protocol == ProtocolVLESS || c.protocol == ProtocolTrojan)
+	return c.secret != nil && c.secret.value != "" && (c.protocol == ProtocolVLESS || c.protocol == ProtocolTrojan || c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks)
 }
 
 func (c Credential) equal(other Credential) bool {
@@ -139,6 +160,7 @@ func (kind TransportKind) String() string {
 type Transport struct {
 	kind          TransportKind
 	webSocketPath *string
+	webSocketHost string
 	nonComparable []struct{}
 }
 
@@ -164,6 +186,21 @@ func NewWebSocketTransport(path string) (Transport, error) {
 	return Transport{kind: TransportWebSocket, webSocketPath: &path}, nil
 }
 
+func NewWebSocketTransportWithHost(path, host string) (Transport, error) {
+	transport, err := NewWebSocketTransport(path)
+	if err != nil {
+		return Transport{}, err
+	}
+	if host != "" {
+		normalized, _, err := normalizeHost(host, "transport.websocket.host")
+		if err != nil {
+			return Transport{}, err
+		}
+		transport.webSocketHost = normalized
+	}
+	return transport, nil
+}
+
 // Kind returns the transport kind.
 func (t Transport) Kind() TransportKind { return t.kind }
 
@@ -176,13 +213,15 @@ func (t Transport) WebSocketPath() string {
 	return *t.webSocketPath
 }
 
+func (t Transport) WebSocketHost() string { return t.webSocketHost }
+
 func (t Transport) valid() bool {
-	return t.kind == TransportTCP && t.webSocketPath == nil ||
+	return t.kind == TransportTCP && t.webSocketPath == nil && t.webSocketHost == "" ||
 		t.kind == TransportWebSocket && t.webSocketPath != nil && *t.webSocketPath != ""
 }
 
 func (t Transport) equal(other Transport) bool {
-	return t.kind == other.kind && t.WebSocketPath() == other.WebSocketPath()
+	return t.kind == other.kind && t.WebSocketPath() == other.WebSocketPath() && t.webSocketHost == other.webSocketHost
 }
 
 func (t Transport) String() string   { return t.kind.String() }
@@ -243,6 +282,7 @@ type Configuration struct {
 	credential Credential
 	transport  Transport
 	tls        TLSConfig
+	method     string
 }
 
 // NewConfiguration validates a configuration in the M1 semantic subset.
@@ -281,6 +321,33 @@ func NewConfiguration(
 	}, nil
 }
 
+// NewVMessConfiguration accepts VMess AEAD with alterID zero. The method is the
+// outbound payload security setting and is part of logical connection identity.
+func NewVMessConfiguration(address Address, credential Credential, transport Transport, tls TLSConfig, method string) (Configuration, error) {
+	if method != "auto" && method != "aes-128-gcm" && method != "chacha20-poly1305" && method != "none" {
+		return Configuration{}, invalid("vmess.security", "is unsupported")
+	}
+	return newAdditionalConfiguration(ProtocolVMess, address, credential, transport, tls, method)
+}
+
+// NewShadowsocksConfiguration accepts the common AEAD methods without plugins.
+func NewShadowsocksConfiguration(address Address, credential Credential, method string) (Configuration, error) {
+	if method != "aes-128-gcm" && method != "aes-256-gcm" && method != "chacha20-ietf-poly1305" {
+		return Configuration{}, invalid("shadowsocks.method", "is unsupported")
+	}
+	return newAdditionalConfiguration(ProtocolShadowsocks, address, credential, NewTCPTransport(), DisabledTLS(), method)
+}
+
+func newAdditionalConfiguration(protocol Protocol, address Address, credential Credential, transport Transport, tls TLSConfig, method string) (Configuration, error) {
+	if !address.valid() || !credential.valid() || credential.protocol != protocol || !transport.valid() {
+		return Configuration{}, invalid("configuration", "contains invalid connection fields")
+	}
+	if tls.enabled && tls.serverName == "" {
+		tls.serverName = address.host
+	}
+	return Configuration{protocol: protocol, address: address, credential: credential, transport: transport, tls: tls, method: method}, nil
+}
+
 // Protocol returns the endpoint protocol.
 func (c Configuration) Protocol() Protocol { return c.protocol }
 
@@ -297,23 +364,31 @@ func (c Configuration) Transport() Transport { return c.transport }
 // TLS returns the normalized TLS behavior.
 func (c Configuration) TLS() TLSConfig { return c.tls }
 
+func (c Configuration) Method() string { return c.method }
+
 // Equivalent reports complete configuration equality, including credentials.
 func (c Configuration) Equivalent(other Configuration) bool {
 	return c.protocol == other.protocol &&
 		c.address == other.address &&
 		c.credential.equal(other.credential) &&
 		c.transport.equal(other.transport) &&
-		c.tls == other.tls
+		c.tls == other.tls && c.method == other.method
 }
 
 func (c Configuration) valid() bool {
-	if c.protocol != ProtocolVLESS && c.protocol != ProtocolTrojan {
+	if c.protocol != ProtocolVLESS && c.protocol != ProtocolTrojan && c.protocol != ProtocolVMess && c.protocol != ProtocolShadowsocks {
 		return false
 	}
 	if !c.address.valid() || !c.credential.valid() || c.credential.protocol != c.protocol || !c.transport.valid() {
 		return false
 	}
 	if c.protocol == ProtocolTrojan && !c.tls.enabled {
+		return false
+	}
+	if c.protocol == ProtocolShadowsocks && (c.transport.kind != TransportTCP || c.tls.enabled) {
+		return false
+	}
+	if (c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks) && c.method == "" {
 		return false
 	}
 	return !c.tls.enabled || c.tls.serverName != ""

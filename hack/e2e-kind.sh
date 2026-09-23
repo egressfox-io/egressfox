@@ -332,13 +332,25 @@ data:
   subscription: |
     #!/bin/sh
     conditional=
+    user_agent=
+    hwid=
+    device_os=
+    provider_variant=
     while IFS= read -r line; do
       line=$(printf '%s' "$line" | tr -d '\r')
       [ -n "$line" ] || break
       case "$line" in
         'If-None-Match: '*) conditional=${line#If-None-Match: } ;;
+        'User-Agent: '*) user_agent=${line#User-Agent: } ;;
+        'X-Hwid: '*) hwid=${line#X-Hwid: } ;;
+        'X-Device-Os: '*) device_os=${line#X-Device-Os: } ;;
+        'X-Provider-Variant: '*) provider_variant=${line#X-Provider-Variant: } ;;
       esac
     done
+    printf '%s' "$user_agent" >/data/user-agent
+    printf '%s' "$hwid" >/data/hwid
+    printf '%s' "$device_os" >/data/device-os
+    printf '%s' "$provider_variant" >/data/provider-variant
     if [ -f /data/outage ]; then
       printf 'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
       exit 0
@@ -380,7 +392,9 @@ spec:
 YAML
 kubectl -n "$namespace" rollout status deployment/source-provider --timeout=2m
 provider_pod=$(kubectl -n "$namespace" get pod -l app=source-provider -o jsonpath='{.items[0].metadata.name}')
-kubectl -n "$namespace" exec "$provider_pod" -- sh -c "printf '%s\n' 'vless://${uuid}@${proxy_ip}:8443?encryption=none&security=none#http-initial' >/data/body; echo v1 >/data/etag"
+kubectl -n "$namespace" exec -i "$provider_pod" -- sh -c 'cat >/data/body; echo v1 >/data/etag' <<JSON
+{"dns":{"servers":["8.8.8.8"]},"inbounds":[{"protocol":"socks","port":1080}],"routing":{"rules":[{"outboundTag":"direct"}]},"outbounds":[{"protocol":"freedom","tag":"direct"},{"protocol":"vless","tag":"http-initial","settings":{"vnext":[{"address":"${proxy_ip}","port":8443,"users":[{"id":"${uuid}","encryption":"none"}]}]},"streamSettings":{"security":"none","network":"tcp"}}]}
+JSON
 kubectl -n "$namespace" create secret generic source-url --from-literal=url="http://source-provider.${namespace}.svc.cluster.local:8080/subscription"
 kubectl -n "$namespace" apply -f - <<'YAML'
 apiVersion: egressfox.io/v1alpha1
@@ -394,7 +408,14 @@ spec:
         allowHTTP: true
         allowPrivateNetworks: true
         maxStale: 2m
-      format: URIList
+        profile:
+          userAgent: EgressFox-E2E/1
+          hwid: stable-e2e-client
+          deviceOS: iOS
+          osVersion: "18.3"
+          deviceModel: Test Device
+          headers: {X-Provider-Variant: controlled}
+      format: Auto
   probe:
     targetSecretRef: {name: target, key: url}
     expectedStatus: 200
@@ -422,6 +443,10 @@ spec:
   runtime: {managed: {}}
 YAML
 kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True proxypool/http-e2e --timeout=3m
+test "$(kubectl -n "$namespace" exec "$provider_pod" -- cat /data/user-agent)" = EgressFox-E2E/1
+test "$(kubectl -n "$namespace" exec "$provider_pod" -- cat /data/hwid)" = stable-e2e-client
+test "$(kubectl -n "$namespace" exec "$provider_pod" -- cat /data/device-os)" = iOS
+test "$(kubectl -n "$namespace" exec "$provider_pod" -- cat /data/provider-variant)" = controlled
 for engine in singbox mihomo; do
   kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "egressgateway/http-${engine}" --timeout=5m
   service=$(kubectl -n "$namespace" get egressgateway "http-${engine}" -o jsonpath='{.status.serviceName}')
@@ -445,7 +470,9 @@ test "$(kubectl -n "$namespace" get proxypool http-e2e -o jsonpath='{.status.acc
 kubectl -n "$namespace" rollout restart deployment/egressfox-egressfox
 kubectl -n "$namespace" rollout status deployment/egressfox-egressfox --timeout=3m
 test "$(kubectl -n "$namespace" get proxypool http-e2e -o jsonpath='{.status.acceptedEndpoints}')" = 1
-kubectl -n "$namespace" exec "$provider_pod" -- sh -c "rm -f /data/outage; printf '%s\n' 'vless://${uuid}@${proxy_ip}:8444?encryption=none&security=none#http-changed' >/data/body; echo v2 >/data/etag"
+kubectl -n "$namespace" exec -i "$provider_pod" -- sh -c 'rm -f /data/outage; cat >/data/body; echo v2 >/data/etag' <<JSON
+{"outbounds":[{"protocol":"vless","tag":"http-changed","settings":{"vnext":[{"address":"${proxy_ip}","port":8444,"users":[{"id":"${uuid}","encryption":"none"}]}]},"streamSettings":{"security":"none","network":"tcp"}}]}
+JSON
 for _ in $(seq 1 180); do
   changed_singbox=$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')
   changed_mihomo=$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')

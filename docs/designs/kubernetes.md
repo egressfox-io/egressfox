@@ -52,6 +52,15 @@ safe reason and last-success time. `SourcesReady=False` may coexist with
 `Ready=True` when an admitted inventory remains usable from cache or another
 source. No validator, URL or confidential revision is public.
 
+The additive compatibility extension permits `format: JSON` or `Auto` and an
+optional static `http.profile` with Default/Clean modes. Non-credential device
+attributes and bounded additional static headers live in the CR; Authorization
+and other credential-bearing headers use same-namespace Secret references.
+Secret indexes include those extra references. Effective headers enter the private
+cache fingerprint, so profile or credential rotation cannot reuse a validator.
+Existing objects retain their format and work without migration. See the
+[subscription matrix](subscription-compatibility.md).
+
 Do not use a separate CRD for every normalized endpoint or observation. The API
 server is not a time-series database. If pool inventory needs durable transport
 between reconcilers, choose a private bounded store or shared application service;

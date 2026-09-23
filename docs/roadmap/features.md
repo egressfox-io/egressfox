@@ -83,6 +83,10 @@ with a concrete use case:
   references, Kubernetes Secrets, and Vault. HTTP options include authentication,
   custom headers, User-Agent, retries and backoff; cache features are P1 above.
 - Formats: URI lists, Base64 envelopes, Mihomo/Clash YAML and sing-box JSON.
+- Reality with VLESS Vision is mandatory before v1.0 and needs a separate typed
+  endpoint, renderer, probe and native-traffic qualification milestone. The M8
+  compatibility extension classifies these records as unsupported; it does not
+  substitute ordinary TLS or discard their public key, short ID or flow.
 - Protocol ecosystems: VLESS, VMess, Trojan, Shadowsocks, Hysteria/Hysteria2, TUIC,
   SOCKS, HTTP proxies, WireGuard where appropriate, and later supported protocols.
 - Filtering: protocol, source, country, ASN, IPv4/IPv6, tags, names, allow/deny rules,

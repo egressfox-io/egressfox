@@ -124,6 +124,27 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	if httpPool.Spec.Sources[0].HTTP.MaxStale == nil || httpPool.Spec.Sources[0].HTTP.MaxStale.Duration != 24*time.Hour {
 		t.Fatal("maxStale default missing")
 	}
+	compatPool := httpPool.DeepCopy()
+	compatPool.Name = "compat-pool"
+	compatPool.ResourceVersion = ""
+	compatPool.UID = ""
+	compatPool.Spec.Sources[0].Format = egressv1alpha1.SourceFormatAuto
+	compatPool.Spec.Sources[0].HTTP.Profile = &egressv1alpha1.HTTPClientProfile{UserAgent: "ProviderClient/2", HWID: "fixed-hwid", DeviceOS: "Android", OSVersion: "15", DeviceModel: "Pixel", Headers: map[string]string{"X-Variant": "mobile"}}
+	compatPool.Spec.Sources[0].HTTP.SecretHeaders = []egressv1alpha1.HTTPSecretHeader{{Name: "X-Api-Key", SecretRef: egressv1alpha1.SecretKeyReference{Name: "provider-key", Key: "token"}}}
+	if err := kubeClient.Create(ctx, compatPool); err != nil {
+		t.Fatalf("compatibility profile rejected: %v", err)
+	}
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(compatPool), compatPool); err != nil || compatPool.Spec.Sources[0].HTTP.Profile.HWID != "fixed-hwid" || len(compatPool.Spec.Sources[0].HTTP.SecretHeaders) != 1 {
+		t.Fatalf("compatibility fields did not round-trip: %v", err)
+	}
+	invalidProfile := compatPool.DeepCopy()
+	invalidProfile.Name = "invalid-profile"
+	invalidProfile.ResourceVersion = ""
+	invalidProfile.UID = ""
+	invalidProfile.Spec.Sources[0].HTTP.Profile.Mode = "Undocumented"
+	if err := kubeClient.Create(ctx, invalidProfile); err == nil {
+		t.Fatal("API admitted unknown request-profile mode")
+	}
 	badUnion := httpPool.DeepCopy()
 	badUnion.Name = "bad-union"
 	badUnion.ResourceVersion = ""

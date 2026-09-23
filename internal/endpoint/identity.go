@@ -23,10 +23,10 @@ type ID struct {
 
 // ParseID restores a validated safe logical endpoint identifier.
 func ParseID(value string) (ID, error) {
-	if !strings.HasPrefix(value, "ef1_") {
+	if !strings.HasPrefix(value, "ef1_") && !strings.HasPrefix(value, "ef2_") {
 		return ID{}, invalid("endpoint.id", "has an unsupported identity version")
 	}
-	encoded := strings.TrimPrefix(value, "ef1_")
+	encoded := value[4:]
 	decoded, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(encoded))
 	if err != nil || len(decoded) != sha256.Size || strings.ToLower(encoded) != encoded {
 		return ID{}, invalid("endpoint.id", "is not a canonical endpoint identifier")
@@ -155,10 +155,14 @@ func (c Configuration) Identity() Identity {
 	if !c.valid() {
 		return Identity{}
 	}
+	version := "ef1_"
+	if c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks || c.transport.webSocketHost != "" {
+		version = "ef2_"
+	}
 	logical := canonicalConfiguration(c, false)
 	logicalDigest := sha256.Sum256(logical)
 	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(logicalDigest[:])
-	id := ID{value: "ef1_" + strings.ToLower(encoded)}
+	id := ID{value: version + strings.ToLower(encoded)}
 
 	private := canonicalConfiguration(c, true)
 	revision := sha256.Sum256(private)
@@ -169,6 +173,13 @@ func canonicalConfiguration(c Configuration, includeCredential bool) []byte {
 	domain := endpointIdentityDomain
 	if includeCredential {
 		domain = connectionRevisionDomain
+	}
+	version2 := c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks || c.transport.webSocketHost != ""
+	if version2 {
+		domain = "egressfox.endpoint/v2"
+		if includeCredential {
+			domain = "egressfox.connection/v2"
+		}
 	}
 
 	encoder := canonicalEncoder{}
@@ -182,6 +193,10 @@ func canonicalConfiguration(c Configuration, includeCredential bool) []byte {
 	encoder.writeBool(c.tls.enabled)
 	encoder.writeString(c.tls.serverName)
 	encoder.writeBool(c.tls.insecureSkipVerify)
+	if version2 {
+		encoder.writeString(c.transport.webSocketHost)
+		encoder.writeString(c.method)
+	}
 	if includeCredential {
 		encoder.writeUint8(uint8(c.credential.protocol))
 		encoder.writeString(c.credential.secret.value)

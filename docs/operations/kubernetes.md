@@ -36,7 +36,8 @@ v0.25.1. The default is the minimum 1.32 profile; select another with
 `KIND_EXPERIMENTAL_PROVIDER=podman CONTAINER_CLI=podman make e2e-kind`.
 
 `ProxyPool` has one to 32 sources. Each is either a same-namespace Secret key
-containing a `URIList` or `Base64URIList` subscription, or a managed HTTP source
+containing a `URIList`, `Base64URIList`, `JSON` or conservatively detected `Auto`
+subscription, or a managed HTTP source
 whose URL and optional Authorization value come from same-namespace Secret keys.
 The probe target also comes from a Secret key. Source IDs are safe provenance
 labels. Strict whole-source admission is the default; `allowPartial`, `allowEmpty`,
@@ -83,8 +84,10 @@ loopback or cluster destinations separately require
 `http.allowPrivateNetworks: true`. Source TLS certificate verification is enabled
 by default and can be disabled only with a separate trusted
 `http.allowInsecureTLS: true` opt-in. These source-fetch flags do not authorize
-probe targets or endpoint addresses. The source formats and admission flags are
-unchanged.
+probe targets or endpoint addresses. Existing format values and admission flags
+remain valid. The additive `JSON` and `Auto` formats, Default/Custom/Clean HTTP
+profiles and supported endpoint variants are defined in the
+[subscription compatibility matrix](../designs/subscription-compatibility.md).
 
 The pool `refreshInterval` (30 seconds to 24 hours, default five minutes) schedules
 conditional refresh. The HTTP source's `maxStale` (one minute to seven days,

@@ -34,6 +34,8 @@ type proxy struct {
 	Port           uint16         `yaml:"port"`
 	UUID           string         `yaml:"uuid,omitempty"`
 	Password       string         `yaml:"password,omitempty"`
+	Cipher         string         `yaml:"cipher,omitempty"`
+	AlterID        *int           `yaml:"alterId,omitempty"`
 	TLS            bool           `yaml:"tls"`
 	ServerName     string         `yaml:"servername,omitempty"`
 	SNI            string         `yaml:"sni,omitempty"`
@@ -43,7 +45,8 @@ type proxy struct {
 }
 
 type webSocketOpts struct {
-	Path string `yaml:"path"`
+	Path    string            `yaml:"path"`
+	Headers map[string]string `yaml:"headers,omitempty"`
 }
 type proxyGroup struct {
 	Name    string   `yaml:"name"`
@@ -96,6 +99,19 @@ func (r Renderer) renderProxy(item engine.NamedRecord) (proxy, error) {
 		result.Type = "trojan"
 		result.Password = configuration.Credential().Reveal()
 		result.SNI = configuration.TLS().ServerName()
+	case endpoint.ProtocolVMess:
+		result.Type = "vmess"
+		result.UUID = configuration.Credential().Reveal()
+		result.Cipher = configuration.Method()
+		zero := 0
+		result.AlterID = &zero
+		if configuration.TLS().Enabled() {
+			result.ServerName = configuration.TLS().ServerName()
+		}
+	case endpoint.ProtocolShadowsocks:
+		result.Type = "ss"
+		result.Cipher = configuration.Method()
+		result.Password = configuration.Credential().Reveal()
 	default:
 		return proxy{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.protocol", Feature: configuration.Protocol().String()}
 	}
@@ -104,6 +120,9 @@ func (r Renderer) renderProxy(item engine.NamedRecord) (proxy, error) {
 	case endpoint.TransportWebSocket:
 		result.Network = "ws"
 		result.WebSocket = &webSocketOpts{Path: configuration.Transport().WebSocketPath()}
+		if host := configuration.Transport().WebSocketHost(); host != "" {
+			result.WebSocket.Headers = map[string]string{"Host": host}
+		}
 	default:
 		return proxy{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.transport", Feature: configuration.Transport().Kind().String()}
 	}

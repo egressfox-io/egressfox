@@ -3,6 +3,7 @@ package source
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"strconv"
@@ -17,6 +18,7 @@ const (
 	FormatAuto Format = iota
 	FormatURIList
 	FormatBase64URIList
+	FormatJSON
 )
 
 type Admission struct {
@@ -29,6 +31,14 @@ type ParseOptions struct {
 	Format    Format
 	Limits    Limits
 	Admission Admission
+}
+
+type parseInput struct {
+	uri           string
+	configuration endpoint.Configuration
+	alias         string
+	kind          DiagnosticKind
+	code          string
 }
 
 func Parse(payload Payload, options ParseOptions) (Snapshot, Report, error) {
@@ -52,17 +62,27 @@ func Parse(payload Payload, options ParseOptions) (Snapshot, Report, error) {
 		if err != nil {
 			return Snapshot{}, Report{}, failure(payload.source, ErrFormat, "malformed_base64")
 		}
-	} else if format != FormatURIList {
+	} else if format != FormatURIList && format != FormatJSON {
 		return Snapshot{}, Report{}, failure(payload.source, ErrFormat, "unsupported_format")
 	}
 
-	lines := bytes.Split(data, []byte{'\n'})
-	records := make([]endpoint.Record, 0, len(lines))
+	var inputs []parseInput
+	if format == FormatJSON {
+		inputs, err = decodeJSONInputs(data, limits)
+		if err != nil {
+			return Snapshot{}, Report{}, failure(payload.source, ErrFormat, "invalid_json_subscription")
+		}
+	} else {
+		for _, line := range bytes.Split(data, []byte{'\n'}) {
+			inputs = append(inputs, parseInput{uri: string(bytes.TrimSuffix(line, []byte{'\r'}))})
+		}
+	}
+	records := make([]endpoint.Record, 0, len(inputs))
 	report := Report{}
 	recordNumber := 0
-	for _, raw := range lines {
-		line := bytes.TrimSuffix(raw, []byte{'\r'})
-		if len(bytes.TrimSpace(line)) == 0 || bytes.HasPrefix(bytes.TrimSpace(line), []byte{'#'}) {
+	for _, input := range inputs {
+		line := []byte(input.uri)
+		if input.code == "" && input.configuration.Protocol() == endpoint.ProtocolUnknown && (len(bytes.TrimSpace(line)) == 0 || bytes.HasPrefix(bytes.TrimSpace(line), []byte{'#'})) {
 			continue
 		}
 		recordNumber++
@@ -73,7 +93,10 @@ func Parse(payload Payload, options ParseOptions) (Snapshot, Report, error) {
 			addDiagnostic(&report, Diagnostic{payload.source, recordNumber, DiagnosticMalformed, "record_too_large"})
 			continue
 		}
-		configuration, alias, kind, code := parseURI(string(line))
+		configuration, alias, kind, code := input.configuration, input.alias, input.kind, input.code
+		if code == "" && configuration.Protocol() == endpoint.ProtocolUnknown {
+			configuration, alias, kind, code = parseURI(string(line))
+		}
 		if code != "" {
 			addDiagnostic(&report, Diagnostic{payload.source, recordNumber, kind, code})
 			continue
@@ -131,6 +154,9 @@ func addDiagnostic(report *Report, diagnostic Diagnostic) {
 
 func detectFormat(data []byte, limits Limits) (Format, error) {
 	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && (trimmed[0] == '[' || trimmed[0] == '{') {
+		return FormatJSON, nil
+	}
 	if len(trimmed) == 0 || recognizableURIList(trimmed) {
 		return FormatURIList, nil
 	}
@@ -139,6 +165,96 @@ func detectFormat(data []byte, limits Limits) (Format, error) {
 		return FormatBase64URIList, nil
 	}
 	return FormatAuto, errors.New("unrecognized")
+}
+
+// JSON is recognized structurally, never by Content-Type or a recursive search.
+func decodeJSONInputs(data []byte, limits Limits) ([]parseInput, error) {
+	if !boundedJSONDepth(data, 32) {
+		return nil, errors.New("json depth")
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return nil, errors.New("empty json")
+	}
+	var items []json.RawMessage
+	switch trimmed[0] {
+	case '[':
+		if err := json.Unmarshal(trimmed, &items); err != nil {
+			return nil, err
+		}
+		if len(items) > 0 && len(bytes.TrimSpace(items[0])) > 0 && bytes.TrimSpace(items[0])[0] == '{' {
+			var first map[string]json.RawMessage
+			if json.Unmarshal(items[0], &first) == nil && first["type"] != nil && first["outbounds"] == nil {
+				return decodeSingBoxRecords(items, limits)
+			}
+			return decodeXrayProfiles(items, limits)
+		}
+	case '{':
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(trimmed, &object); err != nil {
+			return nil, err
+		}
+		if _, exists := object["outbounds"]; exists {
+			return decodeXrayProfiles([]json.RawMessage{trimmed}, limits)
+		}
+		var selected json.RawMessage
+		for _, key := range []string{"proxies", "nodes"} {
+			if value, exists := object[key]; exists {
+				if selected != nil {
+					return nil, errors.New("ambiguous json subscription")
+				}
+				selected = value
+			}
+		}
+		if selected == nil || json.Unmarshal(selected, &items) != nil {
+			return nil, errors.New("unknown json subscription")
+		}
+	default:
+		return nil, errors.New("invalid json root")
+	}
+	if len(items) > limits.MaxRecords {
+		return nil, errors.New("too many records")
+	}
+	result := make([]parseInput, 0, len(items))
+	for _, item := range items {
+		var uri string
+		if err := json.Unmarshal(item, &uri); err != nil || len(uri) > limits.MaxRecordBytes {
+			return nil, errors.New("invalid json uri record")
+		}
+		result = append(result, parseInput{uri: uri})
+	}
+	return result, nil
+}
+
+func boundedJSONDepth(data []byte, max int) bool {
+	depth, quoted, escaped := 0, false, false
+	for _, ch := range data {
+		if quoted {
+			if escaped {
+				escaped = false
+			} else if ch == '\\' {
+				escaped = true
+			} else if ch == '"' {
+				quoted = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			quoted = true
+		case '[', '{':
+			depth++
+			if depth > max {
+				return false
+			}
+		case ']', '}':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0 && !quoted
 }
 
 func recognizableURIList(data []byte) bool {
@@ -187,6 +303,12 @@ func parseURI(raw string) (endpoint.Configuration, string, DiagnosticKind, strin
 		return endpoint.Configuration{}, "", DiagnosticMalformed, "invalid_uri"
 	}
 	scheme := strings.ToLower(u.Scheme)
+	if scheme == "vmess" {
+		return parseVMessURI(raw)
+	}
+	if scheme == "ss" {
+		return parseShadowsocksURI(raw)
+	}
 	if scheme != "vless" && scheme != "trojan" {
 		return endpoint.Configuration{}, "", DiagnosticUnsupported, "unsupported_protocol"
 	}
@@ -223,9 +345,8 @@ func parseURI(raw string) (endpoint.Configuration, string, DiagnosticKind, strin
 	if values, present := query["encryption"]; present && values[0] == "" {
 		return endpoint.Configuration{}, "", DiagnosticMalformed, "empty_parameter"
 	}
-	_, hasHost := query["host"]
 	_, hasALPN := query["alpn"]
-	if hasHost || hasALPN || query.Get("flow") != "" {
+	if hasALPN || query.Get("flow") != "" {
 		return endpoint.Configuration{}, "", DiagnosticUnsupported, "unsupported_parameter"
 	}
 	if scheme == "vless" && valueOr(query.Get("encryption"), "none") != "none" {
@@ -250,7 +371,7 @@ func parseURI(raw string) (endpoint.Configuration, string, DiagnosticKind, strin
 	var transport endpoint.Transport
 	switch transportName {
 	case "tcp":
-		if query.Get("path") != "" {
+		if query.Get("path") != "" || query.Get("host") != "" {
 			return endpoint.Configuration{}, "", DiagnosticUnsupported, "path_without_websocket"
 		}
 		transport = endpoint.NewTCPTransport()
@@ -258,7 +379,7 @@ func parseURI(raw string) (endpoint.Configuration, string, DiagnosticKind, strin
 		if query.Get("path") == "" {
 			return endpoint.Configuration{}, "", DiagnosticInvalid, "websocket_path_required"
 		}
-		transport, err = endpoint.NewWebSocketTransport(query.Get("path"))
+		transport, err = endpoint.NewWebSocketTransportWithHost(query.Get("path"), query.Get("host"))
 	default:
 		return endpoint.Configuration{}, "", DiagnosticUnsupported, "unsupported_transport"
 	}

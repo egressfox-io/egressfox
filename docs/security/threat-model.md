@@ -44,6 +44,13 @@ are bounded to 4 MiB, stored in the private SQLite PVC with a SHA-256 integrity
 check, and excluded from status, Events and normal logs. Cache compatibility covers
 credential and parsing semantics, and fallback expires even during prolonged
 provider outage. The fixed worker/queue and retry budget bound outage amplification.
+The compatibility profile adds bounded static headers and a stable non-secret HWID;
+known credential-bearing header names are rejected from the static map and may use
+same-namespace Secret header references. Effective request headers remain private
+cache-identity material. Clean mode suppresses Go's implicit User-Agent. Xray
+client configurations are untrusted input: only bounded supported external proxy
+outbounds are extracted, while source-supplied routing, DNS, local listeners and
+unsupported security fields never enter gateway policy or runtime configuration.
 
 ## Assets, actors, and trust boundaries
 

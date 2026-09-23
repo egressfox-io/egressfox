@@ -2,6 +2,26 @@
 
 Date: 2026-09-23. Status: accepted. Resolves Q14.
 
+## Subscription compatibility amendment (2026-09-24)
+
+The additive `http.profile` object selects the deterministic Default profile or
+explicit Clean mode. Default sends `Happ/1.0`, a source-specific stable UUID-shaped
+`x-hwid` derived from Pool UID and source ID, `iOS`, `18.3`, and
+`iPhone 14 Pro Max`. These are compatibility defaults, not a guarantee that every
+provider accepts this client identity. Users may override each field and add up to
+16 validated non-credential static headers. Clean forbids overrides and suppresses
+Go's implicit User-Agent by setting an explicit empty value. Authorization remains
+Secret-backed. Static credential/transport/profile headers are reserved; malformed
+header names or control-bearing values fail safely.
+
+The deterministic HWID is derived from non-secret logical source identity and does
+not require new persistence. It survives refresh, retries, restarts and cache
+recovery, but a Pool replacement with a new UID changes it. The effective header
+map participates in the private cache fingerprint along with existing URL, auth,
+format and admission settings. A profile change therefore cannot reuse cached
+content or conditional validators. Equivalent profile objects produce the same
+fingerprint; unrelated metadata still does not affect it.
+
 ## Context
 
 M2 admits bounded source snapshots but the M6/M7 operator reads subscription bytes

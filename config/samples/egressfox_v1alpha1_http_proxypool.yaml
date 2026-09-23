@@ -20,8 +20,11 @@ spec:
       http:
         urlSecretRef: {name: sample-http-access, key: url}
         authorizationSecretRef: {name: sample-http-access, key: authorization}
+        # Omit profile for the stable built-in client identity. To override:
+        # profile: {userAgent: "ProviderClient/2", hwid: "fixed-device-id"}
+        # To suppress all client-identification headers: profile: {mode: Clean}
         maxStale: 24h
-      format: URIList
+      format: Auto
   probe:
     targetSecretRef: {name: sample-target, key: url}
     expectedStatus: 204

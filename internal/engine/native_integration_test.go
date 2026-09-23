@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/egressfox-io/egressfox/internal/artifact"
 	"github.com/egressfox-io/egressfox/internal/endpoint"
+	"github.com/egressfox-io/egressfox/internal/engine"
 	"github.com/egressfox-io/egressfox/internal/engine/mihomo"
 	"github.com/egressfox-io/egressfox/internal/engine/singbox"
 	"github.com/egressfox-io/egressfox/internal/policy"
@@ -62,7 +64,7 @@ func TestPinnedNativeValidation(t *testing.T) {
 				}
 				return listener
 			})
-			for name, gateway := range map[string]policy.Gateway{"byo": testGateway(t, false), "managed-authenticated": managed} {
+			for name, gateway := range map[string]policy.Gateway{"byo": testGateway(t, false), "managed-authenticated": managed, "vmess-and-shadowsocks": compatibilityGateway(t)} {
 				t.Run(name, func(t *testing.T) {
 					candidate, err := test.renderer.Render(gateway)
 					if err != nil {
@@ -75,6 +77,151 @@ func TestPinnedNativeValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSubscriptionProtocolControlledTraffic(t *testing.T) {
+	serverBinary := os.Getenv("EGRESSFOX_SINGBOX_BINARY")
+	if serverBinary == "" {
+		t.Skip("set EGRESSFOX_SINGBOX_BINARY for controlled proxy servers")
+	}
+	for _, variant := range []string{"vmess", "vmess-aes-128-gcm", "vmess-chacha20-poly1305", "vmess-none", "vmess-ws-tls", "vless-ws-tls", "trojan-ws-tls", "shadowsocks-aes-128-gcm", "shadowsocks-aes-256-gcm", "shadowsocks-chacha20-ietf-poly1305"} {
+		t.Run(variant, func(t *testing.T) {
+			serverPort := availablePort(t)
+			serverDir := t.TempDir()
+			if err := os.Chmod(serverDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			var inbound map[string]any
+			var uri string
+			switch {
+			case variant == "vmess" || strings.HasPrefix(variant, "vmess-") && variant != "vmess-ws-tls":
+				inbound = map[string]any{"type": "vmess", "tag": "server", "listen": "127.0.0.1", "listen_port": serverPort, "users": []any{map[string]any{"name": "synthetic", "uuid": "11111111-1111-4111-8111-111111111111", "alterId": 0}}}
+				cipher := "auto"
+				if variant != "vmess" {
+					cipher = strings.TrimPrefix(variant, "vmess-")
+				}
+				share, _ := json.Marshal(map[string]string{"v": "2", "add": "127.0.0.1", "port": strconv.Itoa(serverPort), "id": "11111111-1111-4111-8111-111111111111", "aid": "0", "net": "tcp", "type": "none", "scy": cipher})
+				uri = "vmess://" + base64.StdEncoding.EncodeToString(share)
+			case variant == "vmess-ws-tls":
+				certificate, key := writeTestCertificate(t, serverDir)
+				inbound = map[string]any{"type": "vmess", "tag": "server", "listen": "127.0.0.1", "listen_port": serverPort, "users": []any{map[string]any{"name": "synthetic", "uuid": "11111111-1111-4111-8111-111111111111", "alterId": 0}}, "transport": map[string]any{"type": "ws", "path": "/ws"}, "tls": map[string]any{"enabled": true, "certificate_path": certificate, "key_path": key}}
+				share, _ := json.Marshal(map[string]string{"v": "2", "add": "127.0.0.1", "port": strconv.Itoa(serverPort), "id": "11111111-1111-4111-8111-111111111111", "aid": "0", "net": "ws", "type": "none", "path": "/ws", "host": "front.example.com", "tls": "tls", "sni": "127.0.0.1", "allowInsecure": "1", "scy": "auto"})
+				uri = "vmess://" + base64.StdEncoding.EncodeToString(share)
+			case variant == "vless-ws-tls":
+				certificate, key := writeTestCertificate(t, serverDir)
+				inbound = map[string]any{"type": "vless", "tag": "server", "listen": "127.0.0.1", "listen_port": serverPort, "users": []any{map[string]any{"name": "synthetic", "uuid": "11111111-1111-4111-8111-111111111111"}}, "transport": map[string]any{"type": "ws", "path": "/ws"}, "tls": map[string]any{"enabled": true, "certificate_path": certificate, "key_path": key}}
+				uri = fmt.Sprintf("vless://11111111-1111-4111-8111-111111111111@127.0.0.1:%d?type=ws&path=%%2Fws&host=front.example.com&security=tls&allowInsecure=1", serverPort)
+			case variant == "trojan-ws-tls":
+				certificate, key := writeTestCertificate(t, serverDir)
+				inbound = map[string]any{"type": "trojan", "tag": "server", "listen": "127.0.0.1", "listen_port": serverPort, "users": []any{map[string]any{"password": "synthetic-password"}}, "transport": map[string]any{"type": "ws", "path": "/ws"}, "tls": map[string]any{"enabled": true, "certificate_path": certificate, "key_path": key}}
+				uri = fmt.Sprintf("trojan://synthetic-password@127.0.0.1:%d?type=ws&path=%%2Fws&host=front.example.com&security=tls&allowInsecure=1", serverPort)
+			case strings.HasPrefix(variant, "shadowsocks-"):
+				method := strings.TrimPrefix(variant, "shadowsocks-")
+				inbound = map[string]any{"type": "shadowsocks", "tag": "server", "listen": "127.0.0.1", "listen_port": serverPort, "network": "tcp", "method": method, "password": "synthetic-password"}
+				uri = "ss://" + base64.RawURLEncoding.EncodeToString([]byte(method+":synthetic-password")) + "@127.0.0.1:" + strconv.Itoa(serverPort)
+			}
+			serverModel := map[string]any{"log": map[string]any{"disabled": true}, "inbounds": []any{inbound}, "outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}}, "route": map[string]any{"final": "direct"}}
+			serverBytes, _ := json.Marshal(serverModel)
+			serverPath := filepath.Join(serverDir, "server.json")
+			if err := os.WriteFile(serverPath, serverBytes, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			serverProcess := exec.Command(serverBinary, "run", "-c", serverPath, "-D", serverDir)
+			serverProcess.Stdout, serverProcess.Stderr = io.Discard, io.Discard
+			if err := serverProcess.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { waitProcess(serverProcess) })
+			waitForPort(t, serverPort)
+			destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "egressfox-compat-ok") }))
+			defer destination.Close()
+			for _, engineTest := range []struct {
+				name, env string
+				profile   artifact.Profile
+				renderer  engine.Renderer
+				args      func(string, string) []string
+			}{
+				{"mihomo", "EGRESSFOX_MIHOMO_BINARY", artifact.Mihomo11931, mihomo.Renderer{}, func(path, dir string) []string { return []string{"-f", path, "-d", dir} }},
+				{"sing-box", "EGRESSFOX_SINGBOX_BINARY", artifact.SingBox1141, singbox.Renderer{}, func(path, dir string) []string { return []string{"run", "-c", path, "-D", dir} }},
+			} {
+				t.Run(engineTest.name, func(t *testing.T) {
+					binary := os.Getenv(engineTest.env)
+					if binary == "" {
+						t.Skipf("set %s for traffic test", engineTest.env)
+					}
+					clientPort := availablePort(t)
+					gateway := gatewayFromShareURI(t, uri, clientPort)
+					candidate, err := engineTest.renderer.Render(gateway)
+					if err != nil {
+						t.Fatal(err)
+					}
+					checker, err := artifact.NewNativeChecker(engineTest.profile, binary, 10*time.Second)
+					if err != nil {
+						t.Fatal(err)
+					}
+					validated, err := artifact.Validate(context.Background(), candidate, checker)
+					if err != nil {
+						t.Fatal(err)
+					}
+					clientDir := t.TempDir()
+					if err := os.Chmod(clientDir, 0o700); err != nil {
+						t.Fatal(err)
+					}
+					path := filepath.Join(clientDir, "config")
+					publisher, err := publish.NewFilePublisher(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := publisher.Publish(context.Background(), validated); err != nil {
+						t.Fatal(err)
+					}
+					process := exec.Command(binary, engineTest.args(path, clientDir)...)
+					process.Stdout, process.Stderr = io.Discard, io.Discard
+					if err := process.Start(); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { waitProcess(process) })
+					waitForPort(t, clientPort)
+					if body := requestThroughSOCKS(t, clientPort, strings.TrimPrefix(destination.URL, "http://")); !strings.Contains(body, "egressfox-compat-ok") {
+						t.Fatal("controlled traffic did not traverse the selected proxy")
+					}
+				})
+			}
+		})
+	}
+}
+
+func gatewayFromShareURI(t *testing.T, uri string, listenerPort int) policy.Gateway {
+	t.Helper()
+	id, err := endpoint.NewSourceID("native-compat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline, err := source.NewInline(id, []byte(uri), source.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := inline.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _, err := source.Parse(payload, source.ParseOptions{Format: source.FormatURIList})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := endpoint.Deduplicate(snapshot.Records())
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := policy.NewSOCKSListener("127.0.0.1", listenerPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := policy.NewGateway(inventory, listener)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return gateway
 }
 
 func TestSingBoxPublishedArtifactCarriesControlledTraffic(t *testing.T) {

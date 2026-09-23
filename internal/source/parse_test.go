@@ -50,7 +50,8 @@ func TestParseClassificationAndTransactionalPolicy(t *testing.T) {
 		code         string
 	}{
 		{"malformed", "not a uri", source.DiagnosticMalformed, "invalid_uri"},
-		{"unsupported protocol", "vmess://opaque@example.com:443", source.DiagnosticUnsupported, "unsupported_protocol"},
+		{"unsupported protocol", "hysteria://opaque@example.com:443", source.DiagnosticUnsupported, "unsupported_protocol"},
+		{"malformed VMess", "vmess://opaque@example.com:443", source.DiagnosticMalformed, "invalid_vmess_payload"},
 		{"unsupported option", "trojan://secret@example.com:443?fingerprint=chrome", source.DiagnosticUnsupported, "unsupported_parameter"},
 		{"duplicate option", "trojan://secret@example.com:443?sni=a.example&sni=b.example", source.DiagnosticMalformed, "duplicate_parameter"},
 		{"empty option", "vless://" + vlessID + "@example.com:443?security=", source.DiagnosticMalformed, "empty_parameter"},
@@ -68,7 +69,7 @@ func TestParseClassificationAndTransactionalPolicy(t *testing.T) {
 			}
 		})
 	}
-	snapshot, report, err := parse(t, "source-a", []byte(valid+"\nvmess://opaque@example.com:443"), source.ParseOptions{Format: source.FormatURIList, Admission: source.Admission{AllowPartial: true}})
+	snapshot, report, err := parse(t, "source-a", []byte(valid+"\nhysteria://opaque@example.com:443"), source.ParseOptions{Format: source.FormatURIList, Admission: source.Admission{AllowPartial: true}})
 	if err != nil || snapshot.Len() != 1 || report.Unsupported != 1 {
 		t.Fatalf("partial result = %v %+v %v", snapshot, report, err)
 	}
@@ -201,5 +202,17 @@ func FuzzParseURIList(f *testing.F) {
 		_, report, err := parse(t, "fuzz-source", []byte(input), source.ParseOptions{Format: source.FormatURIList, Admission: source.Admission{AllowPartial: true}})
 		_ = report
 		_ = err
+	})
+}
+
+func FuzzParseJSON(f *testing.F) {
+	f.Add(`[{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"edge.example.com","port":443,"users":[{"id":"7ae477a8-3884-4dad-a5a8-a5106778cbbb","encryption":"none"}]}]},"streamSettings":{"network":"tcp","security":"tls"}},{"protocol":"freedom"}]}]`)
+	f.Add(`{"outbounds":[{"type":"shadowsocks","server":"edge.example.com","server_port":443,"method":"aes-128-gcm","password":"synthetic"}]}`)
+	f.Add(`{"nodes":["trojan://synthetic@example.com:443"]}`)
+	f.Fuzz(func(t *testing.T, input string) {
+		if len(input) > 64<<10 {
+			t.Skip()
+		}
+		_, _, _ = parse(t, "fuzz-source", []byte(input), source.ParseOptions{Format: source.FormatJSON, Admission: source.Admission{AllowPartial: true}})
 	})
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -189,6 +190,9 @@ func recordHTTPReferences(ctx context.Context, reader client.Reader, pool *egres
 	if desired.HTTP.AuthorizationSecretRef != nil {
 		refs = append(refs, *desired.HTTP.AuthorizationSecretRef)
 	}
+	for _, header := range desired.HTTP.SecretHeaders {
+		refs = append(refs, header.SecretRef)
+	}
 	for _, ref := range refs {
 		name := types.NamespacedName{Namespace: pool.Namespace, Name: ref.Name}
 		secret := &corev1.Secret{}
@@ -209,7 +213,7 @@ func parseSource(payload source.Payload, desired egressv1alpha1.SubscriptionSour
 	if !ok {
 		return source.Snapshot{}, source.Report{}, poolFailure("source_format")
 	}
-	return source.Parse(payload, source.ParseOptions{Format: format, Limits: source.DefaultLimits(), Admission: source.Admission{AllowPartial: desired.AllowPartial, AllowedProtocol: []endpoint.Protocol{endpoint.ProtocolVLESS, endpoint.ProtocolTrojan}, DenyInsecureTLS: !pool.Spec.AllowInsecureTLS}})
+	return source.Parse(payload, source.ParseOptions{Format: format, Limits: source.DefaultLimits(), Admission: source.Admission{AllowPartial: desired.AllowPartial, AllowedProtocol: []endpoint.Protocol{endpoint.ProtocolVLESS, endpoint.ProtocolTrojan, endpoint.ProtocolVMess, endpoint.ProtocolShadowsocks}, DenyInsecureTLS: !pool.Spec.AllowInsecureTLS}})
 }
 
 func maxSourceStale(value *metav1.Duration) time.Duration {
@@ -276,8 +280,32 @@ func ResolveHTTP(ctx context.Context, reader client.Reader, pool *egressv1alpha1
 		}
 	}
 	headers := http.Header{}
+	headers, err = profileHeaders(string(pool.UID), desired.ID, desired.HTTP.Profile)
+	if err != nil {
+		return HTTPConfig{}, err
+	}
 	if len(authorization) > 0 {
 		headers.Set("Authorization", string(authorization))
+	}
+	if len(desired.HTTP.SecretHeaders) > 8 {
+		return HTTPConfig{}, poolFailure("source_header_limit")
+	}
+	for _, header := range desired.HTTP.SecretHeaders {
+		if !validHeaderName(header.Name) || reservedTransportOrProfileHeader(header.Name) || strings.EqualFold(header.Name, "Authorization") {
+			return HTTPConfig{}, poolFailure("source_header_name")
+		}
+		name := http.CanonicalHeaderKey(header.Name)
+		if _, exists := headers[name]; exists {
+			return HTTPConfig{}, poolFailure("source_header_duplicate")
+		}
+		value, err := read(header.SecretRef)
+		if err != nil {
+			return HTTPConfig{}, err
+		}
+		if !validHeaderValue(string(value), 8192) {
+			return HTTPConfig{}, poolFailure("source_header_value")
+		}
+		headers.Set(name, string(value))
 	}
 	httpSource, err := source.NewHTTP(id, string(urlBytes), source.HTTPOptions{AllowHTTP: desired.HTTP.AllowHTTP, AllowPrivateNetworks: desired.HTTP.AllowPrivateNetworks, AllowInsecureTLS: desired.HTTP.AllowInsecureTLS, Headers: headers})
 	if err != nil {
@@ -287,9 +315,10 @@ func ResolveHTTP(ctx context.Context, reader client.Reader, pool *egressv1alpha1
 		Variant                                                                                        string
 		URL                                                                                            string
 		Authorization                                                                                  string
+		Headers                                                                                        http.Header
 		Format                                                                                         egressv1alpha1.SourceFormat
 		AllowEmpty, AllowPartial, AllowInsecureTLS, AllowHTTP, AllowPrivateNetworks, SourceInsecureTLS bool
-	}{"HTTP", string(urlBytes), string(authorization), desired.Format, desired.AllowEmpty, desired.AllowPartial, pool.Spec.AllowInsecureTLS, desired.HTTP.AllowHTTP, desired.HTTP.AllowPrivateNetworks, desired.HTTP.AllowInsecureTLS})
+	}{"HTTP", string(urlBytes), string(authorization), headers, desired.Format, desired.AllowEmpty, desired.AllowPartial, pool.Spec.AllowInsecureTLS, desired.HTTP.AllowHTTP, desired.HTTP.AllowPrivateNetworks, desired.HTTP.AllowInsecureTLS})
 	return HTTPConfig{Key: string(pool.UID) + "/" + desired.ID, Fingerprint: sha256.Sum256(identity), SourceID: id, HTTP: httpSource, Revisions: revisions}, nil
 }
 
@@ -299,6 +328,10 @@ func sourceFormat(value egressv1alpha1.SourceFormat) (source.Format, bool) {
 		return source.FormatURIList, true
 	case egressv1alpha1.SourceFormatBase64URIList:
 		return source.FormatBase64URIList, true
+	case egressv1alpha1.SourceFormatJSON:
+		return source.FormatJSON, true
+	case egressv1alpha1.SourceFormatAuto:
+		return source.FormatAuto, true
 	default:
 		return source.FormatAuto, false
 	}

@@ -3,6 +3,9 @@
 Status: implemented M1 identity contract; M2 source pipeline contract accepted.
 This document owns normalization and acquisition semantics. The durable identity
 boundary is recorded in [ADR 0006](../decisions/0006-versioned-endpoint-identity.md).
+The bounded M8 compatibility extension is specified in the
+[subscription matrix](subscription-compatibility.md) and
+[ADR 0019](../decisions/0019-subscription-endpoint-semantics.md).
 
 ## Decisions and requirements
 

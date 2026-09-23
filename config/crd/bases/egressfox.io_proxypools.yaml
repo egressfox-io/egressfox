@@ -132,6 +132,8 @@ spec:
                       enum:
                       - URIList
                       - Base64URIList
+                      - JSON
+                      - Auto
                       type: string
                     http:
                       description: HTTP enables managed refresh from a Secret-backed
@@ -170,6 +172,73 @@ spec:
                           - message: maxStale must be between 1m and 168h
                             rule: duration(self) >= duration('1m') && duration(self)
                               <= duration('168h')
+                        profile:
+                          description: |-
+                            Profile controls the static client identification sent to a subscription provider.
+                            Omission uses the documented default profile. Clean mode sends none of it.
+                          properties:
+                            deviceModel:
+                              maxLength: 128
+                              type: string
+                            deviceOS:
+                              maxLength: 64
+                              type: string
+                            headers:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                Headers are bounded non-credential static headers. Profile and transport
+                                controlled names are rejected by the adapter.
+                              maxProperties: 16
+                              type: object
+                            hwid:
+                              maxLength: 128
+                              type: string
+                            mode:
+                              enum:
+                              - Default
+                              - Clean
+                              type: string
+                            osVersion:
+                              maxLength: 64
+                              type: string
+                            userAgent:
+                              maxLength: 256
+                              type: string
+                          type: object
+                        secretHeaders:
+                          description: SecretHeaders supplies credential-bearing provider
+                            headers from same-namespace Secrets.
+                          items:
+                            properties:
+                              name:
+                                description: Name is a single HTTP header name, distinct
+                                  from profile and transport fields.
+                                maxLength: 128
+                                minLength: 1
+                                type: string
+                              secretRef:
+                                description: SecretKeyReference selects one key from
+                                  a Secret in the resource namespace.
+                                properties:
+                                  key:
+                                    maxLength: 253
+                                    minLength: 1
+                                    type: string
+                                  name:
+                                    maxLength: 253
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - key
+                                - name
+                                type: object
+                            required:
+                            - name
+                            - secretRef
+                            type: object
+                          maxItems: 8
+                          type: array
                         urlSecretRef:
                           description: SecretKeyReference selects one key from a Secret
                             in the resource namespace.
