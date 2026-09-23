@@ -114,6 +114,42 @@ class GitHistoryTests(unittest.TestCase):
         self.assertIn("- ✨ Historic.", result)
         self.assertLess(result.index("v0.1.0-dev.2"), result.index("v0.1.0-dev.1"))
 
+    def test_first_release_check_fails_shallow_and_passes_with_full_history(self):
+        self.commit("🐛 fix(core): repair first capability")
+        generated, _ = generator.generate("v0.1.0-dev.1", Path("CHANGELOG.md").read_text())
+        Path("CHANGELOG.md").write_text(generated)
+        self.commit("📝 docs(changelog): prepare v0.1.0-dev.1 release notes")
+        self.assert_checkout_history("v0.1.0-dev.1")
+
+    def test_later_release_checkout_needs_history_and_previous_tag(self):
+        generated, _ = generator.generate("v0.1.0-dev.1", Path("CHANGELOG.md").read_text())
+        Path("CHANGELOG.md").write_text(generated)
+        self.commit("📝 docs(changelog): prepare v0.1.0-dev.1 release notes")
+        command("git", "tag", "v0.1.0-dev.1")
+        Path("release/manifest.json").write_text(json.dumps({"release": {"developmentVersion": "v0.1.0-dev.2"}}))
+        self.commit("🐛 fix(core): repair second capability")
+        generated, _ = generator.generate("v0.1.0-dev.2", Path("CHANGELOG.md").read_text())
+        Path("CHANGELOG.md").write_text(generated)
+        self.commit("📝 docs(changelog): prepare v0.1.0-dev.2 release notes")
+        self.assert_checkout_history("v0.1.0-dev.2", previous_tag="v0.1.0-dev.1")
+
+    def assert_checkout_history(self, version, previous_tag=None):
+        # A file:// clone honors --depth, like the default Actions checkout.
+        with tempfile.TemporaryDirectory() as destination:
+            checkout = Path(destination) / "checkout"
+            command("git", "clone", "-q", "--depth", "1", "--no-tags", "--branch", "codex/test", Path(self.folder.name).as_uri(), str(checkout))
+            args = ["python3", str(SCRIPT), "--version", version, "--check"]
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+            self.assertEqual(command("git", "-C", str(checkout), "rev-parse", "--is-shallow-repository"), "true")
+            shallow = subprocess.run(args, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertNotEqual(shallow.returncode, 0, "a depth-one checkout must not verify incomplete history")
+            command("git", "-C", str(checkout), "fetch", "-q", "--unshallow", "--tags")
+            self.assertEqual(command("git", "-C", str(checkout), "rev-parse", "--is-shallow-repository"), "false")
+            if previous_tag:
+                self.assertIn(previous_tag, command("git", "-C", str(checkout), "tag", "--list").splitlines())
+            complete = subprocess.run(args, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(complete.returncode, 0, complete.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

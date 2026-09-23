@@ -136,6 +136,37 @@ func TestReleaseWorkflowSatisfiesPublicationContract(t *testing.T) {
 	}
 }
 
+func TestReleaseWorkflowCheckoutsFetchFullHistory(t *testing.T) {
+	content, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(content)
+	for _, job := range []string{"validate", "publish"} {
+		t.Run(job, func(t *testing.T) {
+			start := strings.Index(workflow, "\n  "+job+":\n")
+			if start < 0 {
+				t.Fatalf("missing %s job", job)
+			}
+			steps := workflow[start:]
+			if job == "validate" {
+				steps = strings.SplitN(steps, "\n  publish:\n", 2)[0]
+			}
+			checkout := strings.Index(steps, "      - uses: actions/checkout@")
+			if checkout < 0 {
+				t.Fatal("missing checkout step")
+			}
+			step := steps[checkout:]
+			if next := strings.Index(step[1:], "\n      - "); next >= 0 {
+				step = step[:next+1]
+			}
+			if !strings.Contains(step, "\n          fetch-depth: 0\n") {
+				t.Fatal("checkout must fetch full history and tags for changelog verification")
+			}
+		})
+	}
+}
+
 // TestReleaseWorkflowAcceptsHarmlessFormattingChanges keeps CI independent of
 // YAML layout: reindenting, requoting, reordering flags or adding comments must
 // never be reported as a lost release guarantee.
