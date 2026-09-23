@@ -23,6 +23,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0015](0015-standalone-runtime-and-engine-packaging.md) | Standalone control plane, runtime boundary and engine packaging | Accepted future architecture |
 | [0016](0016-artifact-publication-and-availability.md) | Change-driven artifacts, independent publication and safe activation | Accepted future architecture |
 | [0017](0017-leaf-pools-and-policy-composition.md) | Leaf ProxyPools and composable policy candidates | Accepted future architecture |
+| [0018](0018-resilient-http-sources.md) | Managed HTTP source cache, freshness and refresh contract | Accepted |
 
 ## Adding a decision
 
