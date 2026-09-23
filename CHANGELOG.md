@@ -35,6 +35,7 @@ Release entries are not edited by hand.
 - 📄 Include complete GPL terms.
 - 🐛 Mark dirty development builds.
 - 🐛 Keep qualification version-bound, not tag-bound.
+- 🐛 Fetch full history for changelog verification.
 
 ### Security
 
