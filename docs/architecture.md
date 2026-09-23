@@ -1,6 +1,6 @@
 # Architecture and domain language
 
-Status: M1–M7 core and Kubernetes behavior implemented; P1 M8–M12 designed; the
+Status: M1–M8 core and Kubernetes behavior implemented; P1 M9–M12 designed; the
 standalone/runtime/publication architecture is accepted future direction. [ADRs](decisions/README.md)
 record durable boundaries; detailed designs distinguish shipped behavior from
 requirements for later work.
@@ -158,6 +158,8 @@ There is one Go module. M1 implements `internal/endpoint`; M2 implements
 `internal/reconcile`; M6 adds `api/v1alpha1`, `internal/controller`, Kubernetes
 adapters in `internal/operator` and `cmd/operator`; M7 adds managed runtime planning
 and exact activation in `internal/operator` plus the fixed `cmd/healthcheck` helper.
+M8 extends `internal/source` for conditional fetching, `internal/state` for protected
+HTTP cache, and the Kubernetes adapter/controller for bounded refresh scheduling.
 `tools/checkdocs` is repository tooling. There is no product CLI or runtime wrapper
 today.
 

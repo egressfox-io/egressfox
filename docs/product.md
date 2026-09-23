@@ -1,6 +1,6 @@
 # Product and scope
 
-Status: product intent with P0 M1–M6 and P1 M7 implemented; standalone CLI/runtime
+Status: product intent with P0 M1–M6 and P1 M7–M8 implemented; standalone CLI/runtime
 and universal external publication are accepted future architecture, not shipped.
 The [feature catalog](roadmap/features.md) owns priority assignments; the
 [roadmap](roadmap/README.md) owns implementation order and completion status.
@@ -73,9 +73,9 @@ with proxy settings; EgressFox does not transparently attach workloads.
 
 The authoritative [P1 roadmap](roadmap/p1.md) turns the completed BYO control plane
 into a self-contained, namespace-scoped egress Service without changing which side
-owns the data plane. M7 has added the managed authenticated SOCKS runtime and
-exact-generation activation evidence. The remaining must-have path adds resilient
-managed source refresh,
+owns the data plane. M7 added the managed authenticated SOCKS runtime and
+exact-generation activation evidence. M8 added resilient managed HTTP source
+refresh with a protected cache. The remaining must-have path adds
 target-aware selection profiles, bounded routing policy, operational metrics and a
 redacted explanation surface.
 

@@ -35,12 +35,84 @@ v0.25.1. The default is the minimum 1.32 profile; select another with
 [Kubernetes compatibility contract](kubernetes-compatibility.md). For Podman use
 `KIND_EXPERIMENTAL_PROVIDER=podman CONTAINER_CLI=podman make e2e-kind`.
 
-`ProxyPool` references one to 32 same-namespace Secret keys containing explicit
-`URIList` or `Base64URIList` subscriptions and one Secret key containing an HTTP(S)
-probe target. Source IDs are safe provenance labels. Strict whole-source admission
-is the default; `allowPartial`, `allowEmpty`, private-network and insecure-TLS
-choices are explicit. Parser, record, byte, probe and scheduling bounds from P0
-remain in force for both runtime modes.
+`ProxyPool` has one to 32 sources. Each is either a same-namespace Secret key
+containing a `URIList` or `Base64URIList` subscription, or a managed HTTP source
+whose URL and optional Authorization value come from same-namespace Secret keys.
+The probe target also comes from a Secret key. Source IDs are safe provenance
+labels. Strict whole-source admission is the default; `allowPartial`, `allowEmpty`,
+HTTP/private source destinations, private probe destinations and insecure endpoint
+TLS choices are separate. Parser, record, byte, probe and scheduling bounds remain
+in force for both runtime modes.
+
+## Managed HTTP sources
+
+Keep the full URL in a Secret even when it appears public: subscription paths and
+queries often contain tokens. If authentication is needed, put the complete HTTP
+`Authorization` value in another Secret key. The following shape is illustrative;
+replace the values through a secret-management path and use an authorized probe
+target from the [samples](../../config/samples/README.md):
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata: {name: subscription-access}
+stringData:
+  url: https://subscriptions.example.test/replace-me
+  authorization: Bearer replace-me
+---
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata: {name: external-api}
+spec:
+  sources:
+    - id: provider-a
+      http:
+        urlSecretRef: {name: subscription-access, key: url}
+        authorizationSecretRef: {name: subscription-access, key: authorization}
+        maxStale: 24h
+      format: URIList
+  probe:
+    targetSecretRef: {name: probe-target, key: url}
+  refreshInterval: 5m
+```
+
+Exactly one of `secretRef` and `http` is required per source. Mixed sources are
+supported. Existing Secret sources need no migration. HTTPS and public destination
+addresses are the default. Plain HTTP requires `http.allowHTTP: true`; private,
+loopback or cluster destinations separately require
+`http.allowPrivateNetworks: true`. Source TLS certificate verification is enabled
+by default and can be disabled only with a separate trusted
+`http.allowInsecureTLS: true` opt-in. These source-fetch flags do not authorize
+probe targets or endpoint addresses. The source formats and admission flags are
+unchanged.
+
+The pool `refreshInterval` (30 seconds to 24 hours, default five minutes) schedules
+conditional refresh. The HTTP source's `maxStale` (one minute to seven days,
+default 24 hours) bounds fallback from the last successful remote validation.
+The operator sends ETag and Last-Modified only with a matching intact cache.
+A 304 renews validation time without replacing body bytes. A failed fetch or
+malformed response leaves the accepted cache intact; at expiry its endpoints stop
+contributing to current inventory. This does not delete an already published
+Gateway generation or stop a healthy managed runtime. New accepted bytes that
+render the same validated artifact do not cause a rollout.
+
+Refresh uses four leader-scoped workers, no more than three attempts and a
+45-second overall deadline per source. Temporary network/timeout, 429 and 5xx
+failures retry with bounded jitter/backoff; configuration, destination and
+parse/admission failures do not. Restart restores compatible unexpired cache from
+the protected SQLite PVC. Changing URL or Authorization bytes, source variant,
+format, admission or HTTP authorization flags invalidates compatibility. A
+metadata-only Secret edit does not. Removed sources are pruned from protected
+storage; do not treat the retained PVC or its backups as non-sensitive.
+
+`status.sources[]` reports safe source ID, `Fresh`, `Cached`, `Expired` or
+`Unavailable`, a bounded reason and last successful validation time.
+`SourcesReady=False` with `Ready=True` means a usable inventory remains despite a
+degraded source. `Ready=False` after cache expiry means no current inventory was
+admitted. The status never includes URL, Authorization, validators, source bytes
+or a digest. Operators should check Gateway `RuntimeReady` separately from source
+freshness. Arbitrary request headers, cross-namespace refs,
+provider quota handling and HA refresh are unsupported.
 
 ## Minimal managed Gateway
 
@@ -190,16 +262,18 @@ switch objects back to BYO and complete cleanup before a binary downgrade.
 
 ## Operation and recovery
 
-Pool status reports bounded admission counts, `SourcesReady` and `Ready`. Gateway
+Pool status reports bounded admission counts, per-source freshness,
+`SourcesReady` and `Ready`. Gateway
 status also reports selection/configuration state and the runtime Conditions above.
 Messages are stable and credential-safe. A deleted source or Pool makes dependent
 Conditions false while the last owned output/runtime remains untouched.
 
 The operator uses one leader and serial SQLite access on the RWO PVC. State loss
-causes conservative re-probing while Kubernetes-owned LKG resources remain. Multiple
+causes conservative HTTP refetch and re-probing while Kubernetes-owned LKG resources
+remain. Multiple
 operator replicas, shared SQLite, managed replicas greater than one, PDB/topology,
 cross-namespace references, external Services, HTTP listeners, transparent routing,
-traffic-level health and HA are not M7 features.
+traffic-level health and HA are not current features.
 
 Controller-runtime metrics use authenticated HTTPS; health endpoints are separate
 on port 8081. The ServiceAccount can read/write the required Secrets and manage only
@@ -210,7 +284,8 @@ no ServiceAccount token.
 
 Use `make generate-check`, `make helm-check`, `make test-envtest`, and
 `make e2e-kind`; `make k8s-compat` runs those Kubernetes layers across every
-release-qualification profile. The kind test covers chart upgrade, negative namespace/cluster
-RBAC, BYO regression, both managed engines, mandatory authentication, controlled
-traffic, exact-generation rollout failure/LKG and recovery, bounded generations,
-owned-resource repair, operator restart and both mode transitions.
+release-qualification profile. The kind test covers chart upgrade, negative
+namespace/cluster RBAC, BYO regression, both managed engines, authentication,
+controlled traffic, exact-generation rollout failure/LKG and recovery, bounded
+generations, owned-resource repair, operator restart, mode transitions and a
+controlled HTTP subscription with conditional/no-op, fallback, recovery and expiry.

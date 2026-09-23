@@ -13,7 +13,8 @@ release qualification profiles are 1.32, 1.34 and 1.37; see the
 [Kubernetes compatibility contract](../operations/kubernetes-compatibility.md).
 M7 extends them with exact-owned managed objects, authenticated listener readiness,
 both-engine traffic, failed-rollout LKG, repair, bounded generation and mode-transition
-coverage.
+coverage. M8 adds conditional HTTP, retry, cache migration/integrity/expiry,
+Secret rotation, source status and controlled kind refresh/recovery coverage.
 Run cluster tests explicitly; ordinary unit tests do not silently create a cluster.
 
 ## Layers and gates
@@ -27,8 +28,8 @@ Run cluster tests explicitly; ordinary unit tests do not silently create a clust
 | File publication integration | Invalid generation retains LKG, no-op equality, stale work, disk-full/permission/symlink/conflict/crash-recovery boundaries | M3 |
 | Network and SQLite integration | Local controlled destinations, through-engine endpoint attribution, cancellations/budgets, transactions/migrations/restarts/retention | M4 |
 | Selection replay and scenario tests | Stable ties, unknown/stale evidence, ordinary residence, emergency replacement, recovery, no feasible candidates, restart continuity (implemented M5) | M5 |
-| Kubernetes envtest | API validation/defaults/status, indexed watches, Secret changes, retries/conflicts, ownership and idempotency | M6; M7 managed union/status |
-| Real-cluster tests using kind | Helm install/upgrade, negative RBAC, BYO lifecycle, both managed engines, authentication, exact activation, failed-rollout LKG, owned-resource repair, restart and mode transitions | M6; M7 |
+| Kubernetes envtest | API validation/defaults/status, indexed watches, Secret changes, retries/conflicts, ownership and idempotency; M8 source union, Secret rotations, cache recovery and unchanged-refresh no-op | M6–M8 |
+| Real-cluster tests using kind | Helm install/upgrade, negative RBAC, BYO lifecycle, both managed engines, authentication, exact activation, failed-rollout LKG, owned-resource repair, restart, mode transitions and controlled HTTP refresh/fallback/expiry | M6–M8 |
 | End-to-end traffic | Generated engine actually proxies controlled workload; wrong routes, selective destination failures, failover and recovery | M3 small smoke; M5/M6 full scenarios |
 
 No fixed coverage percentage substitutes for verifying failure boundaries. Tests

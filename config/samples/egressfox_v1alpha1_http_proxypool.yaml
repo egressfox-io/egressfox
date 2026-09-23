@@ -1,0 +1,29 @@
+# Illustrative M8 source; this file is intentionally not in kustomization.yaml.
+# Replace Secret values through a private secret-management workflow.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sample-http-access
+  namespace: egressfox-system
+stringData:
+  url: https://subscriptions.example.test/replace-me
+  authorization: Bearer replace-me
+---
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata:
+  name: sample-http
+  namespace: egressfox-system
+spec:
+  sources:
+    - id: provider-a
+      http:
+        urlSecretRef: {name: sample-http-access, key: url}
+        authorizationSecretRef: {name: sample-http-access, key: authorization}
+        maxStale: 24h
+      format: URIList
+  probe:
+    targetSecretRef: {name: sample-target, key: url}
+    expectedStatus: 204
+  selection: {strategy: Adaptive, topN: 1}
+  refreshInterval: 5m

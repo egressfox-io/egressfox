@@ -9,7 +9,8 @@ RWO-PVC single-active operation.
 Release tooling adds a centralized checksum manifest, exact engine/source/license
 artifacts, SPDX SBOMs, image/package scanning, keyless signing and provenance.
 Ordinary CI is read-only; publication is tag-bound and protected-environment gated.
-M7 adds an explicit managed single-replica data-plane runtime; there is still no
+M7 adds an explicit managed single-replica data-plane runtime; M8 adds protected
+conditional HTTP source caching and bounded leader-scoped refresh. There is still no
 production stability or high-availability claim. Reporting
 guidance is in [SECURITY.md](../../SECURITY.md). ADRs 0015–0017 and the
 [runtime/standalone](../designs/runtime-and-standalone.md) and
@@ -36,6 +37,13 @@ requests, response bytes and SQLite retention; its diagnostics omit engine outpu
 raw targets, credentials and confidential revisions. M5 explanations expose safe
 logical endpoint IDs and bounded integer evidence components only; selection state,
 private revisions and artifact receipts remain in the protected SQLite/file boundary.
+M8 reuses the same acquisition dial and redirect rules for every retry. URL and
+Authorization bytes are Secret references, never CR fields. Conditional validators
+are provider-controlled private metadata and never used as integrity. Cache bodies
+are bounded to 4 MiB, stored in the private SQLite PVC with a SHA-256 integrity
+check, and excluded from status, Events and normal logs. Cache compatibility covers
+credential and parsing semantics, and fallback expires even during prolonged
+provider outage. The fixed worker/queue and retry budget bound outage amplification.
 
 ## Assets, actors, and trust boundaries
 

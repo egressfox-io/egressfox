@@ -50,11 +50,11 @@ read the owning design and accepted decisions for the area they plan to change.
   the affected public/persistent contract.
 - **Open question**: unresolved, with a milestone gate in the decision queue.
 - **Implemented**: backed by code and validation evidence; current milestone status
-  is in the roadmap. This applies to repository tooling and the M1–M7 endpoint,
+  is in the roadmap. This applies to repository tooling and the M1–M8 endpoint,
   source, policy, engine artifact, local publication, observation, probe, history,
   selection, reconciliation, Kubernetes operator, Secret publication and managed
-  runtime/activation domains. The standalone product CLI/runtime wrapper and the
-  broader publisher family remain future architecture.
+  runtime/activation and HTTP refresh domains. The standalone product CLI/runtime
+  wrapper and broader publisher family remain future architecture.
 - **Future/experimental**: cataloged beyond the current milestone; not current work.
 
 Priority and maturity are independent. P0 does not mean implemented; an accepted

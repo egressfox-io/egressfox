@@ -1,6 +1,7 @@
 # Kubernetes API and operator
 
-Status: M6 namespace-scoped P0 API and M7 managed single-replica runtime implemented.
+Status: M6 namespace-scoped P0 API, M7 managed single-replica runtime and M8
+managed HTTP source refresh implemented.
 [ADR 0011](../decisions/0011-namespaced-byo-operator.md) owns the BYO topology and
 Secret contract; [ADR 0013](../decisions/0013-managed-gateway-activation.md) owns
 current managed lifecycle and activation. The
@@ -13,14 +14,15 @@ and an initial alpha API, while deferring generation until the M6 design gate.
 ## Responsibilities and relationships
 
 M6 implements namespaced `ProxyPool` and `EgressGateway` resources in
-`egressfox.io/v1alpha1`; M7 extends Gateway with explicit managed mode.
+`egressfox.io/v1alpha1`; M7 extends Gateway with explicit managed mode and M8 adds
+the Secret/HTTP source union without a new API version.
 `EgressPolicy` is planned for M10. Names, field structures, and
 defaults are not frozen. Use the following relationships to evaluate an API;
 this table is not an installable schema.
 
 | Resource | Desired responsibility | Status responsibility | Must not own |
 | --- | --- | --- | --- |
-| ProxyPool | Secret source references, admission flags, probe authorization, selection strategy/Top-N and refresh interval | Bounded accepted/rejected/unsupported counts, last inventory-change time, Conditions | Gateway workload lifecycle or raw credentials/history |
+| ProxyPool | Secret or HTTP source references, admission flags, probe authorization, selection strategy/Top-N and refresh interval | Bounded accepted/rejected/unsupported counts, source states, last inventory-change time, Conditions | Gateway workload lifecycle or raw credentials/history |
 | EgressGateway | Pool reference, pinned engine profile and either BYO output/listener or explicit managed runtime | Bounded selection/publication counts, safe generation/service/auth references and separate activation/readiness Conditions | Fetching independently, exposing artifact receipts, or mutating user-managed engines |
 | EgressPolicy (P1) | Bounded routing intent and future candidate-group composition associated with a gateway | Acceptance/conflict status for that policy | A separate connection-level router |
 | EgressOutput (future) | One external publication destination consuming an EgressGateway artifact | Independent publication result and receipt status | Managed Gateway activation or a reusable backend-connection registry |
@@ -39,6 +41,16 @@ in Secrets, not CR spec strings, annotations, Events, or status. Public source U
 still need a secret-reference option because paths/query parameters may hold tokens.
 Reject missing references, unresolved ownership, invalid bounds, and unsupported
 engine profiles clearly. Secret rotation must trigger reconciliation.
+
+M8's `sources[]` entry has exactly one `secretRef` or `http`. HTTP requires a URL
+Secret key and optionally an Authorization Secret key; `allowHTTP`,
+`allowPrivateNetworks` and `allowInsecureTLS` are separate opt-ins. The existing
+pool `refreshInterval` owns scheduling, and HTTP `maxStale` bounds fallback
+independently. Source status
+is keyed by safe ID and reports `Fresh`, `Cached`, `Expired` or `Unavailable` with a
+safe reason and last-success time. `SourcesReady=False` may coexist with
+`Ready=True` when an admitted inventory remains usable from cache or another
+source. No validator, URL or confidential revision is public.
 
 Do not use a separate CRD for every normalized endpoint or observation. The API
 server is not a time-series database. If pool inventory needs durable transport
@@ -97,6 +109,10 @@ Use focused reconcilers, consistent with [Kubebuilder guidance](https://book.kub
 - ProxyPool reconciliation validates desired inputs and submits/coordinates pool
   refresh and scheduled probe work through the shared core services. Long network
   sweeps must not occupy an API reconcile worker indefinitely.
+- The M8 HTTP refresher is leader-scoped with four fixed workers and per-source
+  in-flight exclusion. Indexed Secret watches notify it of relevant rotations;
+  a periodic scoped scan repairs missed notifications and prunes removed caches.
+  Accepted content changes enqueue the affected Pool and indexed Gateways.
 - EgressGateway reconciliation consumes an immutable pool decision and current
   gateway intent, then renders, validates, and publishes through shared use cases.
 - A future EgressPolicy reconciler owns policy acceptance/composition, with an

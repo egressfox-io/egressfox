@@ -230,35 +230,47 @@ query values and parser error text are never retained in diagnostics.
 ## Refresh semantics
 
 Each attempt has a timeout, cancellation, byte and redirect limits, and sanitized
-errors. HTTP authentication, custom headers, User-Agent, retries/backoff, ETag,
-Last-Modified, caching, source fallback, and last-known-good content are planned
-capabilities. Source URL and headers are secret-bearing; logs should identify a
-configured source by safe ID, not its URL or query string.
+errors. M8 adds Secret-backed Authorization, conditional ETag/Last-Modified requests,
+bounded retry/backoff and protected source-cache fallback for Kubernetes HTTP
+sources. Arbitrary custom headers and User-Agent configuration remain future work.
+Source URL, authorization and validators are secret-bearing; diagnostics identify a
+configured source by safe ID, never by URL or query string.
 
 | Refresh result | Inventory consequence |
 | --- | --- |
 | Valid complete snapshot | Commit a new source revision, then reconcile source-local presence |
 | Explicit valid empty snapshot | A deliberate inventory change, subject to configured empty-source safety policy |
-| HTTP 304 with matching usable cache (P1) | Reuse that revision; not an empty response |
+| HTTP 304 with matching usable cache (M8) | Reuse that revision and renew validation time; not an empty response |
 | Timeout, authentication failure, oversized or malformed response | Failed attempt; do not erase previous inventory |
 | Mixed valid and rejected records | Reject transactionally by default; explicit partial policy may commit accepted records with bounded diagnostics |
 | Source removed from desired configuration | Explicit removal; not equivalent to a transient refresh error |
 
-P0 requires transactional refresh and failure reporting. Durable HTTP content
-caching/fallback is P1; retaining the currently committed inventory during a failed
-attempt does not promise a complete source-cache implementation. Staleness/expiry
-must be visible. Selection must not keep an endpoint indefinitely simply because
-its source failed to refresh. Last-known-good *source content* and last-known-good
-*published configuration* are separate objects and policies.
+The M8 operator retains a compatible accepted HTTP source body during a failed
+attempt only until its `maxStale` boundary. The default is 24 hours; the API permits
+one minute to seven days. At the exact expiry boundary the source no longer
+contributes current inventory. Source content, endpoint evidence, published
+configuration and managed runtime each have separate last-known-good rules.
 
-### P1 resilient refresh direction
+### M8 managed HTTP refresh
 
-P1 M8 exposes the existing HTTP acquisition path to Kubernetes through a validated
-source union whose URL and sensitive headers remain same-namespace Secret references.
-It adds conditional requests, bounded retry/backoff and a protected durable content
-cache. Q14 must define validator/cache identity, expiry, restart recovery and status
-before schema or persistence changes. A 304 can reuse only a matching usable cache;
-cache fallback is time-bounded and cannot turn failure into an empty snapshot.
+M8 exposes the existing HTTP acquisition path through the validated Secret/HTTP
+source union. The URL and optional Authorization value are same-namespace Secret
+keys. The pool refresh interval schedules a leader-scoped, four-worker queue outside
+API reconcile workers. Three attempts within a 45-second overall deadline retry
+only temporary network/timeout, 429 and 5xx failures. Backoff starts at 200 ms,
+adds bounded jitter and honors Retry-After up to two seconds. A canceled leader
+context interrupts requests and backoff. A 304 can reuse only a matching, intact,
+unexpired cache; a 304 without it gets at most one unconditional request.
+
+[ADR 0018](../decisions/0018-resilient-http-sources.md) defines private compatibility
+fingerprinting and SQLite schema v3. The source key is Pool UID plus source ID;
+URL bytes, Authorization bytes, format/admission and HTTP authorization affect
+compatibility. Secret metadata alone does not. The cache stores the bounded body,
+body digest, validators, accepted time and last successful validation time. Reopen
+verifies integrity and re-parses through M2. A failed fetch or parse never commits
+new bytes. Removed/incompatible source records are pruned, and unvalidated records
+older than eight days are removed. Raw cache bytes and fingerprints never
+enter CR status or metadata.
 
 File, environment, ConfigMap and Vault adapters are not in the committed P1 path.
 Subscription quota/expiry remains optional attributed metadata, never trusted

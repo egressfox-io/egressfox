@@ -92,10 +92,10 @@ exist.
 
 ## Current capabilities
 
-| Area | Implemented P0 contract |
+| Area | Implemented contract |
 | --- | --- |
 | Endpoints | VLESS and Trojan over TCP or WebSocket, with bounded TLS/SNI options |
-| Sources | URI lists and Base64 URI lists; bounded HTTP acquisition in the core and same-namespace Secret ingestion in Kubernetes |
+| Sources | URI lists and Base64 URI lists; same-namespace Secret snapshots or managed conditional HTTP refresh with a protected, time-bounded cache |
 | Evidence | Revision- and destination-specific probes, bounded scheduling, SQLite history and freshness-aware summaries |
 | Selection | Static, lowest-latency, and deterministic adaptive Top-N strategies with residence, hysteresis, cooldown and emergency replacement |
 | Rendering | Exact Mihomo 1.19.31 and sing-box-compatible 1.14.1 profiles with native validation |
@@ -145,7 +145,8 @@ make e2e-kind
 The kind test creates an isolated pinned Kubernetes 1.32 cluster by default, installs/upgrades the
 chart, checks negative RBAC and BYO compatibility, proxies controlled traffic
 through both managed engines, verifies authentication, failed-rollout LKG, repair,
-restart and mode transitions, and deletes the cluster when complete.
+restart and mode transitions, and exercises conditional HTTP source refresh,
+fallback and expiry. It deletes the cluster when complete.
 
 After the first approved alpha is published, use the verified image digest and Helm
 package described in the [release guide](docs/operations/releasing.md). Do not deploy
@@ -216,11 +217,11 @@ Read [SECURITY.md](SECURITY.md) before reporting a sensitive issue and see the
 
 ## Project status and roadmap
 
-P0 milestones M1–M6, post-M6 release hardening and P1 M7 managed
-gateway/activation are complete. The current API is `v1alpha1`; Kubernetes 1.32,
-1.34 and 1.37 are the release-qualification profiles, and the project is not
-production-certified. M8 resilient
-HTTP source refresh is the next implementation unit. See the
+P0 milestones M1–M6, post-M6 release hardening, P1 M7 managed
+gateway/activation and M8 resilient HTTP source refresh are complete. The current
+API is `v1alpha1`; Kubernetes 1.32, 1.34 and 1.37 are release-qualification
+profiles, and the project is not production-certified. M9 target-aware selection
+profiles are the next implementation unit. See the
 [P1 roadmap](docs/roadmap/p1.md).
 
 ## Documentation

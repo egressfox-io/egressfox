@@ -14,13 +14,13 @@ The repository now contains the complete P0 control-plane path and a deliberate
 release process for the first development version with Q12 resolved, exact source/checksum provenance,
 SBOMs, vulnerability gates, keyless signing/provenance design and a non-publishing
 dry run. P1 M7 adds the first explicit managed engine path and exact-generation
-activation. There is still no product CLI, managed HTTP source refresh,
-cross-namespace API or HA topology.
+activation; M8 adds managed conditional HTTP source refresh with a protected
+time-bounded cache. There is still no product CLI, cross-namespace API or HA topology.
 
-**Next implementation milestone: P1 M8.** The authoritative
+**Next implementation milestone: P1 M9.** The authoritative
 [P1 product roadmap](p1.md) now orders managed runtime/activation, resilient source
 refresh, target-aware selection, bounded routing policy, observability and
-explainability. M7 is complete; later P1 behavior is not implemented. A public
+explainability. M7–M8 are complete; later P1 behavior is not implemented. A public
 alpha is a separate maintainer decision and requires the protected repository
 settings in the release guide.
 

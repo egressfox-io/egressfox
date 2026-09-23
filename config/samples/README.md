@@ -4,6 +4,11 @@ These manifests show the current `egressfox.io/v1alpha1` shape for one adaptive
 `ProxyPool`, one explicitly managed sing-box-compatible `EgressGateway`, and one
 backward-compatible BYO Gateway in the same namespace.
 
+[The managed HTTP source example](egressfox_v1alpha1_http_proxypool.yaml) is
+available separately and is not applied by `kubectl apply -k`. It shows the
+same-namespace URL and Authorization Secret references, conditional refresh and
+bounded fallback. Replace its placeholder values before applying it explicitly.
+
 The Secret values are intentionally fake. `example.test` is reserved for examples,
 so the sample will not become Ready until both Secret values are replaced through
 your normal secret-management workflow:

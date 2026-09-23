@@ -15,14 +15,15 @@ Each ProxyPool source keeps its stable, safe `id`, explicit format and admission
 flags. Its input is exactly one of the existing `secretRef` or a new `http` object.
 The HTTP object names a same-namespace Secret key containing the complete URL and
 optionally a Secret key containing an Authorization header value. It has separate
-`allowHTTP` and `allowPrivateNetworks` opt-ins. TLS verification is not weakened by
-the HTTP source API. The existing pool refresh interval owns periodic scheduling;
+`allowHTTP`, `allowPrivateNetworks` and `allowInsecureTLS` opt-ins. TLS verification
+remains enabled by default; only an explicitly trusted source may disable it. The
+existing pool refresh interval owns periodic scheduling;
 HTTP cache fallback has a separately bounded `maxStale` duration (default 24 hours,
-range one hour to seven days). Secret sources retain their current behavior.
+range one minute to seven days). Secret sources retain their current behavior.
 
 The logical source key is Pool UID plus source ID. A private SHA-256 compatibility
 fingerprint covers the source variant, URL bytes, authorization bytes, format,
-`allowEmpty`, `allowPartial`, pool `allowInsecureTLS`, and HTTP authorization flags.
+`allowEmpty`, `allowPartial`, pool `allowInsecureTLS`, and HTTP network/TLS flags.
 It excludes Secret resourceVersion, names, and unrelated metadata: equivalent
 material can safely reuse a cache after a metadata-only change. The fingerprint
 stays in protected storage, never Kubernetes metadata/status. A changed fingerprint
@@ -35,12 +36,14 @@ Last-Modified, accepted time and last successful validation time. An explicit
 schema migration adds this table. Writes are atomic. Cache reads verify schema,
 identity, body length and digest, and parse/admit the bytes again through M2.
 Missing, corrupt, incompatible or expired bytes cannot contribute to inventory.
-Removed pools/sources and replaced identities are pruned; no historical bodies are
-retained. SQLite's protected directory/file permissions and PVC remain required.
+Removed pools/sources and replaced identities are pruned; any unvalidated record
+older than eight days is also removed. No historical bodies are retained. SQLite's
+protected directory/file permissions and PVC remain required.
 
 A 200 response is parsed and admitted before a cache transaction commits it. A
-successful 304 only renews validation time for a matching, intact, still eligible
-cached body. It never supplies empty bytes. ETag and Last-Modified are stored as
+successful 304 only renews validation time and any validators explicitly returned
+for a matching, intact, still eligible cached body. It never supplies empty bytes.
+ETag and Last-Modified are stored as
 provider validators, never content identity; missing validators are removed on a
 new 200. A 304 without usable cache fails safely and gets at most one unconditional
 request. A 200 with equivalent admitted inventory does not cause artifact rollout.
