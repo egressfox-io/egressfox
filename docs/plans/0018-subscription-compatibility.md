@@ -75,9 +75,10 @@ Helm upgrade/uninstall, and removed its temporary cluster. Kubernetes 1.34 and 1
 profiles were not run here.
 
 `make check` initially stopped at its generated-file cleanliness gate because the
-intentional new API and CRD diff was not yet committed. After committing the
-implementation, rerun it on the clean branch and record the final result in the
-commit/handoff. No remote publication was attempted.
+intentional new API and CRD diff was not yet committed. After implementation commit
+`3d7336e`, `make check` passed on the clean branch: generated files matched, vet,
+the full race suite, builds, offline docs, Helm, release-contract checks and
+whitespace checks all passed. No remote publication was attempted.
 
 ## Handoff
 
