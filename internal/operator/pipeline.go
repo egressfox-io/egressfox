@@ -101,7 +101,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if gateway == nil || pool == nil || gateway.Namespace != pool.Namespace || gateway.Spec.PoolRef.Name != pool.Name {
 		return GatewayOutcome{}, pipelineFailure("reference")
 	}
-	poolResult, err := BuildPool(ctx, p.reader, pool)
+	poolResult, err := BuildPoolWithCache(ctx, p.reader, pool, p.store, p.now())
 	if err != nil {
 		var coded interface{ Code() string }
 		if errors.As(err, &coded) {
@@ -187,6 +187,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("snapshot_guard")
 	}
+	guard.BindCache(p.store, poolResult.CacheVersions)
 	var publisher reconcile.Publisher
 	var generationPublisher *GenerationPublisher
 	if IsManaged(gateway) {

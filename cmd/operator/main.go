@@ -98,11 +98,16 @@ func main() {
 		setupLog.Error(err, "unable to create pipeline")
 		os.Exit(1)
 	}
-	if err := (&controller.ProxyPoolReconciler{Client: manager.GetClient(), Scheme: manager.GetScheme()}).SetupWithManager(manager); err != nil {
+	refresher := controller.NewHTTPRefresher(manager.GetAPIReader(), store, namespace)
+	if err := manager.Add(refresher); err != nil {
+		setupLog.Error(err, "unable to register HTTP refresher")
+		os.Exit(1)
+	}
+	if err := (&controller.ProxyPoolReconciler{Client: manager.GetClient(), Scheme: manager.GetScheme(), Store: store, Refresher: refresher}).SetupWithManager(manager); err != nil {
 		setupLog.Error(err, "unable to register ProxyPool controller")
 		os.Exit(1)
 	}
-	if err := (&controller.EgressGatewayReconciler{Client: manager.GetClient(), Scheme: manager.GetScheme(), Pipeline: pipeline, Runtime: pipeline.ManagedRuntime()}).SetupWithManager(manager); err != nil {
+	if err := (&controller.EgressGatewayReconciler{Client: manager.GetClient(), Scheme: manager.GetScheme(), Pipeline: pipeline, Runtime: pipeline.ManagedRuntime(), Refresher: refresher}).SetupWithManager(manager); err != nil {
 		setupLog.Error(err, "unable to register EgressGateway controller")
 		os.Exit(1)
 	}

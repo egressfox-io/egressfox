@@ -17,8 +17,8 @@ The repository had a clean `main` at baseline; no pre-existing changes were pres
 
 ## Checkpoints
 
-- [ ] API, conditional acquisition and cache storage with tests.
-- [ ] Bounded refresh scheduling, operator integration, status and regression tests.
+- [x] API, conditional acquisition and cache storage with tests.
+- [x] Bounded refresh scheduling, operator integration, status and regression tests.
 - [ ] Envtest/kind evidence, documentation, full validation and clean commits.
 
 ## Progress and evidence
@@ -26,6 +26,14 @@ The repository had a clean `main` at baseline; no pre-existing changes were pres
 Repository discovery confirmed M7 is implemented and M8 is unimplemented. The
 operator already has a protected SQLite PVC, Secret indexes and artifact equality;
 M8 builds on those paths.
+
+- `8f9d91a` records Q14 in ADR 0018 before code.
+- `ceaa8e6` adds typed conditional HTTP results, bounded retry and protected
+  SQLite schema v3 cache with reopening, integrity and migration tests.
+- The operator checkpoint adds the validated Secret/HTTP CRD union, private
+  compatibility identity, cached inventory reconstruction, four-worker leader
+  refresh, targeted Pool/Gateway events and stale-input guards. Focused Go tests,
+  race tests and pinned 1.32 envtest passed; kind and final validation remain.
 
 ## Resume and handoff
 

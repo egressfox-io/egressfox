@@ -3,6 +3,8 @@ package controller_test
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,6 +24,7 @@ import (
 	"github.com/egressfox-io/egressfox/internal/artifact"
 	"github.com/egressfox-io/egressfox/internal/controller"
 	operatoradapter "github.com/egressfox-io/egressfox/internal/operator"
+	"github.com/egressfox-io/egressfox/internal/state"
 )
 
 type envtestChecker struct{}
@@ -79,11 +82,11 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	}
 	invalidTimeout := metav1.Duration{Duration: time.Millisecond}
 	invalidRefresh := metav1.Duration{Duration: time.Second}
-	invalid := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "invalid", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", SecretRef: egressv1alpha1.SecretKeyReference{Name: "input", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList}}, Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}, Timeout: &invalidTimeout}, RefreshInterval: &invalidRefresh}}
+	invalid := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "invalid", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", SecretRef: &egressv1alpha1.SecretKeyReference{Name: "input", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList}}, Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}, Timeout: &invalidTimeout}, RefreshInterval: &invalidRefresh}}
 	if err := kubeClient.Create(ctx, invalid); err == nil {
 		t.Fatal("API server admitted durations outside the CRD bounds")
 	}
-	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", SecretRef: egressv1alpha1.SecretKeyReference{Name: "input", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList}}, Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}}}}
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", SecretRef: &egressv1alpha1.SecretKeyReference{Name: "input", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList}}, Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}}}}
 	if err := kubeClient.Create(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +103,65 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	}
 	if err := kubeClient.Get(ctx, types.NamespacedName{Namespace: "egress", Name: "pool"}, pool); err != nil || pool.Status.AcceptedEndpoints != 1 {
 		t.Fatalf("status subresource not updated: %#v, %v", pool.Status, err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"v1"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"v1"`)
+		_, _ = w.Write([]byte("trojan://synthetic@edge.example.com:443?security=tls"))
+	}))
+	defer server.Close()
+	urlSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "subscription-url", Namespace: "egress"}, Data: map[string][]byte{"url": []byte(server.URL)}}
+	if err := kubeClient.Create(ctx, urlSecret); err != nil {
+		t.Fatal(err)
+	}
+	httpPool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "http-pool", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "managed", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "subscription-url", Key: "url"}, AllowHTTP: true, AllowPrivateNetworks: true}}}, Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}}}}
+	if err := kubeClient.Create(ctx, httpPool); err != nil {
+		t.Fatalf("HTTP union rejected: %v", err)
+	}
+	if httpPool.Spec.Sources[0].HTTP.MaxStale == nil || httpPool.Spec.Sources[0].HTTP.MaxStale.Duration != 24*time.Hour {
+		t.Fatal("maxStale default missing")
+	}
+	badUnion := httpPool.DeepCopy()
+	badUnion.Name = "bad-union"
+	badUnion.ResourceVersion = ""
+	badUnion.UID = ""
+	badUnion.Spec.Sources[0].SecretRef = &egressv1alpha1.SecretKeyReference{Name: "input", Key: "nodes"}
+	if err := kubeClient.Create(ctx, badUnion); err == nil {
+		t.Fatal("API admitted contradictory source union")
+	}
+	missingUnion := httpPool.DeepCopy()
+	missingUnion.Name = "missing-union"
+	missingUnion.ResourceVersion = ""
+	missingUnion.UID = ""
+	missingUnion.Spec.Sources[0].HTTP = nil
+	if err := kubeClient.Create(ctx, missingUnion); err == nil {
+		t.Fatal("API admitted missing source variant")
+	}
+	cacheDir := t.TempDir()
+	if err := os.Chmod(cacheDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cacheStore, err := state.Open(filepath.Join(cacheDir, "state.db"), state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cacheStore.Close()
+	cacheNow := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	if changed, err := operatoradapter.RefreshHTTP(ctx, kubeClient, cacheStore, httpPool, httpPool.Spec.Sources[0], cacheNow); err != nil || !changed {
+		t.Fatalf("HTTP refresh = %v, %v", changed, err)
+	}
+	cacheReconciler := &controller.ProxyPoolReconciler{Client: kubeClient, Scheme: scheme, Store: cacheStore, Now: func() time.Time { return cacheNow }}
+	if _, err := cacheReconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(httpPool)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(httpPool), httpPool); err != nil || httpPool.Status.AcceptedEndpoints != 1 || len(httpPool.Status.Sources) != 1 {
+		t.Fatalf("HTTP status = %+v, %v", httpPool.Status, err)
+	}
+	if changed, err := operatoradapter.RefreshHTTP(ctx, kubeClient, cacheStore, httpPool, httpPool.Spec.Sources[0], cacheNow.Add(time.Minute)); err != nil || changed {
+		t.Fatalf("HTTP 304 = %v, %v", changed, err)
 	}
 
 	gateway := &egressv1alpha1.EgressGateway{TypeMeta: metav1.TypeMeta{APIVersion: egressv1alpha1.GroupVersion.String(), Kind: "EgressGateway"}, ObjectMeta: metav1.ObjectMeta{Name: "gateway", Namespace: "egress"}, Spec: egressv1alpha1.EgressGatewaySpec{PoolRef: egressv1alpha1.LocalReference{Name: "pool"}, Engine: egressv1alpha1.EngineMihomo, OutputSecretName: "output"}}

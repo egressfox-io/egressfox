@@ -76,23 +76,24 @@ func (store *Store) ValidateSourceCache(ctx context.Context, key string, fingerp
 	return nil
 }
 
-func (store *Store) SourceCacheDigest(ctx context.Context, key string) ([32]byte, bool, error) {
+func (store *Store) SourceCacheVersion(ctx context.Context, key string) ([32]byte, time.Time, bool, error) {
 	var digest []byte
 	var body []byte
-	err := store.database.QueryRowContext(ctx, `SELECT body, body_digest FROM http_source_cache WHERE source_key=?`, key).Scan(&body, &digest)
+	var validated int64
+	err := store.database.QueryRowContext(ctx, `SELECT body, body_digest, validated_at_ns FROM http_source_cache WHERE source_key=?`, key).Scan(&body, &digest, &validated)
 	if errors.Is(err, sql.ErrNoRows) {
-		return [32]byte{}, false, nil
+		return [32]byte{}, time.Time{}, false, nil
 	}
-	if err != nil || len(body) > maxCachedBody || len(digest) != 32 {
-		return [32]byte{}, false, failure(ErrPersistence, "cache_digest")
+	if err != nil || len(body) > maxCachedBody || len(digest) != 32 || validated <= 0 {
+		return [32]byte{}, time.Time{}, false, failure(ErrPersistence, "cache_version")
 	}
 	computed := sha256.Sum256(body)
 	if string(computed[:]) != string(digest) {
-		return [32]byte{}, false, failure(ErrPersistence, "cache_corrupt")
+		return [32]byte{}, time.Time{}, false, failure(ErrPersistence, "cache_corrupt")
 	}
 	var result [32]byte
 	copy(result[:], digest)
-	return result, true, nil
+	return result, time.Unix(0, validated).UTC(), true, nil
 }
 
 func (store *Store) DeleteSourceCache(ctx context.Context, key string) error {

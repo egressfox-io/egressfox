@@ -5,10 +5,12 @@ import (
 	"errors"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	egressv1alpha1 "github.com/egressfox-io/egressfox/api/v1alpha1"
+	"github.com/egressfox-io/egressfox/internal/state"
 )
 
 var ErrSnapshotObsolete = errors.New("Kubernetes input snapshot is obsolete")
@@ -18,10 +20,17 @@ var ErrSnapshotObsolete = errors.New("Kubernetes input snapshot is obsolete")
 // transaction across these objects, so the check is deliberately performed at
 // the final publication boundary.
 type SnapshotGuard struct {
-	reader  client.Reader
-	gateway objectRevision
-	pool    objectRevision
-	secrets map[types.NamespacedName]ResourceRevision
+	reader        client.Reader
+	gateway       objectRevision
+	pool          objectRevision
+	secrets       map[types.NamespacedName]ResourceRevision
+	cache         *state.Store
+	cacheVersions map[string]CacheVersion
+}
+
+func (g *SnapshotGuard) BindCache(store *state.Store, versions map[string]CacheVersion) {
+	g.cache = store
+	g.cacheVersions = versions
 }
 
 type objectRevision struct {
@@ -58,7 +67,20 @@ func (g *SnapshotGuard) Check(ctx context.Context) error {
 	}
 	for name, expected := range g.secrets {
 		secret := &corev1.Secret{}
-		if err := g.reader.Get(ctx, name, secret); err != nil || secret.UID != expected.UID || secret.ResourceVersion != expected.ResourceVersion {
+		err := g.reader.Get(ctx, name, secret)
+		if expected.UID == "" && expected.ResourceVersion == "" {
+			if !apierrors.IsNotFound(err) {
+				return ErrSnapshotObsolete
+			}
+			continue
+		}
+		if err != nil || secret.UID != expected.UID || secret.ResourceVersion != expected.ResourceVersion {
+			return ErrSnapshotObsolete
+		}
+	}
+	for key, expected := range g.cacheVersions {
+		actual, validatedAt, found, err := g.cache.SourceCacheVersion(ctx, key)
+		if err != nil || found != expected.Present || found && (actual != expected.Digest || !validatedAt.Equal(expected.ValidatedAt)) {
 			return ErrSnapshotObsolete
 		}
 	}

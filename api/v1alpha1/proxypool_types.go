@@ -46,13 +46,19 @@ type SecretKeyReference struct {
 	Key string `json:"key"`
 }
 
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef) != has(self.http)",message="exactly one of secretRef or http is required"
 type SubscriptionSource struct {
 	// ID is stable source provenance and must not contain a URL or credential.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9.-]*$`
-	ID        string             `json:"id"`
-	SecretRef SecretKeyReference `json:"secretRef"`
+	ID string `json:"id"`
+	// SecretRef is the legacy Secret-backed source input.
+	// +optional
+	SecretRef *SecretKeyReference `json:"secretRef,omitempty"`
+	// HTTP enables managed refresh from a Secret-backed URL.
+	// +optional
+	HTTP *HTTPSource `json:"http,omitempty"`
 	// +kubebuilder:validation:Enum=URIList;Base64URIList
 	Format SourceFormat `json:"format"`
 	// AllowEmpty accepts an authoritative empty snapshot for this source.
@@ -61,6 +67,23 @@ type SubscriptionSource struct {
 	// AllowPartial commits accepted records when other records are rejected.
 	// +optional
 	AllowPartial bool `json:"allowPartial,omitempty"`
+}
+
+type HTTPSource struct {
+	URLSecretRef SecretKeyReference `json:"urlSecretRef"`
+	// +optional
+	AuthorizationSecretRef *SecretKeyReference `json:"authorizationSecretRef,omitempty"`
+	// +optional
+	AllowHTTP bool `json:"allowHTTP,omitempty"`
+	// +optional
+	AllowPrivateNetworks bool `json:"allowPrivateNetworks,omitempty"`
+	// AllowInsecureTLS disables certificate verification for this source only.
+	// +optional
+	AllowInsecureTLS bool `json:"allowInsecureTLS,omitempty"`
+	// MaxStale bounds cache fallback from the last successful remote validation.
+	// +kubebuilder:default="24h"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1m') && duration(self) <= duration('168h')",message="maxStale must be between 1m and 168h"
+	MaxStale *metav1.Duration `json:"maxStale,omitempty"`
 }
 
 type ProbeSpec struct {
@@ -116,9 +139,20 @@ type ProxyPoolStatus struct {
 	// LastInventoryChangeTime advances only when a successful admission changes
 	// the bounded inventory summary or observes a new spec generation.
 	LastInventoryChangeTime *metav1.Time `json:"lastInventoryChangeTime,omitempty"`
+	// Sources contains bounded, credential-free per-source state.
+	// +listType=map
+	// +listMapKey=id
+	Sources []SourceStatus `json:"sources,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type SourceStatus struct {
+	ID              string       `json:"id"`
+	State           string       `json:"state"`
+	Reason          string       `json:"reason,omitempty"`
+	LastSuccessTime *metav1.Time `json:"lastSuccessTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -127,7 +161,7 @@ type ProxyPoolStatus struct {
 // +kubebuilder:printcolumn:name="Endpoints",type=integer,JSONPath=`.status.acceptedEndpoints`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ProxyPool describes a bounded set of Secret-backed subscriptions.
+// ProxyPool describes a bounded set of Secret-backed or managed HTTP subscriptions.
 type ProxyPool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitzero"`

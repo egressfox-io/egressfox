@@ -23,7 +23,7 @@ import (
 func TestProxyPoolReconcileReportsSafeAggregateStatus(t *testing.T) {
 	scheme := controllerScheme(t)
 	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("11111111-2222-3333-4444-555555555555")}, Spec: egressv1alpha1.ProxyPoolSpec{
-		Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", SecretRef: egressv1alpha1.SecretKeyReference{Name: "input", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList}},
+		Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", SecretRef: &egressv1alpha1.SecretKeyReference{Name: "input", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList}},
 	}}
 	canary := "controller-source-secret-canary"
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "input", Namespace: "egress"}, Data: map[string][]byte{"nodes": []byte("trojan://" + canary + "@edge.example.com:443?security=tls")}}

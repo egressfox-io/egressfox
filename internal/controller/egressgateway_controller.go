@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
 	egressv1alpha1 "github.com/egressfox-io/egressfox/api/v1alpha1"
 	operatoradapter "github.com/egressfox-io/egressfox/internal/operator"
@@ -47,10 +48,11 @@ type GatewayRuntime interface {
 
 type EgressGatewayReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Pipeline GatewayPipeline
-	Runtime  GatewayRuntime
-	Now      func() time.Time
+	Scheme    *runtime.Scheme
+	Pipeline  GatewayPipeline
+	Runtime   GatewayRuntime
+	Now       func() time.Time
+	Refresher *HTTPRefresher
 }
 
 func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
@@ -260,15 +262,18 @@ func (r *EgressGatewayReconciler) SetupWithManager(manager ctrl.Manager) error {
 	}); err != nil {
 		return err
 	}
-	return ctrl.NewControllerManagedBy(manager).
+	builder := ctrl.NewControllerManagedBy(manager).
 		For(&egressv1alpha1.EgressGateway{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, deletionPredicate{}))).
-		Watches(&egressv1alpha1.ProxyPool{}, handler.EnqueueRequestsFromMapFunc(r.gatewaysForPool), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&egressv1alpha1.ProxyPool{}, handler.EnqueueRequestsFromMapFunc(r.gatewaysForPool), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.gatewaysForSecret), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Owns(&corev1.Secret{}, builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Owns(&appsv1.Deployment{}, builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Owns(&corev1.Service{}, builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
-		Owns(&networkingv1.NetworkPolicy{}, builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
-		Complete(r)
+		Owns(&networkingv1.NetworkPolicy{}, builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
+	if r.Refresher != nil {
+		builder = builder.WatchesRawSource(crsource.Channel(r.Refresher.GatewayEvents, handler.EnqueueRequestsFromMapFunc(r.gatewaysForPool)))
+	}
+	return builder.Complete(r)
 }
 
 func (r *EgressGatewayReconciler) gatewaysForSecret(ctx context.Context, object client.Object) []ctrl.Request {

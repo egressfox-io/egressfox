@@ -27,7 +27,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ProxyPool describes a bounded set of Secret-backed subscriptions.
+        description: ProxyPool describes a bounded set of Secret-backed or managed
+          HTTP subscriptions.
         properties:
           apiVersion:
             description: |-
@@ -132,6 +133,62 @@ spec:
                       - URIList
                       - Base64URIList
                       type: string
+                    http:
+                      description: HTTP enables managed refresh from a Secret-backed
+                        URL.
+                      properties:
+                        allowHTTP:
+                          type: boolean
+                        allowInsecureTLS:
+                          description: AllowInsecureTLS disables certificate verification
+                            for this source only.
+                          type: boolean
+                        allowPrivateNetworks:
+                          type: boolean
+                        authorizationSecretRef:
+                          description: SecretKeyReference selects one key from a Secret
+                            in the resource namespace.
+                          properties:
+                            key:
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                            name:
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                          required:
+                          - key
+                          - name
+                          type: object
+                        maxStale:
+                          default: 24h
+                          description: MaxStale bounds cache fallback from the last
+                            successful remote validation.
+                          type: string
+                          x-kubernetes-validations:
+                          - message: maxStale must be between 1m and 168h
+                            rule: duration(self) >= duration('1m') && duration(self)
+                              <= duration('168h')
+                        urlSecretRef:
+                          description: SecretKeyReference selects one key from a Secret
+                            in the resource namespace.
+                          properties:
+                            key:
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                            name:
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                          required:
+                          - key
+                          - name
+                          type: object
+                      required:
+                      - urlSecretRef
+                      type: object
                     id:
                       description: ID is stable source provenance and must not contain
                         a URL or credential.
@@ -140,8 +197,7 @@ spec:
                       pattern: ^[a-z][a-z0-9.-]*$
                       type: string
                     secretRef:
-                      description: SecretKeyReference selects one key from a Secret
-                        in the resource namespace.
+                      description: SecretRef is the legacy Secret-backed source input.
                       properties:
                         key:
                           maxLength: 253
@@ -158,8 +214,10 @@ spec:
                   required:
                   - format
                   - id
-                  - secretRef
                   type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of secretRef or http is required
+                    rule: has(self.secretRef) != has(self.http)
                 maxItems: 32
                 minItems: 1
                 type: array
@@ -247,6 +305,28 @@ spec:
               rejectedRecords:
                 format: int32
                 type: integer
+              sources:
+                description: Sources contains bounded, credential-free per-source
+                  state.
+                items:
+                  properties:
+                    id:
+                      type: string
+                    lastSuccessTime:
+                      format: date-time
+                      type: string
+                    reason:
+                      type: string
+                    state:
+                      type: string
+                  required:
+                  - id
+                  - state
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
               unsupportedRecords:
                 format: int32
                 type: integer

@@ -46,7 +46,7 @@ func testPool() *egressv1alpha1.ProxyPool {
 	return &egressv1alpha1.ProxyPool{
 		ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("11111111-2222-3333-4444-555555555555")},
 		Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{
-			ID: "primary", SecretRef: egressv1alpha1.SecretKeyReference{Name: "subscription", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList,
+			ID: "primary", SecretRef: &egressv1alpha1.SecretKeyReference{Name: "subscription", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList,
 		}}},
 	}
 }
