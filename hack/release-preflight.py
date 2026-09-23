@@ -21,7 +21,7 @@ def require(name):
     return value
 
 
-def api(path, missing_ok=False):
+def api(operation, path, missing_ok=False):
     request = urllib.request.Request(
         API + path,
         headers={
@@ -37,16 +37,26 @@ def api(path, missing_ok=False):
     except urllib.error.HTTPError as error:
         if missing_ok and error.code == 404:
             return None
-        raise RuntimeError(f"GitHub API request failed with HTTP {error.code}") from None
+        raise RuntimeError(f"GitHub API {operation} failed with HTTP {error.code}") from None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise ValueError(f"GitHub API {operation} returned malformed JSON") from None
+    except urllib.error.URLError:
+        raise RuntimeError(f"GitHub API {operation} request failed") from None
 
 
-def pages(path):
+def pages(operation, path, missing_ok=False):
     page = 1
     while True:
         separator = "&" if "?" in path else "?"
-        result = api(f"{path}{separator}per_page=100&page={page}")
+        result = api(
+            f"{operation} page {page}",
+            f"{path}{separator}per_page=100&page={page}",
+            missing_ok=missing_ok and page == 1,
+        )
+        if result is None:
+            return
         if not isinstance(result, list):
-            raise ValueError("GitHub package listing is not an array")
+            raise ValueError(f"GitHub API {operation} returned malformed response: expected an array")
         yield from result
         if len(result) < 100:
             return
@@ -68,18 +78,28 @@ def preflight():
     if sha != head or tag != head:
         raise ValueError("tag, workflow source and checked-out commit differ")
     owner, _ = repository.split("/", 1)
-    info = api(f"/repos/{repository}")
-    if info.get("full_name", "").lower() != repository.lower():
+    owner = urllib.parse.quote(owner, safe="")
+    info = api("repository identity lookup", f"/repos/{repository}")
+    if not isinstance(info, dict) or not isinstance(info.get("full_name"), str) or info["full_name"].lower() != repository.lower():
         raise ValueError("repository identity mismatch")
     quoted = urllib.parse.quote(version, safe="")
-    if api(f"/repos/{repository}/releases/tags/{quoted}", missing_ok=True) is not None:
+    if api("GitHub Release lookup", f"/repos/{repository}/releases/tags/{quoted}", missing_ok=True) is not None:
         raise ValueError("GitHub Release already exists; advance the version")
-    packages = pages(f"/orgs/{owner}/packages?package_type=container")
-    if any(item.get("name") == "egressfox" for item in packages):
-        for item in pages(f"/orgs/{owner}/packages/container/egressfox/versions"):
-            tags = item.get("metadata", {}).get("container", {}).get("tags", [])
-            if version.removeprefix("v") in tags:
-                raise ValueError("GHCR version tag already exists; advance the version")
+    package = urllib.parse.quote("egressfox", safe="")
+    for item in pages(
+        "GHCR package version lookup",
+        f"/orgs/{owner}/packages/container/{package}/versions",
+        missing_ok=True,
+    ):
+        if not isinstance(item, dict):
+            raise ValueError("GHCR package version lookup returned malformed response: expected an object")
+        metadata = item.get("metadata")
+        container = metadata.get("container") if isinstance(metadata, dict) else None
+        tags = container.get("tags") if isinstance(container, dict) else None
+        if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+            raise ValueError("GHCR package version lookup returned malformed response: expected tag array")
+        if version.removeprefix("v") in tags:
+            raise ValueError("GHCR version tag already exists; advance the version")
     print(f"remote preflight passed for {version} at {head}")
 
 

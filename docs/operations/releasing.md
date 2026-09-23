@@ -252,7 +252,8 @@ the protected `release` environment with required reviewers and tag restrictions
 These repository settings cannot be truthfully configured or verified from source.
 Check GHCR package visibility, repository-linked token access, retention and package
 write grants; restrict release-tag creation through a ruleset. The workflow's remote
-preflight requires its token to list the organization's container package versions
-and fails closed if that read is denied.
+preflight reads versions for the exact organization container package and treats only
+its documented not-found response as an unpublished package; it fails closed if that
+read is denied or otherwise fails.
 Maintainers must also review current vulnerability results, upstream license/source
 availability and the extracted, reviewed changelog notes before approving publication.
