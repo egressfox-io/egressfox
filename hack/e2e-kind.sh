@@ -322,6 +322,152 @@ fi
 kubectl -n "$namespace" get pod byo-engine >/dev/null
 kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True egressgateway/e2e --timeout=5m
 
+# A controlled subscription server exercises managed HTTP refresh and both engine
+# profiles without depending on an external provider. Its state is local to kind.
+kubectl -n "$namespace" apply -f - <<'YAML'
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: source-provider-script}
+data:
+  subscription: |
+    #!/bin/sh
+    conditional=
+    while IFS= read -r line; do
+      line=$(printf '%s' "$line" | tr -d '\r')
+      [ -n "$line" ] || break
+      case "$line" in
+        'If-None-Match: '*) conditional=${line#If-None-Match: } ;;
+      esac
+    done
+    if [ -f /data/outage ]; then
+      printf 'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+      exit 0
+    fi
+    etag=$(cat /data/etag)
+    if [ "$conditional" = "\"$etag\"" ]; then
+      touch /data/conditional
+      printf 'HTTP/1.1 304 Not Modified\r\nETag: "%s"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n' "$etag"
+      exit 0
+    fi
+    length=$(wc -c </data/body | tr -d ' ')
+    printf 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nETag: "%s"\r\nContent-Length: %s\r\nConnection: close\r\n\r\n' "$etag" "$length"
+    cat /data/body
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: source-provider}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: source-provider}}
+  template:
+    metadata: {labels: {app: source-provider}}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532}
+      containers:
+        - name: http
+          image: busybox:1.37.0-uclibc@sha256:8d7b1636e974e0adfd8d945955fca609304f0a56c18799dfd032d6e661382d84
+          command: [/bin/sh, -c, 'cp /script/subscription /www/subscription; chmod 755 /www/subscription; exec /bin/busybox nc -lk -p 8080 -e /www/subscription']
+          volumeMounts: [{name: script, mountPath: /script, readOnly: true}, {name: www, mountPath: /www}, {name: data, mountPath: /data}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      volumes: [{name: script, configMap: {name: source-provider-script}}, {name: www, emptyDir: {}}, {name: data, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: source-provider}
+spec:
+  selector: {app: source-provider}
+  ports: [{port: 8080, targetPort: 8080}]
+YAML
+kubectl -n "$namespace" rollout status deployment/source-provider --timeout=2m
+provider_pod=$(kubectl -n "$namespace" get pod -l app=source-provider -o jsonpath='{.items[0].metadata.name}')
+kubectl -n "$namespace" exec "$provider_pod" -- sh -c "printf '%s\n' 'vless://${uuid}@${proxy_ip}:8443?encryption=none&security=none#http-initial' >/data/body; echo v1 >/data/etag"
+kubectl -n "$namespace" create secret generic source-url --from-literal=url="http://source-provider.${namespace}.svc.cluster.local:8080/subscription"
+kubectl -n "$namespace" apply -f - <<'YAML'
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata: {name: http-e2e}
+spec:
+  sources:
+    - id: managed
+      http:
+        urlSecretRef: {name: source-url, key: url}
+        allowHTTP: true
+        allowPrivateNetworks: true
+        maxStale: 2m
+      format: URIList
+  probe:
+    targetSecretRef: {name: target, key: url}
+    expectedStatus: 200
+    timeout: 10s
+    allowHTTP: true
+    allowPrivateTargets: true
+    allowPrivateEndpoints: true
+  selection: {strategy: Static, topN: 1}
+  refreshInterval: 30s
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata: {name: http-singbox}
+spec:
+  poolRef: {name: http-e2e}
+  engine: SingBox
+  runtime: {managed: {}}
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata: {name: http-mihomo}
+spec:
+  poolRef: {name: http-e2e}
+  engine: Mihomo
+  runtime: {managed: {}}
+YAML
+kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True proxypool/http-e2e --timeout=3m
+for engine in singbox mihomo; do
+  kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "egressgateway/http-${engine}" --timeout=5m
+  service=$(kubectl -n "$namespace" get egressgateway "http-${engine}" -o jsonpath='{.status.serviceName}')
+  auth=$(kubectl -n "$namespace" get egressgateway "http-${engine}" -o jsonpath='{.status.clientAuthSecretName}')
+  username=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "username" | base64decode}}')
+  password=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
+  test "$(kubectl -n "$namespace" exec byo-engine -c client -- curl -sS --max-time 10 --proxy "socks5://${username}:${password}@${service}:1080" -o /dev/null -w '%{http_code}' "http://${target_ip}:8080/")" = 200
+done
+initial_singbox=$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')
+initial_mihomo=$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')
+for _ in $(seq 1 75); do
+  kubectl -n "$namespace" exec "$provider_pod" -- test -f /data/conditional >/dev/null 2>&1 && break
+  sleep 1
+done
+kubectl -n "$namespace" exec "$provider_pod" -- test -f /data/conditional
+test "$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')" = "$initial_singbox"
+test "$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')" = "$initial_mihomo"
+kubectl -n "$namespace" exec "$provider_pod" -- touch /data/outage
+sleep 40
+test "$(kubectl -n "$namespace" get proxypool http-e2e -o jsonpath='{.status.acceptedEndpoints}')" = 1
+kubectl -n "$namespace" rollout restart deployment/egressfox-egressfox
+kubectl -n "$namespace" rollout status deployment/egressfox-egressfox --timeout=3m
+test "$(kubectl -n "$namespace" get proxypool http-e2e -o jsonpath='{.status.acceptedEndpoints}')" = 1
+kubectl -n "$namespace" exec "$provider_pod" -- sh -c "rm -f /data/outage; printf '%s\n' 'vless://${uuid}@${proxy_ip}:8444?encryption=none&security=none#http-changed' >/data/body; echo v2 >/data/etag"
+for _ in $(seq 1 180); do
+  changed_singbox=$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')
+  changed_mihomo=$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')
+  [ "$changed_singbox" != "$initial_singbox" ] && [ "$changed_mihomo" != "$initial_mihomo" ] && break
+  sleep 1
+done
+test "$changed_singbox" != "$initial_singbox"
+test "$changed_mihomo" != "$initial_mihomo"
+kubectl -n "$namespace" exec "$provider_pod" -- sh -c "printf '%s\n' 'malformed subscription' >/data/body; echo v3 >/data/etag"
+sleep 40
+test "$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')" = "$changed_singbox"
+test "$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')" = "$changed_mihomo"
+kubectl -n "$namespace" exec "$provider_pod" -- touch /data/outage
+for _ in $(seq 1 180); do
+  state=$(kubectl -n "$namespace" get proxypool http-e2e -o jsonpath='{.status.sources[0].state}')
+  [ "$state" = Expired ] && break
+  sleep 1
+done
+test "$state" = Expired
+test "$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')" = "$changed_singbox"
+test "$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')" = "$changed_mihomo"
+
 helm upgrade egressfox charts/egressfox --namespace "$namespace" --set-string image.repository="$image_repository" --set-string image.tag="$image_tag" --set image.pullPolicy=Never --wait --timeout 3m
 helm uninstall egressfox --namespace "$namespace"
 kubectl get crd proxypools.egressfox.io egressgateways.egressfox.io >/dev/null

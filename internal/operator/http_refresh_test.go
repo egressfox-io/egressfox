@@ -51,6 +51,9 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 				t.Error("rotated credentials inherited validator")
 			}
 			_, _ = w.Write([]byte(body))
+		case 5:
+			w.Header().Set("ETag", `"v3"`)
+			_, _ = w.Write([]byte(body))
 		}
 	}))
 	defer server.Close()
@@ -127,6 +130,10 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	if requests.Load() < 5 {
 		t.Fatalf("requests = %d", requests.Load())
 	}
+	mode.Store(5)
+	if changed, err := operatoradapter.RefreshHTTP(ctx, reader, store, pool, pool.Spec.Sources[0], now.Add(4*time.Hour)); err != nil || changed {
+		t.Fatalf("same body with new validator = %v, %v", changed, err)
+	}
 	stable, err := operatoradapter.ResolveHTTP(ctx, reader, pool, pool.Spec.Sources[0])
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +176,7 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	if err := reader.Update(ctx, urlRotated); err != nil {
 		t.Fatal(err)
 	}
-	result, _ = operatoradapter.BuildPoolWithCache(ctx, reader, pool, store, now.Add(3*time.Hour))
+	result, _ = operatoradapter.BuildPoolWithCache(ctx, reader, pool, store, now.Add(5*time.Hour))
 	if result.Inventory.Len() != 0 {
 		t.Fatal("URL rotation reused cache")
 	}
@@ -187,12 +194,12 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	}
 	mixed := pool.DeepCopy()
 	mixed.Spec.Sources = append(mixed.Spec.Sources, egressv1alpha1.SubscriptionSource{ID: "backup", SecretRef: &egressv1alpha1.SecretKeyReference{Name: "inline", Key: "nodes"}, Format: egressv1alpha1.SourceFormatURIList})
-	result, err = operatoradapter.BuildPoolWithCache(ctx, reader, mixed, store, now.Add(3*time.Hour))
+	result, err = operatoradapter.BuildPoolWithCache(ctx, reader, mixed, store, now.Add(5*time.Hour))
 	if err != nil || result.Inventory.Len() != 1 || len(result.Inventory.Records()[0].Provenance()) != 2 {
 		t.Fatalf("mixed provenance = %d, %v", result.Inventory.Len(), err)
 	}
 	mixed.Spec.Sources = mixed.Spec.Sources[1:]
-	result, err = operatoradapter.BuildPoolWithCache(ctx, reader, mixed, store, now.Add(3*time.Hour))
+	result, err = operatoradapter.BuildPoolWithCache(ctx, reader, mixed, store, now.Add(5*time.Hour))
 	if err != nil || result.Inventory.Len() != 1 {
 		t.Fatal("removing HTTP source erased Secret contribution")
 	}

@@ -173,6 +173,39 @@ func TestStoreMigratesSchemaOneToThree(t *testing.T) {
 	}
 }
 
+func TestStoreMigratesSchemaTwoToThree(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(privateTempDir(t), "history.db")
+	store, err := state.Open(path, state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`DROP TABLE http_source_cache`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`PRAGMA user_version=2`); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = state.Open(path, state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, found, err := store.LoadSourceCache(context.Background(), "missing", [32]byte{}); err != nil || found {
+		t.Fatalf("migrated cache = %v, %v", found, err)
+	}
+}
+
 func checkpointReceipt(t testing.TB, content []byte) artifact.Receipt {
 	t.Helper()
 	candidate, err := artifact.NewCandidate(artifact.Mihomo11931, content)
