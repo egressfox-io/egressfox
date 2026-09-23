@@ -3,6 +3,7 @@ package source
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/egressfox-io/egressfox/internal/endpoint"
 )
@@ -14,10 +15,11 @@ var (
 )
 
 type Failure struct {
-	source endpoint.SourceID
-	kind   error
-	code   string
-	status int
+	source     endpoint.SourceID
+	kind       error
+	code       string
+	status     int
+	retryAfter time.Duration
 }
 
 func failure(source endpoint.SourceID, kind error, code string) error {
@@ -35,6 +37,7 @@ func (e *Failure) Unwrap() error               { return e.kind }
 func (e *Failure) SourceID() endpoint.SourceID { return e.source }
 func (e *Failure) Code() string                { return e.code }
 func (e *Failure) StatusCode() int             { return e.status }
+func (e *Failure) RetryAfter() time.Duration   { return e.retryAfter }
 
 type DiagnosticKind uint8
 

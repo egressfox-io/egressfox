@@ -136,7 +136,7 @@ func TestDecisionCheckpointCommitAndCrashRecovery(t *testing.T) {
 	}
 }
 
-func TestStoreMigratesSchemaOneToTwo(t *testing.T) {
+func TestStoreMigratesSchemaOneToThree(t *testing.T) {
 	t.Parallel()
 	directory := privateTempDir(t)
 	path := filepath.Join(directory, "history.db")
@@ -152,6 +152,9 @@ func TestStoreMigratesSchemaOneToTwo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := database.Exec(`DROP TABLE selection_checkpoints`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`DROP TABLE http_source_cache`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.Exec(`PRAGMA user_version=1`); err != nil {
@@ -291,7 +294,7 @@ func TestStoreRejectsFutureSchemaAndUnsafePaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := database.Exec(`PRAGMA user_version=3`); err != nil {
+		if _, err := database.Exec(`PRAGMA user_version=4`); err != nil {
 			t.Fatal(err)
 		}
 		if err := database.Close(); err != nil {
@@ -320,7 +323,7 @@ func TestStoreRejectsFutureSchemaAndUnsafePaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := database.Exec(`PRAGMA user_version=2`); err != nil {
+		if _, err := database.Exec(`PRAGMA user_version=3`); err != nil {
 			t.Fatal(err)
 		}
 		if err := database.Close(); err != nil {

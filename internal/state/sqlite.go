@@ -19,7 +19,7 @@ import (
 	"github.com/egressfox-io/egressfox/internal/selection"
 )
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 var (
 	ErrOpen        = errors.New("history store open failed")
@@ -133,7 +133,13 @@ func (store *Store) initialize(ctx context.Context) error {
 		}
 		version = 2
 	}
-	if _, err := transaction.ExecContext(ctx, `PRAGMA user_version=2`); err != nil {
+	if version == 2 {
+		if _, err := transaction.ExecContext(ctx, schemaV3); err != nil {
+			return failure(ErrOpen, "migration_schema_v3")
+		}
+		version = 3
+	}
+	if _, err := transaction.ExecContext(ctx, `PRAGMA user_version=3`); err != nil {
 		return failure(ErrOpen, "migration_version")
 	}
 	if err := transaction.Commit(); err != nil {
@@ -165,8 +171,29 @@ FROM observations LIMIT 0`)
 	if err := checkpointRows.Close(); err != nil {
 		return failure(ErrOpen, "selection_schema_close")
 	}
+	cacheRows, err := store.database.QueryContext(ctx, `SELECT source_key, fingerprint, body, body_digest, content_type, etag, last_modified, accepted_at_ns, validated_at_ns FROM http_source_cache LIMIT 0`)
+	if err != nil {
+		return failure(ErrOpen, "cache_schema_verify")
+	}
+	if err := cacheRows.Close(); err != nil {
+		return failure(ErrOpen, "cache_schema_close")
+	}
 	return nil
 }
+
+const schemaV3 = `
+CREATE TABLE http_source_cache (
+    source_key TEXT PRIMARY KEY NOT NULL,
+    fingerprint BLOB NOT NULL CHECK(length(fingerprint) = 32),
+    body BLOB NOT NULL CHECK(length(body) <= 4194304),
+    body_digest BLOB NOT NULL CHECK(length(body_digest) = 32),
+    content_type TEXT NOT NULL,
+    etag TEXT NOT NULL,
+    last_modified TEXT NOT NULL,
+    accepted_at_ns INTEGER NOT NULL,
+    validated_at_ns INTEGER NOT NULL
+);
+`
 
 const schemaV1 = `
 CREATE TABLE observations (
