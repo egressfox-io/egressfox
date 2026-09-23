@@ -38,6 +38,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver: docker-container
       - name: Verify selected ref and version
         run: |
           if [ "$PUBLISH" = true ]; then
@@ -74,6 +78,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver: docker-container
       - name: Recheck trusted tag
         run: |
           test "$GITHUB_REF_TYPE" = tag
