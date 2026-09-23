@@ -36,6 +36,7 @@ Release entries are not edited by hand.
 - 🐛 Mark dirty development builds.
 - 🐛 Keep qualification version-bound, not tag-bound.
 - 🐛 Fetch full history for changelog verification.
+- 🐛 Query exact GHCR package versions.
 
 ### Security
 
