@@ -10,8 +10,8 @@ single-replica managed Mihomo/sing-box workloads, authenticated ClusterIP SOCKS 
 exact-generation activation while preserving BYO. M8 adds managed conditional HTTP
 source refresh and a protected bounded cache. There is no product CLI, rich routing
 or HA topology. The P1 product sequence is designed in
-`docs/roadmap/p1.md`; M8.5 protocol and transport compatibility is the next
-mandatory milestone, beginning with C1 before M9. Its
+`docs/roadmap/p1.md`; M8.5 protocol and transport compatibility is the current
+mandatory milestone. C1 is complete; C2 is next, followed by C3–C4 before M9. Its
 [execution plan](docs/plans/0020-m85-protocol-transport-compatibility.md) records
 the C1–C4 gates. After M12, continue
 through the accepted post-P1 architecture in
@@ -127,11 +127,11 @@ SQLite integration, envtest, and real-cluster/traffic tests. Do not claim
 unavailable checks passed.
 Complete the workflow's definition of done before handoff. Completed execution
 records are indexed in [execution plans](docs/plans/README.md); the
-[P1 roadmap](docs/roadmap/p1.md) identifies M8.5 protocol and transport
-compatibility as the next bounded implementation stage, followed by M9
+[P1 roadmap](docs/roadmap/p1.md) identifies M8.5 C2 main proxy protocols as
+the next bounded implementation slice, followed by C3–C4 and then M9
 target-aware selection profiles.
-For M8.5, establish exact engine/version combinations in C1 before claiming
-support. A parsed subscription record, renderer output or native syntax check
+For M8.5, use the C1 [exact-profile matrix](docs/designs/engine-protocol-compatibility.md)
+before claiming support. A parsed subscription record, renderer output or native syntax check
 alone does not prove compatibility; require a controlled through-engine probe
 and managed Gateway traffic for each claimed combination. Preserve the M8
 identity, cache, network, LKG and activation contracts.

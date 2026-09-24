@@ -149,12 +149,13 @@ selection belong in [observations and selection](designs/observations-and-select
 Artifact and composition requirements belong in
 [artifact publication and composition](designs/artifact-publication-and-composition.md).
 
-Planned [M8.5 compatibility](roadmap/p1.md#m85--protocol-and-transport-compatibility)
-extends typed connection semantics and version-aware engine capability checks
-within these boundaries. C1 must settle identity compatibility and safe
-observation migration before new protocol fields can affect deduplication or
-health. Subscription content never controls EgressFox routing, local listeners or
-runtime composition.
+The M8.5 C1 [typed connection and exact-profile capability foundation](decisions/0021-version-three-connection-semantics-and-capabilities.md)
+extends these boundaries without changing current source admissions or engine
+artifacts. New forms use `ef3_`; `ef1_`/`ef2_` and their persisted observations
+remain intact. The [engine matrix](designs/engine-protocol-compatibility.md)
+distinguishes source support, shipped build tags and implemented traffic support.
+Subscription content never controls EgressFox routing, local listeners or runtime
+composition.
 
 ## Component boundaries and code placement
 

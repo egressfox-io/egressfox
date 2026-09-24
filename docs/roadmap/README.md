@@ -19,10 +19,12 @@ time-bounded cache, and its compatibility completion adds request profiles and
 bounded URI/JSON subscription decoding. There is still no product CLI,
 cross-namespace API or HA topology.
 
-**Next implementation milestone: M8.5 protocol and transport compatibility,
-beginning with C1; M9 follows.** The authoritative [P1 product roadmap](p1.md)
+**Next implementation slice: M8.5 C2 main proxy protocols; M9 follows M8.5.**
+The authoritative [P1 product roadmap](p1.md)
 defines the seven-milestone path from managed runtime through explainability.
-M7–M8 are complete; M8.5 and later P1 behavior are not implemented. A public
+M7–M8 and the M8.5 C1 model/capability foundation are complete; C2–C4 and later
+P1 behavior are not implemented. The [exact-profile matrix](../designs/engine-protocol-compatibility.md)
+records current support and pending combinations. A public
 alpha is a separate maintainer decision and requires the protected repository
 settings in the release guide.
 

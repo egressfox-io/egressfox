@@ -18,6 +18,9 @@ const (
 	ProtocolTrojan
 	ProtocolVMess
 	ProtocolShadowsocks
+	ProtocolSOCKS5
+	ProtocolHTTPProxy
+	ProtocolHysteria2
 )
 
 func (p Protocol) String() string {
@@ -30,6 +33,12 @@ func (p Protocol) String() string {
 		return "vmess"
 	case ProtocolShadowsocks:
 		return "shadowsocks"
+	case ProtocolSOCKS5:
+		return "socks5"
+	case ProtocolHTTPProxy:
+		return "http-proxy"
+	case ProtocolHysteria2:
+		return "hysteria2"
 	default:
 		return "unknown"
 	}
@@ -41,6 +50,7 @@ func (p Protocol) String() string {
 type Credential struct {
 	protocol      Protocol
 	secret        *credentialSecret
+	username      string
 	nonComparable []struct{}
 }
 
@@ -86,6 +96,30 @@ func NewShadowsocksCredential(password string) (Credential, error) {
 	return Credential{protocol: ProtocolShadowsocks, secret: &credentialSecret{value: password}}, nil
 }
 
+// NewProxyCredential preserves the optional SOCKS5/HTTP Basic username and
+// password as confidential connection material. Empty values mean no auth.
+func NewProxyCredential(protocol Protocol, username, password string) (Credential, error) {
+	if protocol != ProtocolSOCKS5 && protocol != ProtocolHTTPProxy {
+		return Credential{}, invalid("proxy.protocol", "must be SOCKS5 or HTTP proxy")
+	}
+	if len(username) > 255 || len(password) > 4096 || !utf8.ValidString(username) || !utf8.ValidString(password) || (username == "") != (password == "") {
+		return Credential{}, invalid("proxy.authentication", "must be an empty pair or valid username and password")
+	}
+	for _, value := range []string{username, password} {
+		if strings.ContainsAny(value, "\x00\r\n") {
+			return Credential{}, invalid("proxy.authentication", "must not contain control separators")
+		}
+	}
+	return Credential{protocol: protocol, username: username, secret: &credentialSecret{value: password}}, nil
+}
+
+func NewHysteria2Credential(password string) (Credential, error) {
+	if password == "" || len(password) > 4096 || !utf8.ValidString(password) {
+		return Credential{}, invalid("hysteria2.password", "must be valid UTF-8 and 1–4096 bytes")
+	}
+	return Credential{protocol: ProtocolHysteria2, secret: &credentialSecret{value: password}}, nil
+}
+
 func canonicalUUID(raw string) (string, error) {
 	if len(raw) != 36 || raw[8] != '-' || raw[13] != '-' || raw[18] != '-' || raw[23] != '-' {
 		return "", invalid("vless.user_id", "must be a hyphenated UUID")
@@ -114,15 +148,24 @@ func (c Credential) Reveal() string {
 	return c.secret.value
 }
 
+// RevealUsername is restricted to an engine renderer; ordinary formatting is redacted.
+func (c Credential) RevealUsername() string { return c.username }
+
 func (c Credential) valid() bool {
-	return c.secret != nil && c.secret.value != "" && (c.protocol == ProtocolVLESS || c.protocol == ProtocolTrojan || c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks)
+	if c.secret == nil {
+		return false
+	}
+	if c.protocol == ProtocolSOCKS5 || c.protocol == ProtocolHTTPProxy {
+		return (c.username == "") == (c.secret.value == "")
+	}
+	return c.secret.value != "" && (c.protocol == ProtocolVLESS || c.protocol == ProtocolTrojan || c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks || c.protocol == ProtocolHysteria2)
 }
 
 func (c Credential) equal(other Credential) bool {
-	if !c.valid() || !other.valid() || c.protocol != other.protocol || len(c.secret.value) != len(other.secret.value) {
+	if !c.valid() || !other.valid() || c.protocol != other.protocol || len(c.secret.value) != len(other.secret.value) || len(c.username) != len(other.username) {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(c.secret.value), []byte(other.secret.value)) == 1
+	return subtle.ConstantTimeCompare([]byte(c.secret.value), []byte(other.secret.value)) == 1 && subtle.ConstantTimeCompare([]byte(c.username), []byte(other.username)) == 1
 }
 
 func (Credential) String() string   { return "<redacted-credential>" }
@@ -143,6 +186,11 @@ const (
 	TransportUnknown TransportKind = iota
 	TransportTCP
 	TransportWebSocket
+	TransportHTTP2
+	TransportHTTPUpgrade
+	TransportGRPC
+	TransportQUIC
+	TransportXHTTP
 )
 
 func (kind TransportKind) String() string {
@@ -151,6 +199,16 @@ func (kind TransportKind) String() string {
 		return "tcp"
 	case TransportWebSocket:
 		return "websocket"
+	case TransportHTTP2:
+		return "http2"
+	case TransportHTTPUpgrade:
+		return "httpupgrade"
+	case TransportGRPC:
+		return "grpc"
+	case TransportQUIC:
+		return "quic"
+	case TransportXHTTP:
+		return "xhttp"
 	default:
 		return "unknown"
 	}
@@ -161,6 +219,7 @@ type Transport struct {
 	kind          TransportKind
 	webSocketPath *string
 	webSocketHost string
+	advanced      *advancedTransport
 	nonComparable []struct{}
 }
 
@@ -216,12 +275,13 @@ func (t Transport) WebSocketPath() string {
 func (t Transport) WebSocketHost() string { return t.webSocketHost }
 
 func (t Transport) valid() bool {
-	return t.kind == TransportTCP && t.webSocketPath == nil && t.webSocketHost == "" ||
-		t.kind == TransportWebSocket && t.webSocketPath != nil && *t.webSocketPath != ""
+	return t.kind == TransportTCP && t.webSocketPath == nil && t.webSocketHost == "" && t.advanced == nil ||
+		t.kind == TransportWebSocket && t.webSocketPath != nil && *t.webSocketPath != "" && t.advanced == nil ||
+		t.advanced != nil && t.webSocketPath == nil && t.webSocketHost == "" && t.advanced.valid(t.kind)
 }
 
 func (t Transport) equal(other Transport) bool {
-	return t.kind == other.kind && t.WebSocketPath() == other.WebSocketPath() && t.webSocketHost == other.webSocketHost
+	return t.kind == other.kind && t.WebSocketPath() == other.WebSocketPath() && t.webSocketHost == other.webSocketHost && t.advanced.equal(other.advanced)
 }
 
 func (t Transport) String() string   { return t.kind.String() }
@@ -283,6 +343,7 @@ type Configuration struct {
 	transport  Transport
 	tls        TLSConfig
 	method     string
+	advanced   *advancedConnection
 }
 
 // NewConfiguration validates a configuration in the M1 semantic subset.
@@ -312,13 +373,17 @@ func NewConfiguration(
 		tls.serverName = address.host
 	}
 
-	return Configuration{
+	configuration := Configuration{
 		protocol:   protocol,
 		address:    address,
 		credential: credential,
 		transport:  transport,
 		tls:        tls,
-	}, nil
+	}
+	if !configuration.valid() {
+		return Configuration{}, invalid("configuration", "has contradictory connection options")
+	}
+	return configuration, nil
 }
 
 // NewVMessConfiguration accepts VMess AEAD with alterID zero. The method is the
@@ -345,7 +410,11 @@ func newAdditionalConfiguration(protocol Protocol, address Address, credential C
 	if tls.enabled && tls.serverName == "" {
 		tls.serverName = address.host
 	}
-	return Configuration{protocol: protocol, address: address, credential: credential, transport: transport, tls: tls, method: method}, nil
+	configuration := Configuration{protocol: protocol, address: address, credential: credential, transport: transport, tls: tls, method: method}
+	if !configuration.valid() {
+		return Configuration{}, invalid("configuration", "has contradictory connection options")
+	}
+	return configuration, nil
 }
 
 // Protocol returns the endpoint protocol.
@@ -366,29 +435,41 @@ func (c Configuration) TLS() TLSConfig { return c.tls }
 
 func (c Configuration) Method() string { return c.method }
 
+// Validate separates invalid domain data from valid connections that a selected
+// engine profile has not yet implemented.
+func (c Configuration) Validate() error {
+	if !c.valid() {
+		return invalid("configuration", "contains invalid connection semantics")
+	}
+	return nil
+}
+
 // Equivalent reports complete configuration equality, including credentials.
 func (c Configuration) Equivalent(other Configuration) bool {
 	return c.protocol == other.protocol &&
 		c.address == other.address &&
 		c.credential.equal(other.credential) &&
 		c.transport.equal(other.transport) &&
-		c.tls == other.tls && c.method == other.method
+		c.tls == other.tls && c.method == other.method && c.advanced.equal(other.advanced)
 }
 
 func (c Configuration) valid() bool {
-	if c.protocol != ProtocolVLESS && c.protocol != ProtocolTrojan && c.protocol != ProtocolVMess && c.protocol != ProtocolShadowsocks {
+	if c.protocol != ProtocolVLESS && c.protocol != ProtocolTrojan && c.protocol != ProtocolVMess && c.protocol != ProtocolShadowsocks && c.protocol != ProtocolSOCKS5 && c.protocol != ProtocolHTTPProxy && c.protocol != ProtocolHysteria2 {
 		return false
 	}
 	if !c.address.valid() || !c.credential.valid() || c.credential.protocol != c.protocol || !c.transport.valid() {
 		return false
 	}
-	if c.protocol == ProtocolTrojan && !c.tls.enabled {
+	if (c.protocol == ProtocolTrojan || c.protocol == ProtocolHysteria2) && !c.tls.enabled {
 		return false
 	}
 	if c.protocol == ProtocolShadowsocks && (c.transport.kind != TransportTCP || c.tls.enabled) {
 		return false
 	}
 	if (c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks) && c.method == "" {
+		return false
+	}
+	if !c.advanced.valid(c) {
 		return false
 	}
 	return !c.tls.enabled || c.tls.serverName != ""

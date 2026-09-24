@@ -8,6 +8,8 @@ This is the implemented baseline for the planned
 [M8.5 compatibility milestone](../roadmap/p1.md#m85--protocol-and-transport-compatibility),
 not a claim that its additional protocol, transport or security combinations
 are supported yet.
+The [M8.5 engine matrix](engine-protocol-compatibility.md) owns pinned-build and
+future-combination status; this table remains the shipped M8 input contract.
 
 ## HTTP request profiles
 

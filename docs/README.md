@@ -35,6 +35,7 @@ read the owning design and accepted decisions for the area they plan to change.
 | What should be implemented next and how is completion measured? | [Roadmap](roadmap/README.md) |
 | What is the P1 objective and milestone sequence? | [P1 roadmap](roadmap/p1.md) |
 | What gates M8.5 implementation? | [M8.5 scope and exit contract](roadmap/p1.md#m85--protocol-and-transport-compatibility), [C1–C4 plan](plans/0020-m85-protocol-transport-compatibility.md), and [open decisions](decisions/open-questions.md) |
+| Which protocol/transport/security combinations can the pinned engines and EgressFox actually support? | [M8.5 engine compatibility matrix](designs/engine-protocol-compatibility.md) |
 | Which ideas are P0 vs future scope? | [Feature catalog](roadmap/features.md) |
 | How do I branch, build, validate, commit, and hand off? | [Workflow](development/workflow.md) |
 | Which tests and research experiments belong with a change? | [Testing](development/testing.md) |

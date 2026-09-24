@@ -3,6 +3,13 @@
 Status: M4 observation/probe/history and M5 deterministic selection/reconciliation
 contracts implemented under ADRs 0009 and 0010. Prometheus export remains future.
 
+M8.5 C1 keeps the complete logical ID/private revision pair as the evidence key.
+The [capability gate](engine-protocol-compatibility.md) rejects a valid but
+unsupported engine combination before a through-engine probe; no negative health
+observation is recorded for that configuration. C2–C4 must filter engine-eligible
+candidates before scheduling and selection, keeping capability failure distinct
+from network failure and observed target reachability.
+
 ## Decisions and scope
 
 Health is evidence about an endpoint reaching a destination from a particular

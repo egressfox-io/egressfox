@@ -84,6 +84,9 @@ func (r Renderer) Render(gateway policy.Gateway) (artifact.Candidate, error) {
 
 func (r Renderer) renderProxy(item engine.NamedRecord) (proxy, error) {
 	configuration := item.Record.Configuration()
+	if err := engine.CheckEndpoint(r.Profile(), configuration); err != nil {
+		return proxy{}, err
+	}
 	result := proxy{
 		Name: item.Name, Server: configuration.Address().Host(), Port: configuration.Address().Port(),
 		TLS: configuration.TLS().Enabled(), SkipCertVerify: configuration.TLS().InsecureSkipVerify(), Network: "tcp",

@@ -26,6 +26,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0018](0018-resilient-http-sources.md) | Managed HTTP source cache, freshness and refresh contract | Accepted |
 | [0019](0019-subscription-endpoint-semantics.md) | Bounded JSON, VMess/Shadowsocks and identity v2 semantics | Accepted |
 | [0020](0020-subscription-identity-and-source-destination-policy.md) | Durable subscription identity and source destination permissions | Accepted |
+| [0021](0021-version-three-connection-semantics-and-capabilities.md) | M8.5 v3 connection identity and exact-profile capability gate | Accepted |
 
 ## Adding a decision
 

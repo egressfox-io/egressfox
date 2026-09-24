@@ -9,6 +9,9 @@ The bounded M8 compatibility extension is specified in the
 The planned [M8.5 milestone](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
 expands connection semantics only after C1 resolves the exact engine capability
 and identity gates; this document does not claim those combinations work today.
+The C1 [v3 identity decision](../decisions/0021-version-three-connection-semantics-and-capabilities.md)
+and [engine matrix](engine-protocol-compatibility.md) define the typed domain
+foundation. Source parsers still admit only the bounded M8 formats and variants.
 
 ## Decisions and requirements
 

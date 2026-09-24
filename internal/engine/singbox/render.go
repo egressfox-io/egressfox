@@ -110,6 +110,9 @@ func (r Renderer) Render(gateway policy.Gateway) (artifact.Candidate, error) {
 
 func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 	configuration := item.Record.Configuration()
+	if err := engine.CheckEndpoint(r.Profile(), configuration); err != nil {
+		return outbound{}, err
+	}
 	result := outbound{Tag: item.Name, Server: configuration.Address().Host(), ServerPort: configuration.Address().Port(), Network: "tcp"}
 	switch configuration.Protocol() {
 	case endpoint.ProtocolVLESS:

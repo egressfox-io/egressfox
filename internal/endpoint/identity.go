@@ -23,7 +23,7 @@ type ID struct {
 
 // ParseID restores a validated safe logical endpoint identifier.
 func ParseID(value string) (ID, error) {
-	if !strings.HasPrefix(value, "ef1_") && !strings.HasPrefix(value, "ef2_") {
+	if !strings.HasPrefix(value, "ef1_") && !strings.HasPrefix(value, "ef2_") && !strings.HasPrefix(value, "ef3_") {
 		return ID{}, invalid("endpoint.id", "has an unsupported identity version")
 	}
 	encoded := value[4:]
@@ -159,6 +159,9 @@ func (c Configuration) Identity() Identity {
 	if c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks || c.transport.webSocketHost != "" {
 		version = "ef2_"
 	}
+	if c.advanced != nil || c.transport.advanced != nil {
+		version = "ef3_"
+	}
 	logical := canonicalConfiguration(c, false)
 	logicalDigest := sha256.Sum256(logical)
 	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(logicalDigest[:])
@@ -174,11 +177,18 @@ func canonicalConfiguration(c Configuration, includeCredential bool) []byte {
 	if includeCredential {
 		domain = connectionRevisionDomain
 	}
-	version2 := c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks || c.transport.webSocketHost != ""
+	version3 := c.advanced != nil || c.transport.advanced != nil
+	version2 := version3 || c.protocol == ProtocolVMess || c.protocol == ProtocolShadowsocks || c.transport.webSocketHost != ""
 	if version2 {
 		domain = "egressfox.endpoint/v2"
 		if includeCredential {
 			domain = "egressfox.connection/v2"
+		}
+	}
+	if version3 {
+		domain = "egressfox.endpoint/v3"
+		if includeCredential {
+			domain = "egressfox.connection/v3"
 		}
 	}
 
@@ -197,9 +207,43 @@ func canonicalConfiguration(c Configuration, includeCredential bool) []byte {
 		encoder.writeString(c.transport.webSocketHost)
 		encoder.writeString(c.method)
 	}
+	if version3 {
+		encoder.writeString(c.transport.Path())
+		encoder.writeString(c.transport.Host())
+		encoder.writeString(c.transport.Service())
+		encoder.writeUint8(uint8(c.advanced.flow))
+		encoder.writeUint8(uint8(len(c.advanced.security.alpn)))
+		for _, value := range c.advanced.security.alpn {
+			encoder.writeString(value)
+		}
+		encoder.writeString(c.advanced.security.fingerprint)
+		if c.advanced.security.reality == nil {
+			encoder.writeBool(false)
+		} else {
+			encoder.writeBool(true)
+			encoder.writeString(c.advanced.security.reality.publicKey)
+			if includeCredential {
+				encoder.writeString(c.advanced.security.reality.shortID)
+			}
+		}
+		if c.advanced.hysteria == nil {
+			encoder.writeBool(false)
+		} else {
+			encoder.writeBool(true)
+			encoder.writeUint32(uint32(c.advanced.hysteria.upMbps))
+			encoder.writeUint32(uint32(c.advanced.hysteria.downMbps))
+			encoder.writeBool(c.advanced.hysteria.obfsPassword != nil)
+			if includeCredential && c.advanced.hysteria.obfsPassword != nil {
+				encoder.writeString(c.advanced.hysteria.obfsPassword.value)
+			}
+		}
+	}
 	if includeCredential {
 		encoder.writeUint8(uint8(c.credential.protocol))
 		encoder.writeString(c.credential.secret.value)
+		if version3 {
+			encoder.writeString(c.credential.username)
+		}
 	}
 	return encoder.Bytes()
 }
@@ -220,6 +264,12 @@ func (encoder *canonicalEncoder) writeUint8(value uint8) { encoder.WriteByte(val
 func (encoder *canonicalEncoder) writeUint16(value uint16) {
 	var encoded [2]byte
 	binary.BigEndian.PutUint16(encoded[:], value)
+	encoder.Write(encoded[:])
+}
+
+func (encoder *canonicalEncoder) writeUint32(value uint32) {
+	var encoded [4]byte
+	binary.BigEndian.PutUint32(encoded[:], value)
 	encoder.Write(encoded[:])
 }
 

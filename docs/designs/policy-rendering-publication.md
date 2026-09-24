@@ -99,6 +99,11 @@ must establish a per-combination matrix for the exact pinned Mihomo and sing-box
 builds before broader protocol claims. Capability checks must cover applicable
 transport, security, authentication and QUIC parameters together; they cannot
 infer parity from a shared protocol name.
+The C1 [matrix](engine-protocol-compatibility.md) distinguishes pinned source,
+actual build tags and EgressFox support. `engine.CheckEndpoint` is called by both
+renderers and the probe executor before a newly modeled form can become an
+artifact or observation. Its current allowlist remains the M8 qualified subset;
+C2–C4 expand it only with matching end-to-end evidence.
 
 An unsupported-feature error should name the engine/version, model field and
 requested behavior, with a safe reason. It must not emit endpoint URIs or native

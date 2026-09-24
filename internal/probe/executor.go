@@ -82,6 +82,9 @@ func NewExecutor(config Config) (*Executor, error) {
 }
 
 func (executor *Executor) Execute(ctx context.Context, record endpoint.Record, target observation.HTTPTarget) (observation.Observation, error) {
+	if err := engine.CheckEndpoint(executor.renderer.Profile(), record.Configuration()); err != nil {
+		return observation.Observation{}, err
+	}
 	authorized, err := authorizeTarget(ctx, executor.resolver, target)
 	if err != nil {
 		return observation.Observation{}, err
@@ -206,23 +209,7 @@ func (executor *Executor) authorizeEndpoint(ctx context.Context, record endpoint
 	if err != nil {
 		return endpoint.Record{}, executionFailure("endpoint_address")
 	}
-	var executionConfiguration endpoint.Configuration
-	switch configuration.Protocol() {
-	case endpoint.ProtocolVLESS, endpoint.ProtocolTrojan:
-		executionConfiguration, err = endpoint.NewConfiguration(
-			configuration.Protocol(), executionAddress, configuration.Credential(), configuration.Transport(), configuration.TLS(),
-		)
-	case endpoint.ProtocolVMess:
-		executionConfiguration, err = endpoint.NewVMessConfiguration(
-			executionAddress, configuration.Credential(), configuration.Transport(), configuration.TLS(), configuration.Method(),
-		)
-	case endpoint.ProtocolShadowsocks:
-		executionConfiguration, err = endpoint.NewShadowsocksConfiguration(
-			executionAddress, configuration.Credential(), configuration.Method(),
-		)
-	default:
-		return endpoint.Record{}, executionFailure("endpoint_configuration")
-	}
+	executionConfiguration, err := configuration.WithAddress(executionAddress)
 	if err != nil {
 		return endpoint.Record{}, executionFailure("endpoint_configuration")
 	}
