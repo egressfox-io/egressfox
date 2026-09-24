@@ -10,7 +10,8 @@ single-replica managed Mihomo/sing-box workloads, authenticated ClusterIP SOCKS 
 exact-generation activation while preserving BYO. M8 adds managed conditional HTTP
 source refresh and a protected bounded cache. There is no product CLI, rich routing
 or HA topology. The P1 product sequence is designed in
-`docs/roadmap/p1.md`; M9 is the next implementation milestone. After M12, continue
+`docs/roadmap/p1.md`; M8.5 protocol and transport compatibility is the next
+bounded implementation stage before M9. After M12, continue
 through the accepted post-P1 architecture in
 `docs/roadmap/README.md` rather than duplicating those shared capabilities.
 Read the [documentation map](docs/README.md),
@@ -124,5 +125,6 @@ SQLite integration, envtest, and real-cluster/traffic tests. Do not claim
 unavailable checks passed.
 Complete the workflow's definition of done before handoff. Completed execution
 records are indexed in [execution plans](docs/plans/README.md); the
-[P1 roadmap](docs/roadmap/p1.md) identifies M9 target-aware selection profiles as the
-next bounded implementation milestone.
+[P1 roadmap](docs/roadmap/p1.md) identifies M8.5 protocol and transport
+compatibility as the next bounded implementation stage, followed by M9
+target-aware selection profiles.

@@ -45,10 +45,10 @@ capabilities form one product path rather than independent feature bids.
 | P1-08 | Managed-path examples, upgrade/recovery guidance and both-engine acceptance scenarios | M7–M12 |
 
 Optional P1 candidates are not scheduled milestones: engine-specific live reload,
-managed data-plane replicas/PDB/topology, source-provenance diversity, one
-demand-backed protocol slice and attributed subscription quota/expiry display. They
-require a roadmap revision after the must-have path demonstrates the need and fixes
-their API/security contract.
+managed data-plane replicas/PDB/topology, source-provenance diversity, one further
+demand-backed protocol slice beyond M8.5 and attributed subscription quota/expiry
+display. They require a roadmap revision after the must-have path demonstrates
+the need and fixes their API/security contract.
 
 ## P2 — Advanced product
 

@@ -101,6 +101,11 @@ The protocol output fields are checked against [Mihomo transport](https://wiki.m
 and [sing-box outbound](https://sing-box.sagernet.org/configuration/outbound/)
 documentation for the pinned profiles. The local native/traffic qualification
 results belong in [execution plan 0018](../plans/0018-subscription-compatibility.md).
+The [M8 final-hardening record](../plans/0019-m8-final-hardening.md) additionally
+qualifies Linux managed traffic through both pinned engines for Xray JSON
+VMess/TCP with UUID, alter ID zero and `auto` security, and Shadowsocks/TCP with
+`aes-128-gcm`. Other listed protocol variants rely on the native validation and
+traffic evidence in plan 0018; they are not implied by this kind fixture.
 
 Reality remains mandatory before v1.0. Its exact public key, short ID, server
 name, fingerprint, flow and transport combination must enter a typed endpoint

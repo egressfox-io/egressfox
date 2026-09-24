@@ -1,6 +1,6 @@
 # M8 final hardening and subscription identity
 
-Status: in progress. Date: 2026-09-24. Branch: `fix/m8-final-hardening`.
+Status: complete. Date: 2026-09-24. Branch: `fix/m8-final-hardening`.
 Baseline: `8185f56` (M8 and subscription compatibility complete).
 
 ## Scope and confirmed findings
@@ -41,8 +41,8 @@ protocol aware and covered by a focused preservation test.
 
 - [x] Identity API/ADR, legacy migration, override/restoration and wire tests.
 - [x] Destination policy and controlled resolution/redirect/retry tests.
-- [ ] Format/cache/LKG regressions and Linux managed protocol traffic.
-- [ ] Documentation, full validation, Kubernetes matrix and clean commits.
+- [x] Format/cache/LKG regressions and Linux managed protocol traffic.
+- [x] Documentation, full validation, Kubernetes matrix and clean commits.
 
 ## Evidence and handoff
 
@@ -52,7 +52,19 @@ Concurrent resolution, rename/move, override/restoration and deliberate reset
 tests use controlled wire requests. Source destination classification denies
 link-local metadata and special-use addresses even with private permission;
 controlled DNS, redirect and retry tests exercise the actual dial path. Format
-transition tests prove cache/validator isolation and stable HWID. Focused
-source/operator/controller tests, Kubernetes 1.32 envtest, offline docs and the
-pinned vulnerability scan passed. The 1.32 kind run and full matrix are pending.
+transition tests prove cache/validator isolation and stable HWID. `make check`
+passed, including race tests, generated manifest reproducibility, Helm and docs.
+The pinned vulnerability scan reported zero called vulnerabilities. Envtest and
+Helm passed on Kubernetes 1.32, 1.34 and 1.37. The complete 1.32 kind scenario
+passed: synthetic VMess/TCP with `auto` security and Shadowsocks/TCP with
+`aes-128-gcm` carried authenticated SOCKS traffic through both managed Mihomo
+and sing-box, and format failure retained active Gateway generations. The
+complete 1.34 and 1.37 kind scenarios passed the same assertions. The 1.37
+fixture initially failed because BusyBox uClibc ash `read` segfaulted in the
+pinned node image; replacing test-only request-header parsing with `awk`
+restored the provider, and the full 1.37 scenario passed. Kubernetes 1.32 and
+1.34 were then rerun successfully with the final fixture. All kind clusters
+were removed. `make k8s-api-compat`, `make e2e-kind K8S_VERSION=1.37`, and
+`make k8s-e2e-compat K8S_RELEASE_VALIDATION='1.32 1.34'` passed. `make vuln`
+reported zero called vulnerabilities and one imported, uncalled finding.
 M8.5 and M9 remain outside scope.
