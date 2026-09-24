@@ -206,9 +206,23 @@ func (executor *Executor) authorizeEndpoint(ctx context.Context, record endpoint
 	if err != nil {
 		return endpoint.Record{}, executionFailure("endpoint_address")
 	}
-	executionConfiguration, err := endpoint.NewConfiguration(
-		configuration.Protocol(), executionAddress, configuration.Credential(), configuration.Transport(), configuration.TLS(),
-	)
+	var executionConfiguration endpoint.Configuration
+	switch configuration.Protocol() {
+	case endpoint.ProtocolVLESS, endpoint.ProtocolTrojan:
+		executionConfiguration, err = endpoint.NewConfiguration(
+			configuration.Protocol(), executionAddress, configuration.Credential(), configuration.Transport(), configuration.TLS(),
+		)
+	case endpoint.ProtocolVMess:
+		executionConfiguration, err = endpoint.NewVMessConfiguration(
+			executionAddress, configuration.Credential(), configuration.Transport(), configuration.TLS(), configuration.Method(),
+		)
+	case endpoint.ProtocolShadowsocks:
+		executionConfiguration, err = endpoint.NewShadowsocksConfiguration(
+			executionAddress, configuration.Credential(), configuration.Method(),
+		)
+	default:
+		return endpoint.Record{}, executionFailure("endpoint_configuration")
+	}
 	if err != nil {
 		return endpoint.Record{}, executionFailure("endpoint_configuration")
 	}

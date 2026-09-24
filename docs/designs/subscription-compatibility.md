@@ -13,16 +13,28 @@ activation; parsing alone never proves reachability.
 | Clean | No client-profile headers, including Go's implicit User-Agent | Overrides and additional headers are rejected |
 
 The default is one documented compatibility preset, not a promise that a provider
-accepts it. The HWID is a deterministic UUID-shaped value from Pool UID and source
-ID, never from URL or Authorization. A new Pool UID changes it. Static
-Authorization, Cookie, proxy credential and transport-controlled headers are
-rejected; `authorizationSecretRef` is the credential path. Header names and values
+accepts it. The HWID is a deterministic UUID-shaped value from a durable logical
+subscription identity, never from URL, credentials, headers, format, validators or
+cache content. Existing sources use `legacy:<Pool UID>/<source ID>` and keep their
+previous exact HWID. Set `http.clientIdentity` to that legacy reference before a
+source rename or Pool move, or use a unique `stable:<opaque>` reference for new
+portable subscriptions. Changing the reference is an explicit automatic-HWID
+reset. An explicit profile `hwid` takes precedence; removing it restores the
+unchanged automatic value. Clean mode sends no HWID without resetting its
+assignment. Deleting and recreating a source without a retained reference may
+create a new identity; cache deletion/expiry never supplies identity recovery.
+Static Authorization, Cookie, proxy credential and transport-controlled headers
+are rejected; `authorizationSecretRef` is the credential path. Header names and values
 are bounded and control characters are rejected. The effective headers, URL,
 Authorization, format and admission settings form the private cache identity.
 Changing them invalidates cached body and ETag/Last-Modified validators.
 Explicit `secretHeaders` can carry other credential-bearing headers in either
 mode; Clean suppresses only the client-identification profile. Secret header
 rotation also invalidates the cache and validators.
+HWID identity and HTTP cache identity are separate: a URL, credential, profile or
+format change keeps HWID stable while invalidating incompatible cached response
+bytes and conditional validators. A failed new refresh leaves the existing
+published Gateway generation in place.
 
 ```yaml
 # In a ProxyPool spec.sources entry; the URL itself is a Secret key.

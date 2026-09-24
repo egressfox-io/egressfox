@@ -55,7 +55,7 @@ test "$(kubectl auth can-i create statefulsets -n "$namespace" --as "$sa")" = no
 test "$(kubectl auth can-i get nodes --as "$sa")" = no
 
 uuid=11111111-1111-4111-8111-111111111111
-kubectl -n "$namespace" create secret generic proxy-server --from-literal=config.json="{\"log\":{\"level\":\"warn\"},\"inbounds\":[{\"type\":\"vless\",\"tag\":\"in\",\"listen\":\"::\",\"listen_port\":8443,\"users\":[{\"uuid\":\"$uuid\"}]}],\"outbounds\":[{\"type\":\"direct\",\"tag\":\"direct\"}]}"
+kubectl -n "$namespace" create secret generic proxy-server --from-literal=config.json="{\"log\":{\"level\":\"warn\"},\"inbounds\":[{\"type\":\"vless\",\"tag\":\"in\",\"listen\":\"::\",\"listen_port\":8443,\"users\":[{\"uuid\":\"$uuid\"}]},{\"type\":\"vmess\",\"tag\":\"vmess\",\"listen\":\"::\",\"listen_port\":8445,\"users\":[{\"name\":\"synthetic\",\"uuid\":\"$uuid\",\"alterId\":0}]},{\"type\":\"shadowsocks\",\"tag\":\"shadowsocks\",\"listen\":\"::\",\"listen_port\":8446,\"network\":\"tcp\",\"method\":\"aes-128-gcm\",\"password\":\"synthetic-password\"}],\"outbounds\":[{\"type\":\"direct\",\"tag\":\"direct\"}]}"
 kubectl -n "$namespace" apply -f - <<YAML
 apiVersion: apps/v1
 kind: Deployment
@@ -79,7 +79,7 @@ kind: Service
 metadata: {name: proxy-server}
 spec:
   selector: {app: proxy-server}
-  ports: [{name: primary, port: 8443, targetPort: 8443}, {name: rollout, port: 8444, targetPort: 8443}]
+  ports: [{name: primary, port: 8443, targetPort: 8443}, {name: rollout, port: 8444, targetPort: 8443}, {name: vmess, port: 8445, targetPort: 8445}, {name: shadowsocks, port: 8446, targetPort: 8446}]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -331,6 +331,8 @@ metadata: {name: source-provider-script}
 data:
   subscription: |
     #!/bin/sh
+    IFS= read -r request_line
+    request_line=$(printf '%s' "$request_line" | tr -d '\r')
     conditional=
     user_agent=
     hwid=
@@ -355,15 +357,20 @@ data:
       printf 'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
       exit 0
     fi
+    body_file=/data/body
     etag=$(cat /data/etag)
+    case "$request_line" in
+      'GET /vmess '*) body_file=/data/vmess-body; etag=vmess-v1 ;;
+      'GET /shadowsocks '*) body_file=/data/shadowsocks-body; etag=shadowsocks-v1 ;;
+    esac
     if [ "$conditional" = "\"$etag\"" ]; then
       touch /data/conditional
       printf 'HTTP/1.1 304 Not Modified\r\nETag: "%s"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n' "$etag"
       exit 0
     fi
-    length=$(wc -c </data/body | tr -d ' ')
+    length=$(wc -c <"$body_file" | tr -d ' ')
     printf 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nETag: "%s"\r\nContent-Length: %s\r\nConnection: close\r\n\r\n' "$etag" "$length"
-    cat /data/body
+    cat "$body_file"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -457,6 +464,82 @@ for engine in singbox mihomo; do
 done
 initial_singbox=$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')
 initial_mihomo=$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')
+# Explicit URIList must reject the provider's JSON body. The incompatible cache
+# is unavailable, while the previously activated Gateway remains serving.
+kubectl -n "$namespace" patch proxypool http-e2e --type=json -p '[{"op":"replace","path":"/spec/sources/0/format","value":"URIList"}]'
+for _ in $(seq 1 120); do
+  state=$(kubectl -n "$namespace" get proxypool http-e2e -o jsonpath='{.status.sources[0].state}')
+  [ "$state" = Unavailable ] && break
+  sleep 1
+done
+test "$state" = Unavailable
+test "$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')" = "$initial_singbox"
+test "$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')" = "$initial_mihomo"
+kubectl -n "$namespace" patch proxypool http-e2e --type=json -p '[{"op":"replace","path":"/spec/sources/0/format","value":"Auto"}]'
+kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True proxypool/http-e2e --timeout=3m
+test "$(kubectl -n "$namespace" get egressgateway http-singbox -o jsonpath='{.status.activeGeneration}')" = "$initial_singbox"
+test "$(kubectl -n "$namespace" get egressgateway http-mihomo -o jsonpath='{.status.activeGeneration}')" = "$initial_mihomo"
+# Linux managed-path proof for both newly supported protocols and both engine
+# profiles. The same controlled HTTP provider supplies synthetic Xray outbounds.
+kubectl -n "$namespace" exec -i "$provider_pod" -- sh -c 'cat >/data/vmess-body' <<JSON
+{"outbounds":[{"protocol":"vmess","tag":"vmess-controlled","settings":{"vnext":[{"address":"${proxy_ip}","port":8445,"users":[{"id":"${uuid}","security":"auto","alterId":0}]}]},"streamSettings":{"network":"tcp","security":"none"}}]}
+JSON
+kubectl -n "$namespace" exec -i "$provider_pod" -- sh -c 'cat >/data/shadowsocks-body' <<JSON
+{"outbounds":[{"protocol":"shadowsocks","tag":"ss-controlled","settings":{"servers":[{"address":"${proxy_ip}","port":8446,"method":"aes-128-gcm","password":"synthetic-password"}]},"streamSettings":{"network":"tcp","security":"none"}}]}
+JSON
+kubectl -n "$namespace" create secret generic vmess-source-url --from-literal=url="http://source-provider.${namespace}.svc.cluster.local:8080/vmess"
+kubectl -n "$namespace" create secret generic shadowsocks-source-url --from-literal=url="http://source-provider.${namespace}.svc.cluster.local:8080/shadowsocks"
+for protocol in vmess shadowsocks; do
+  kubectl -n "$namespace" apply -f - <<YAML
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata: {name: http-${protocol}}
+spec:
+  sources:
+    - id: managed
+      http:
+        urlSecretRef: {name: ${protocol}-source-url, key: url}
+        allowHTTP: true
+        allowPrivateNetworks: true
+      format: Auto
+  probe:
+    targetSecretRef: {name: target, key: url}
+    expectedStatus: 200
+    timeout: 10s
+    allowHTTP: true
+    allowPrivateTargets: true
+    allowPrivateEndpoints: true
+  selection: {strategy: Static, topN: 1}
+  refreshInterval: 30s
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata: {name: ${protocol}-singbox}
+spec:
+  poolRef: {name: http-${protocol}}
+  engine: SingBox
+  runtime: {managed: {}}
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata: {name: ${protocol}-mihomo}
+spec:
+  poolRef: {name: http-${protocol}}
+  engine: Mihomo
+  runtime: {managed: {}}
+YAML
+  kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "proxypool/http-${protocol}" --timeout=3m
+  test "$(kubectl -n "$namespace" get proxypool "http-${protocol}" -o jsonpath='{.status.acceptedEndpoints}')" = 1
+  for engine in singbox mihomo; do
+    gateway="${protocol}-${engine}"
+    kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "egressgateway/${gateway}" --timeout=5m
+    service=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.serviceName}')
+    auth=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.clientAuthSecretName}')
+    username=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "username" | base64decode}}')
+    password=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
+    test "$(kubectl -n "$namespace" exec byo-engine -c client -- curl -sS --max-time 10 --proxy "socks5://${username}:${password}@${service}:1080" -o /dev/null -w '%{http_code}' "http://${target_ip}:8080/")" = 200
+  done
+done
 for _ in $(seq 1 75); do
   kubectl -n "$namespace" exec "$provider_pod" -- test -f /data/conditional >/dev/null 2>&1 && break
   sleep 1

@@ -116,6 +116,55 @@ func TestAuthorizeEndpointPinsAddressWithoutChangingEvidenceIdentity(t *testing.
 	}
 }
 
+func TestAuthorizeEndpointPreservesVMessAndShadowsocksSemantics(t *testing.T) {
+	address, err := endpoint.NewAddress("edge.example.com", 443)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vmessCredential, err := endpoint.NewVMessCredential("11111111-1111-4111-8111-111111111111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := endpoint.NewWebSocketTransportWithHost("/ws", "front.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlsConfig, err := endpoint.NewTLS("sni.example.com", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vmess, err := endpoint.NewVMessConfiguration(address, vmessCredential, transport, tlsConfig, "aes-128-gcm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ssCredential, err := endpoint.NewShadowsocksCredential("synthetic-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shadowsocks, err := endpoint.NewShadowsocksConfiguration(address, ssCredential, "aes-128-gcm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := endpoint.NewSourceID("controlled")
+	recordID, _ := endpoint.NewRecordID("controlled-record")
+	provenance, _ := endpoint.NewProvenance(sourceID, recordID)
+	executor := &Executor{resolver: &fixedResolver{addresses: []netip.Addr{netip.MustParseAddr("8.8.8.8")}}}
+	for _, original := range []endpoint.Configuration{vmess, shadowsocks} {
+		record, err := endpoint.NewRecord(original, provenance)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pinned, err := executor.authorizeEndpoint(context.Background(), record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		configuration := pinned.Configuration()
+		if configuration.Address().Host() != "8.8.8.8" || configuration.Protocol() != original.Protocol() || configuration.Method() != original.Method() || configuration.Transport().WebSocketPath() != original.Transport().WebSocketPath() || configuration.Transport().WebSocketHost() != original.Transport().WebSocketHost() || configuration.TLS() != original.TLS() || configuration.Credential().Reveal() != original.Credential().Reveal() {
+			t.Fatal("probe address pinning changed protocol or connection parameters")
+		}
+	}
+}
+
 func TestExecutorReportsSafeEngineExit(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses a POSIX shell script")
