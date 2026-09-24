@@ -84,8 +84,13 @@ RFC1918/IPv6 ULA and in-cluster destinations require
 `http.allowPrivateNetworks: true`. Loopback independently requires
 `http.allowLoopback: true`; link-local, metadata, multicast, unspecified and
 reserved/control destinations remain prohibited. DNS answers are authorized at
-the actual dial, including retries and same-origin redirects. Source TLS
-certificate verification is enabled
+the actual dial, including retries and same-origin redirects.
+
+The known AWS IPv6 metadata address `fd00:ec2::254` is denied even with private
+sources enabled. The application checks known metadata destinations; retain
+cluster egress policy to cover provider-specific destinations outside that list.
+
+Source TLS certificate verification is enabled
 by default and can be disabled only with a separate trusted
 `http.allowInsecureTLS: true` opt-in. These source-fetch flags do not authorize
 probe targets or endpoint addresses. Existing format values and admission flags
@@ -116,6 +121,11 @@ malformed response leaves the accepted cache intact; at expiry its endpoints sto
 contributing to current inventory. This does not delete an already published
 Gateway generation or stop a healthy managed runtime. New accepted bytes that
 render the same validated artifact do not cause a rollout.
+
+The Pool controller schedules its next reconcile no later than the earliest
+currently admitted HTTP cache expiry, even when that precedes `refreshInterval`.
+At expiry it recomputes per-source status and effective inventory without a new
+provider response; an already expired cache does not cause immediate requeues.
 
 Refresh uses four leader-scoped workers, no more than three attempts and a
 45-second overall deadline per source. Temporary network/timeout, 429 and 5xx

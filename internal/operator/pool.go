@@ -35,6 +35,7 @@ func poolFailure(code string) error { return &PoolError{code: code} }
 
 type PoolResult struct {
 	Inventory       endpoint.Inventory
+	NextCacheExpiry time.Time
 	Accepted        int
 	Rejected        int
 	Unsupported     int
@@ -135,6 +136,10 @@ func BuildPoolWithCache(ctx context.Context, reader client.Reader, pool *egressv
 			result.Accepted += report.Accepted
 			result.Rejected += report.Rejected()
 			result.Unsupported += report.Unsupported
+			expires := entry.ValidatedAt.Add(maxStale)
+			if result.NextCacheExpiry.IsZero() || expires.Before(result.NextCacheExpiry) {
+				result.NextCacheExpiry = expires
+			}
 			last := entry.ValidatedAt
 			stateName, reason := "Fresh", "RecentlyValidated"
 			if now.Sub(last) > 3*refreshDuration(pool.Spec.RefreshInterval)/2 {

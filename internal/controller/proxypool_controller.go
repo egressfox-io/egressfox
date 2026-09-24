@@ -48,11 +48,12 @@ func (r *ProxyPoolReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	if r.Now != nil {
 		now = r.Now
 	}
+	observedAt := now()
 	before := pool.DeepCopy().Status
 	var result operatoradapter.PoolResult
 	var err error
 	if r.Store != nil {
-		result, err = operatoradapter.BuildPoolWithCache(ctx, r.Client, pool, r.Store, now())
+		result, err = operatoradapter.BuildPoolWithCache(ctx, r.Client, pool, r.Store, observedAt)
 	} else {
 		result, err = operatoradapter.BuildPool(ctx, r.Client, pool)
 	}
@@ -63,6 +64,30 @@ func (r *ProxyPoolReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		httpChanged = r.Refresher.LastChange(pool.UID).After(timeValue(pool.Status.LastInventoryChangeTime))
 	}
 	pool.Status.ObservedGeneration = pool.Generation
+	// A failed Secret snapshot still needs cache-deadline reconciliation for the
+	// HTTP sources in the same pool. Reuse the cache reader's eligibility logic.
+	if err != nil && r.Store != nil {
+		states := make([]operatoradapter.SourceState, 0, len(pool.Spec.Sources))
+		for _, desired := range pool.Spec.Sources {
+			if desired.HTTP == nil {
+				continue
+			}
+			httpPool := pool.DeepCopy()
+			httpPool.Spec.Sources = []egressv1alpha1.SubscriptionSource{desired}
+			cacheResult, cacheErr := operatoradapter.BuildPoolWithCache(ctx, r.Client, httpPool, r.Store, observedAt)
+			if cacheErr != nil && len(cacheResult.Sources) == 0 {
+				states = append(states, operatoradapter.SourceState{ID: desired.ID, State: "Unavailable", Reason: "SnapshotRejected"})
+			} else {
+				states = append(states, cacheResult.Sources...)
+			}
+			if !cacheResult.NextCacheExpiry.IsZero() && (result.NextCacheExpiry.IsZero() || cacheResult.NextCacheExpiry.Before(result.NextCacheExpiry)) {
+				result.NextCacheExpiry = cacheResult.NextCacheExpiry
+			}
+		}
+		if len(states) > 0 {
+			pool.Status.Sources = mergeHTTPSourceStatus(pool, states)
+		}
+	}
 	if err == nil {
 		if r.Refresher != nil {
 			for i := range result.Sources {
@@ -74,23 +99,25 @@ func (r *ProxyPoolReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		}
 		pool.Status.Sources = make([]egressv1alpha1.SourceStatus, 0, len(result.Sources))
 		for _, sourceState := range result.Sources {
-			status := egressv1alpha1.SourceStatus{ID: sourceState.ID, State: sourceState.State, Reason: sourceState.Reason}
-			if sourceState.LastSuccess != nil {
-				stamp := metav1.NewTime(sourceState.LastSuccess.UTC())
-				status.LastSuccessTime = &stamp
-			}
-			pool.Status.Sources = append(pool.Status.Sources, status)
+			pool.Status.Sources = append(pool.Status.Sources, sourceStatus(sourceState))
 		}
 	}
 	if err != nil {
-		apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionSourcesReady, metav1.ConditionFalse, "SnapshotRejected", "one or more source snapshots are unavailable or rejected", pool.Generation, now()))
-		apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionReady, metav1.ConditionFalse, "SourcesNotReady", "the pool has no current admitted inventory", pool.Generation, now()))
+		if pool.Status.AcceptedEndpoints != 0 {
+			stamp := metav1.NewTime(observedAt.UTC())
+			pool.Status.LastInventoryChangeTime = &stamp
+		}
+		pool.Status.AcceptedEndpoints = 0
+		pool.Status.RejectedRecords = 0
+		pool.Status.UnsupportedRecords = 0
+		apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionSourcesReady, metav1.ConditionFalse, "SnapshotRejected", "one or more source snapshots are unavailable or rejected", pool.Generation, observedAt))
+		apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionReady, metav1.ConditionFalse, "SourcesNotReady", "the pool has no current admitted inventory", pool.Generation, observedAt))
 	} else {
 		pool.Status.AcceptedEndpoints = int32(result.Inventory.Len())
 		pool.Status.RejectedRecords = int32(result.Rejected)
 		pool.Status.UnsupportedRecords = int32(result.Unsupported)
 		if pool.Status.LastInventoryChangeTime == nil || countsChanged || generationChanged || httpChanged {
-			stamp := metav1.NewTime(now().UTC())
+			stamp := metav1.NewTime(observedAt.UTC())
 			pool.Status.LastInventoryChangeTime = &stamp
 		}
 		allReady := true
@@ -101,14 +128,14 @@ func (r *ProxyPoolReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 			}
 		}
 		if allReady {
-			apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionSourcesReady, metav1.ConditionTrue, "SnapshotsAdmitted", "all source snapshots were admitted", pool.Generation, now()))
+			apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionSourcesReady, metav1.ConditionTrue, "SnapshotsAdmitted", "all source snapshots were admitted", pool.Generation, observedAt))
 		} else {
-			apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionSourcesReady, metav1.ConditionFalse, "SourceDegraded", "one or more managed sources use fallback or are unavailable", pool.Generation, now()))
+			apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionSourcesReady, metav1.ConditionFalse, "SourceDegraded", "one or more managed sources use fallback or are unavailable", pool.Generation, observedAt))
 		}
 		if result.Inventory.Len() > 0 {
-			apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionReady, metav1.ConditionTrue, "InventoryReady", "the current admitted inventory is available", pool.Generation, now()))
+			apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionReady, metav1.ConditionTrue, "InventoryReady", "the current admitted inventory is available", pool.Generation, observedAt))
 		} else {
-			apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionReady, metav1.ConditionFalse, "InventoryEmpty", "the pool has no current admitted inventory", pool.Generation, now()))
+			apimeta.SetStatusCondition(&pool.Status.Conditions, condition(ConditionReady, metav1.ConditionFalse, "InventoryEmpty", "the pool has no current admitted inventory", pool.Generation, observedAt))
 		}
 	}
 	if !sameStatus(before, pool.Status) {
@@ -116,16 +143,53 @@ func (r *ProxyPoolReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 			return ctrl.Result{}, updateErr
 		}
 	}
-	if err != nil {
-		if r.Refresher != nil {
-			r.Refresher.Notify(pool)
-		}
-		return ctrl.Result{}, nil
-	}
 	if r.Refresher != nil {
 		r.Refresher.Notify(pool)
 	}
-	return ctrl.Result{RequeueAfter: requeueAfter(durationValue(pool.Spec.RefreshInterval), pool.UID)}, nil
+	return ctrl.Result{RequeueAfter: cacheAwareRequeue(requeueAfter(durationValue(pool.Spec.RefreshInterval), pool.UID), result.NextCacheExpiry, observedAt)}, nil
+}
+
+func sourceStatus(sourceState operatoradapter.SourceState) egressv1alpha1.SourceStatus {
+	status := egressv1alpha1.SourceStatus{ID: sourceState.ID, State: sourceState.State, Reason: sourceState.Reason}
+	if sourceState.LastSuccess != nil {
+		stamp := metav1.NewTime(sourceState.LastSuccess.UTC())
+		status.LastSuccessTime = &stamp
+	}
+	return status
+}
+
+func mergeHTTPSourceStatus(pool *egressv1alpha1.ProxyPool, current []operatoradapter.SourceState) []egressv1alpha1.SourceStatus {
+	updated := make(map[string]egressv1alpha1.SourceStatus, len(current))
+	for _, item := range current {
+		updated[item.ID] = sourceStatus(item)
+	}
+	previous := make(map[string]egressv1alpha1.SourceStatus, len(pool.Status.Sources))
+	for _, item := range pool.Status.Sources {
+		previous[item.ID] = item
+	}
+	statuses := make([]egressv1alpha1.SourceStatus, 0, len(pool.Spec.Sources))
+	for _, desired := range pool.Spec.Sources {
+		if status, ok := updated[desired.ID]; ok {
+			statuses = append(statuses, status)
+		} else if status, ok := previous[desired.ID]; ok {
+			statuses = append(statuses, status)
+		}
+	}
+	return statuses
+}
+
+func cacheAwareRequeue(refresh time.Duration, expiry, now time.Time) time.Duration {
+	if expiry.IsZero() || !expiry.After(now) {
+		return refresh
+	}
+	until := expiry.Sub(now)
+	if until >= refresh {
+		return refresh
+	}
+	if until < time.Second {
+		return time.Second
+	}
+	return until
 }
 
 func timeValue(value *metav1.Time) time.Time {

@@ -26,6 +26,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0018](0018-subscription-compatibility.md) | Complete | M8 real-world subscription compatibility completion |
 | [0019](0019-m8-final-hardening.md) | Complete | M8 subscription identity, destination policy and Linux integration hardening |
 | [0020](0020-m85-protocol-transport-compatibility.md) | C1 complete; C2–C4 planned | M8.5 compatibility implementation and qualification |
+| [0021](0021-m8-review-corrections.md) | Complete | M8 metadata destination and cache-expiry scheduling corrections |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.
