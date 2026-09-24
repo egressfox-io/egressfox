@@ -245,6 +245,15 @@ func canonicalConfiguration(c Configuration, includeCredential bool) []byte {
 			encoder.writeString(c.credential.username)
 		}
 	}
+	// A domain-separated tail keeps every pre-C4 ef3 encoding byte-for-byte
+	// stable and prevents hop metadata from being parsed as credential fields.
+	if version3 && c.advanced.hysteria != nil && len(c.advanced.hysteria.portRanges) != 0 {
+		encoder.writeString("hysteria2-ports/v1")
+		encoder.writeUint8(uint8(len(c.advanced.hysteria.portRanges)))
+		for _, entry := range c.advanced.hysteria.portRanges {
+			encoder.writeString(entry)
+		}
+	}
 	return encoder.Bytes()
 }
 

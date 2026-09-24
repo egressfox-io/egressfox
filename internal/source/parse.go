@@ -265,7 +265,7 @@ func recognizableURIList(data []byte) bool {
 			continue
 		}
 		text := strings.ToLower(string(line))
-		for _, scheme := range []string{"vless://", "trojan://", "vmess://", "ss://", "socks5://", "hysteria://", "hysteria2://", "tuic://"} {
+		for _, scheme := range []string{"vless://", "trojan://", "vmess://", "ss://", "socks5://", "hysteria://", "hysteria2://", "hy2://", "tuic://"} {
 			if strings.HasPrefix(text, scheme) {
 				return true
 			}
@@ -299,6 +299,9 @@ func decodeEnvelope(data []byte, max int) ([]byte, error) {
 }
 
 func parseURI(raw string, allowHTTPProxyURI bool) (endpoint.Configuration, string, DiagnosticKind, string) {
+	if strings.HasPrefix(strings.ToLower(raw), "hy2://") || strings.HasPrefix(strings.ToLower(raw), "hysteria2://") {
+		return parseHysteria2Raw(raw)
+	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" {
 		return endpoint.Configuration{}, "", DiagnosticMalformed, "invalid_uri"

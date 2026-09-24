@@ -36,6 +36,9 @@ func decodeSingBoxRecords(records []json.RawMessage, limits Limits) ([]parseInpu
 
 func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseInput {
 	unsupported := func(code string) parseInput { return parseInput{kind: DiagnosticUnsupported, code: code} }
+	if kind == "hysteria2" {
+		return parseSingBoxHysteria2(object)
+	}
 	if kind != "vless" && kind != "trojan" && kind != "vmess" && kind != "shadowsocks" && kind != "socks" && kind != "http" {
 		return unsupported("unsupported_protocol")
 	}

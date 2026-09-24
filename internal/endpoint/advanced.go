@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -241,6 +242,7 @@ func (f VLESSFlow) String() string {
 type Hysteria2Options struct {
 	upMbps, downMbps int
 	obfsPassword     *credentialSecret
+	portRanges       []string
 }
 
 func NewHysteria2Options(upMbps, downMbps int, salamanderPassword string) (Hysteria2Options, error) {
@@ -257,8 +259,66 @@ func NewHysteria2Options(upMbps, downMbps int, salamanderPassword string) (Hyste
 	return Hysteria2Options{upMbps: upMbps, downMbps: downMbps, obfsPassword: obfs}, nil
 }
 
-func (h Hysteria2Options) UpMbps() int   { return h.upMbps }
-func (h Hysteria2Options) DownMbps() int { return h.downMbps }
+// NewHysteria2OptionsWithPorts accepts at most 16 explicit ports or bounded
+// ranges. The total destination set is limited to 256 UDP ports.
+func NewHysteria2OptionsWithPorts(upMbps, downMbps int, salamanderPassword string, ranges []string) (Hysteria2Options, error) {
+	options, err := NewHysteria2Options(upMbps, downMbps, salamanderPassword)
+	if err != nil {
+		return Hysteria2Options{}, err
+	}
+	if len(ranges) == 0 || len(ranges) > 16 {
+		return Hysteria2Options{}, invalid("hysteria2.ports", "requires 1–16 port entries")
+	}
+	count := 0
+	for _, entry := range ranges {
+		parts := strings.Split(entry, ":")
+		if len(parts) > 2 {
+			return Hysteria2Options{}, invalid("hysteria2.ports", "invalid range")
+		}
+		first, err := strconv.Atoi(parts[0])
+		if err != nil || first < 1 || first > 65535 || strconv.Itoa(first) != parts[0] {
+			return Hysteria2Options{}, invalid("hysteria2.ports", "invalid port")
+		}
+		last := first
+		if len(parts) == 2 {
+			last, err = strconv.Atoi(parts[1])
+			if err != nil || last < first || last > 65535 || strconv.Itoa(last) != parts[1] {
+				return Hysteria2Options{}, invalid("hysteria2.ports", "invalid range")
+			}
+		}
+		count += last - first + 1
+		if count > 256 {
+			return Hysteria2Options{}, invalid("hysteria2.ports", "too many destination ports")
+		}
+		if last == first {
+			options.portRanges = append(options.portRanges, strconv.Itoa(first))
+		} else {
+			options.portRanges = append(options.portRanges, strconv.Itoa(first)+":"+strconv.Itoa(last))
+		}
+	}
+	return options, nil
+}
+
+func (h Hysteria2Options) UpMbps() int          { return h.upMbps }
+func (h Hysteria2Options) DownMbps() int        { return h.downMbps }
+func (h Hysteria2Options) PortRanges() []string { return append([]string(nil), h.portRanges...) }
+func (h Hysteria2Options) IncludesPort(port uint16) bool {
+	if len(h.portRanges) == 0 {
+		return true
+	}
+	for _, entry := range h.portRanges {
+		parts := strings.Split(entry, ":")
+		first, _ := strconv.Atoi(parts[0])
+		last := first
+		if len(parts) == 2 {
+			last, _ = strconv.Atoi(parts[1])
+		}
+		if int(port) >= first && int(port) <= last {
+			return true
+		}
+	}
+	return false
+}
 func (h Hysteria2Options) RevealSalamanderPassword() string {
 	if h.obfsPassword == nil {
 		return ""
@@ -319,7 +379,15 @@ func (a *advancedConnection) equal(other *advancedConnection) bool {
 	if a.hysteria == nil {
 		return true
 	}
-	return a.hysteria.upMbps == other.hysteria.upMbps && a.hysteria.downMbps == other.hysteria.downMbps && a.hysteria.RevealSalamanderPassword() == other.hysteria.RevealSalamanderPassword()
+	if a.hysteria.upMbps != other.hysteria.upMbps || a.hysteria.downMbps != other.hysteria.downMbps || a.hysteria.RevealSalamanderPassword() != other.hysteria.RevealSalamanderPassword() || len(a.hysteria.portRanges) != len(other.hysteria.portRanges) {
+		return false
+	}
+	for i := range a.hysteria.portRanges {
+		if a.hysteria.portRanges[i] != other.hysteria.portRanges[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // NewExtendedConfiguration admits only typed semantics. The engine capability
@@ -358,6 +426,7 @@ func newExtendedConfiguration(protocol Protocol, address Address, credential Cre
 	var copied *Hysteria2Options
 	if hysteria != nil {
 		value := *hysteria
+		value.portRanges = append([]string(nil), hysteria.portRanges...)
 		copied = &value
 	}
 	security.alpn = append([]string(nil), security.alpn...)
