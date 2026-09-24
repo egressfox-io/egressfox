@@ -116,7 +116,7 @@ func TestRenderersDoNotDropAdvancedSemantics(t *testing.T) {
 	}
 }
 
-func TestPinnedBuildAsymmetryIsExplicit(t *testing.T) {
+func TestHysteria2PinnedBuildAvailability(t *testing.T) {
 	address, _ := endpoint.NewAddress("edge.example.com", 443)
 	user, _ := endpoint.NewVLESSCredential("7ae477a8-3884-4dad-a5a8-a5106778cbbb")
 	tls, _ := endpoint.NewTLS("edge.example.com", false)
@@ -145,12 +145,16 @@ func TestPinnedBuildAsymmetryIsExplicit(t *testing.T) {
 		}
 	}
 	for _, configuration := range []endpoint.Configuration{hysteria} {
+		legacyBuild := artifact.Profile{Engine: artifact.EngineSingBox, Version: "1.14.1", RendererSchema: "egressfox.sing-box/v2", MediaType: "application/json"}
+		if err := engine.CheckEndpoint(legacyBuild, configuration); !errors.Is(err, engine.ErrUnsupported) {
+			t.Fatalf("old build admitted Hysteria2: %v", err)
+		}
 		mihomo, err := engine.AssessEndpoint(artifact.Mihomo11931, configuration)
-		if err != nil || mihomo.Build != engine.BuildAvailable || mihomo.Implemented {
+		if err != nil || mihomo.Build != engine.BuildAvailable || !mihomo.Implemented {
 			t.Fatalf("Mihomo assessment: %+v, %v", mihomo, err)
 		}
 		singbox, err := engine.AssessEndpoint(artifact.SingBox1141, configuration)
-		if err != nil || singbox.Build != engine.BuildUnavailable || singbox.Implemented {
+		if err != nil || singbox.Build != engine.BuildAvailable || !singbox.Implemented {
 			t.Fatalf("sing-box assessment: %+v, %v", singbox, err)
 		}
 	}

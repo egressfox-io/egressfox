@@ -33,7 +33,7 @@ RUN for dependency in $(/out/releasectl overrides --manifest /src/release/manife
       -ldflags="-s -w -buildid= -X github.com/metacubex/mihomo/constant.Version=1.19.31" -o /out/mihomo .
 RUN for dependency in $(/out/releasectl overrides --manifest /src/release/manifest.json --engine sing-box); do cd /engine-src/sing-box && go mod edit -require="$dependency"; done && \
     cd /engine-src/sing-box && go mod tidy && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false -tags=with_utls \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOMAXPROCS=1 GOMEMLIMIT=1200MiB go build -p=1 -trimpath -buildvcs=false -tags=with_quic,with_utls \
       -ldflags="-s -w -buildid= -X github.com/sagernet/sing-box/constant.Version=1.14.1" -o /out/egressfox-engine-s ./cmd/sing-box
 
 FROM --platform=$BUILDPLATFORM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS materials

@@ -58,9 +58,9 @@ func AssessEndpoint(profile artifact.Profile, configuration endpoint.Configurati
 	switch configuration.Protocol() {
 	case endpoint.ProtocolVLESS, endpoint.ProtocolTrojan, endpoint.ProtocolVMess, endpoint.ProtocolShadowsocks, endpoint.ProtocolSOCKS5, endpoint.ProtocolHTTPProxy:
 	case endpoint.ProtocolHysteria2:
-		result.Implemented, result.Field, result.Feature = false, "endpoint.protocol", "hysteria2"
-		if profile == artifact.SingBox1141 {
-			result.Build = BuildUnavailable // no with_quic tag
+		security := configuration.SecurityOptions()
+		if security.Fingerprint() != "" {
+			result.Implemented, result.Field, result.Feature = false, "endpoint.security", "hysteria2_client_fingerprint"
 		}
 		return result, nil
 	}

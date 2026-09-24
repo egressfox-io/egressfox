@@ -2,6 +2,7 @@ package mihomo
 
 import (
 	"fmt"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -50,6 +51,11 @@ type proxy struct {
 	ALPN              []string       `yaml:"alpn,omitempty"`
 	ClientFingerprint string         `yaml:"client-fingerprint,omitempty"`
 	RealityOpts       *realityOpts   `yaml:"reality-opts,omitempty"`
+	Up                string         `yaml:"up,omitempty"`
+	Down              string         `yaml:"down,omitempty"`
+	Obfs              string         `yaml:"obfs,omitempty"`
+	ObfsPassword      string         `yaml:"obfs-password,omitempty"`
+	Ports             string         `yaml:"ports,omitempty"`
 }
 
 type realityOpts struct {
@@ -159,11 +165,33 @@ func (r Renderer) renderProxy(item engine.NamedRecord) (proxy, error) {
 		if configuration.TLS().Enabled() {
 			result.SNI = configuration.TLS().ServerName()
 		}
+	case endpoint.ProtocolHysteria2:
+		result.Type = "hysteria2"
+		result.Password = configuration.Credential().Reveal()
+		result.SNI = configuration.TLS().ServerName()
+		result.Network = ""
+		if options, ok := configuration.Hysteria2(); ok {
+			if ports := options.PortRanges(); len(ports) != 0 {
+				for i := range ports {
+					ports[i] = strings.ReplaceAll(ports[i], ":", "-")
+				}
+				result.Ports = strings.Join(ports, ",")
+			}
+			if options.UpMbps() != 0 {
+				result.Up = fmt.Sprintf("%d Mbps", options.UpMbps())
+				result.Down = fmt.Sprintf("%d Mbps", options.DownMbps())
+			}
+			if secret := options.RevealSalamanderPassword(); secret != "" {
+				result.Obfs = "salamander"
+				result.ObfsPassword = secret
+			}
+		}
 	default:
 		return proxy{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.protocol", Feature: configuration.Protocol().String()}
 	}
 	switch configuration.Transport().Kind() {
 	case endpoint.TransportTCP:
+	case endpoint.TransportQUIC:
 	case endpoint.TransportWebSocket:
 		result.Network = "ws"
 		result.WebSocket = &webSocketOpts{Path: configuration.Transport().WebSocketPath()}

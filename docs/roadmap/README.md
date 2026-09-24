@@ -19,10 +19,10 @@ time-bounded cache, and its compatibility completion adds request profiles and
 bounded URI/JSON subscription decoding. There is still no product CLI,
 cross-namespace API or HA topology.
 
-**Next implementation slice: M8.5 C3 advanced transports and Reality; M9 follows M8.5.**
+**Current implementation slice: M8.5 C4 Hysteria2/QUIC; M9 follows M8.5.**
 The authoritative [P1 product roadmap](p1.md)
 defines the seven-milestone path from managed runtime through explainability.
-M7–M8 and M8.5 C1–C2 are complete; C3–C4 and later
+M7–M8 and M8.5 C1–C3 are complete; C4 expensive qualification and later
 P1 behavior are not implemented. The [exact-profile matrix](../designs/engine-protocol-compatibility.md)
 records current support and pending combinations. A public
 alpha is a separate maintainer decision and requires the protected repository

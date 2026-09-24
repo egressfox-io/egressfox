@@ -17,7 +17,7 @@ The initial public artifacts support exactly:
 | Component | Supported and tested | Meaning |
 | --- | --- | --- |
 | Mihomo | 1.19.31 / `egressfox.mihomo/v1` | Exact native validator/profile; other versions are rejected even if they might be compatible |
-| sing-box | 1.14.1 / `egressfox.sing-box/v2` (`with_utls`, build revision 2) | Exact native validator/profile; other versions are rejected even if they might be compatible |
+| sing-box | 1.14.1 / `egressfox.sing-box/v3` (`with_quic,with_utls`, build revision 3) | Exact native validator/profile; other versions are rejected even if they might be compatible |
 | Operator and managed Gateway image | linux/amd64, linux/arm64 | Operator, readiness helper and source-built engine derivatives are compiled for both architectures; the same signed image is the M7 managed runtime authority. Managed Pods start engine binaries directly. |
 | Kubernetes | 1.32, 1.34, 1.37 | Pinned envtest and kind release-qualification profiles; not a promise for every older or newer minor |
 | API | `egressfox.io/v1alpha1` | Alpha compatibility: review CRD diffs and release notes before every upgrade |

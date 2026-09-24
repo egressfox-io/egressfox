@@ -44,23 +44,31 @@ type user struct {
 	Password string `json:"password"`
 }
 type outbound struct {
-	Type       string     `json:"type"`
-	Tag        string     `json:"tag"`
-	Server     string     `json:"server,omitempty"`
-	ServerPort uint16     `json:"server_port,omitempty"`
-	UUID       string     `json:"uuid,omitempty"`
-	Password   string     `json:"password,omitempty"`
-	Username   string     `json:"username,omitempty"`
-	Version    string     `json:"version,omitempty"`
-	Security   string     `json:"security,omitempty"`
-	AlterID    *int       `json:"alter_id,omitempty"`
-	Method     string     `json:"method,omitempty"`
-	Network    string     `json:"network,omitempty"`
-	Flow       string     `json:"flow,omitempty"`
-	TLS        *tlsConfig `json:"tls,omitempty"`
-	Transport  *transport `json:"transport,omitempty"`
-	Outbounds  []string   `json:"outbounds,omitempty"`
-	Default    string     `json:"default,omitempty"`
+	Type        string     `json:"type"`
+	Tag         string     `json:"tag"`
+	Server      string     `json:"server,omitempty"`
+	ServerPort  uint16     `json:"server_port,omitempty"`
+	UUID        string     `json:"uuid,omitempty"`
+	Password    string     `json:"password,omitempty"`
+	Username    string     `json:"username,omitempty"`
+	Version     string     `json:"version,omitempty"`
+	Security    string     `json:"security,omitempty"`
+	AlterID     *int       `json:"alter_id,omitempty"`
+	Method      string     `json:"method,omitempty"`
+	Network     string     `json:"network,omitempty"`
+	Flow        string     `json:"flow,omitempty"`
+	TLS         *tlsConfig `json:"tls,omitempty"`
+	Transport   *transport `json:"transport,omitempty"`
+	Outbounds   []string   `json:"outbounds,omitempty"`
+	Default     string     `json:"default,omitempty"`
+	UpMbps      int        `json:"up_mbps,omitempty"`
+	DownMbps    int        `json:"down_mbps,omitempty"`
+	Obfs        *hy2Obfs   `json:"obfs,omitempty"`
+	ServerPorts []string   `json:"server_ports,omitempty"`
+}
+type hy2Obfs struct {
+	Type     string `json:"type"`
+	Password string `json:"password"`
 }
 type tlsConfig struct {
 	Enabled    bool           `json:"enabled"`
@@ -160,6 +168,21 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 		result.Username = configuration.Credential().RevealUsername()
 		result.Password = configuration.Credential().Reveal()
 		result.Network = ""
+	case endpoint.ProtocolHysteria2:
+		result.Type = "hysteria2"
+		result.Password = configuration.Credential().Reveal()
+		result.Network = ""
+		if options, ok := configuration.Hysteria2(); ok {
+			result.ServerPorts = options.PortRanges()
+			if len(result.ServerPorts) != 0 {
+				result.ServerPort = 0
+			}
+			result.UpMbps = options.UpMbps()
+			result.DownMbps = options.DownMbps()
+			if secret := options.RevealSalamanderPassword(); secret != "" {
+				result.Obfs = &hy2Obfs{Type: "salamander", Password: secret}
+			}
+		}
 	default:
 		return outbound{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.protocol", Feature: configuration.Protocol().String()}
 	}
@@ -174,6 +197,7 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 	}
 	switch configuration.Transport().Kind() {
 	case endpoint.TransportTCP:
+	case endpoint.TransportQUIC:
 	case endpoint.TransportWebSocket:
 		result.Transport = &transport{Type: "ws", Path: configuration.Transport().WebSocketPath()}
 		if host := configuration.Transport().WebSocketHost(); host != "" {

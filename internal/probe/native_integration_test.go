@@ -123,6 +123,88 @@ func TestRealityVisionControlledObservations(t *testing.T) {
 	}
 }
 
+func TestHysteria2ControlledQUICObservations(t *testing.T) {
+	serverBinary := os.Getenv("EGRESSFOX_SINGBOX_BINARY")
+	if serverBinary == "" {
+		t.Skip("set EGRESSFOX_SINGBOX_BINARY to the with_quic,with_utls build")
+	}
+	work := t.TempDir()
+	certificate, key := writeCertificate(t, work)
+	port := availablePort(t)
+	server := map[string]any{
+		"log": map[string]any{"disabled": true},
+		"inbounds": []any{map[string]any{
+			"type": "hysteria2", "tag": "server", "listen": "127.0.0.1", "listen_port": port,
+			"users": []any{map[string]any{"password": "synthetic-hy2-auth"}},
+			"obfs":  map[string]any{"type": "salamander", "password": "synthetic-hy2-obfs"},
+			"tls":   map[string]any{"enabled": true, "certificate_path": certificate, "key_path": key},
+		}},
+		"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
+		"route":     map[string]any{"final": "direct"},
+	}
+	content, _ := json.Marshal(server)
+	path := filepath.Join(work, "hy2-server.json")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(serverBinary, "run", "-c", path, "-D", work)
+	command.Stdout, command.Stderr = io.Discard, io.Discard
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
+	time.Sleep(400 * time.Millisecond)
+	uri := "hy2://synthetic-hy2-auth@127.0.0.1:" + strconv.Itoa(port) + "?sni=localhost&insecure=1&obfs=salamander&obfs-password=synthetic-hy2-obfs&upmbps=20&downmbps=40"
+	sourceID, _ := endpoint.NewSourceID("c4-hy2-probe")
+	inline, err := source.NewInline(sourceID, []byte(uri), source.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := inline.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _, err := source.Parse(payload, source.ParseOptions{Format: source.FormatURIList})
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	defer destination.Close()
+	targetID, _ := observation.NewTargetID("c4-hy2")
+	target, err := observation.NewHTTPTarget(targetID, destination.URL, http.StatusNoContent, 10*time.Second, observation.HTTPOptions{AllowHTTP: true, AllowPrivate: true, MaxResponseBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vantage, _ := observation.NewVantageID("c4-native")
+	for _, test := range []struct {
+		name, env string
+		profile   artifact.Profile
+		renderer  engine.Renderer
+	}{
+		{"mihomo", "EGRESSFOX_MIHOMO_BINARY", artifact.Mihomo11931, mihomo.Renderer{}},
+		{"sing-box", "EGRESSFOX_SINGBOX_BINARY", artifact.SingBox1141, singbox.Renderer{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			binary := os.Getenv(test.env)
+			if binary == "" {
+				t.Skipf("set %s", test.env)
+			}
+			checker, err := artifact.NewNativeChecker(test.profile, binary, 10*time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			executor, err := probe.NewExecutor(probe.Config{Renderer: test.renderer, Checker: checker, Binary: binary, Vantage: vantage, StartupTimeout: 5 * time.Second, AllowPrivateEndpoints: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := executor.Execute(context.Background(), snapshot.Records()[0], target)
+			if err != nil || result.Outcome() != observation.OutcomeSuccess {
+				t.Fatalf("Hysteria2 UDP probe: %v", err)
+			}
+		})
+	}
+}
+
 func TestUnsupportedXHTTPDoesNotCreateHealthObservation(t *testing.T) {
 	binary := os.Getenv("EGRESSFOX_SINGBOX_BINARY")
 	if binary == "" {

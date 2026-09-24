@@ -21,6 +21,14 @@ The [P1 roadmap](../roadmap/p1.md) is not itself an implemented control. M7's
 authenticated proxy-listener and managed-workload boundary is implemented under
 ADR 0013; later milestone rows below remain gates.
 
+C4 Hysteria2 probes use the same endpoint destination policy for UDP as for
+TCP: every DNS answer is checked, IPv4-mapped IPv6 is unmapped, and the engine
+receives a single authorized literal server address with the original TLS SNI.
+Bounded port-hopping entries can vary the UDP port only on that pinned address.
+Unknown alternative destinations, realm services and unbounded hop ranges are
+rejected at source admission. Native validation alone does not prove UDP traffic;
+controlled QUIC and managed Gateway qualification remain pending.
+
 M2 HTTP acquisition permits HTTPS by default, requires explicit intent for HTTP and
 non-public destinations, checks resolved addresses on the actual dial path, disables
 environment proxy use, limits same-origin redirects, time and bytes, and exposes only

@@ -1,12 +1,13 @@
 # Subscription compatibility matrix
 
-Status: M8 compatibility extension and M8.5 C2 proxy entries complete, with
+Status: M8 compatibility extension and M8.5 C2–C3 entries qualified; C4 Hysteria2
+ingestion implemented with controlled-traffic qualification pending, with
 evidence in the [C2 plan](../plans/0020-m85-protocol-transport-compatibility.md). This is the bounded input and
 engine contract for the pinned Mihomo v1.19.31 and sing-box v1.14.1 profiles.
 An accepted record still requires native validation and successful Gateway
 activation; parsing alone never proves reachability.
 The [M8.5 compatibility milestone](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
-still reserves advanced transport/security and QUIC work for C3/C4.
+tracks advanced transport/security and QUIC qualification through C3/C4.
 The [M8.5 engine matrix](engine-protocol-compatibility.md) owns pinned-build and
 future-combination status; this table remains the shipped M8 input contract.
 
@@ -75,6 +76,7 @@ published Gateway generation in place.
 | SOCKS5 | `socks5://host:port` or `socks5://user:password@host:port` in URI lists or JSON URI arrays; Xray `socks` servers/users; sing-box `socks` version 5 (or omitted); TCP, optional nonempty username/password pair | Ambiguous `socks://`, SOCKS4/4a, `socks5h`/curl DNS interpretation, UDP, TLS, empty-password auth and unsupported dial options |
 | HTTP proxy | Explicit URI-list `http://host:port` with optional Basic pair; Xray `http` settings; sing-box `http` outbound; TCP CONNECT | Arbitrary HTTP links in Auto/JSON URI arrays, paths, extra headers, non-Basic auth and HTTP version overrides |
 | HTTPS proxy | Explicit URI-list `https://host:port` with optional Basic pair; Xray `http` with ordinary TLS stream; sing-box `http` with enabled TLS; SNI and verification mode preserved | Treating an HTTPS target tunneled over a plain HTTP proxy as HTTPS-to-proxy; custom CA/pin, ALPN and fingerprint options |
+| Hysteria2 | `hy2://` and `hysteria2://` password share links with default 443 or bounded authority multi-port syntax; sing-box `hysteria2` JSON outbounds; TLS/SNI, verification, ALPN, paired Mbps, Salamander secret and bounded `server_ports` lists or ranges | Unknown query/JSON fields, missing password/TLS, alternate obfuscators, realm, QUIC tuning, non-default hop interval, unbounded ranges and engine-native JSON passthrough; controlled traffic qualification is pending |
 | Engines | Both pinned Mihomo and sing-box render the supported subset | Other engine versions and variants without exact-profile validation |
 
 Explicit `URIList`, `Base64URIList`, `JSON` and `Auto` formats are available for

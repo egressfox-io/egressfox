@@ -138,7 +138,7 @@ func (manifest Manifest) Validate() error {
 		return fmt.Errorf("Kubernetes compatibility contract: %w", err)
 	}
 	expected := map[string]artifact.Profile{"mihomo": artifact.Mihomo11931, "sing-box": artifact.SingBox1141}
-	expectedBuildRevision := map[string]int{"mihomo": 1, "sing-box": 2}
+	expectedBuildRevision := map[string]int{"mihomo": 1, "sing-box": 3}
 	seenEngines := make(map[string]bool)
 	for _, engine := range manifest.Engines {
 		profile, ok := expected[engine.Name]

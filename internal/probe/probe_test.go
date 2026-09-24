@@ -116,6 +116,42 @@ func TestAuthorizeEndpointPinsAddressWithoutChangingEvidenceIdentity(t *testing.
 	}
 }
 
+func TestAuthorizeHysteria2PinsUDPHostAndPreservesSNIAndPorts(t *testing.T) {
+	address, _ := endpoint.NewAddress("edge.example.com", 443)
+	auth, _ := endpoint.NewHysteria2Credential("auth-canary")
+	tls, _ := endpoint.NewTLS("front.example.com", false)
+	options, _ := endpoint.NewHysteria2OptionsWithPorts(20, 40, "obfs-canary", []string{"443:444", "8443"})
+	configuration, err := endpoint.NewExtendedConfiguration(endpoint.ProtocolHysteria2, address, auth, endpoint.NewQUICTransport(), tls, endpoint.SecurityOptions{}, endpoint.FlowNone, &options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := endpoint.NewSourceID("hy2")
+	recordID, _ := endpoint.NewRecordID("node")
+	provenance, _ := endpoint.NewProvenance(sourceID, recordID)
+	record, _ := endpoint.NewRecord(configuration, provenance)
+	for _, test := range []struct {
+		address string
+		allowed bool
+	}{{"8.8.8.8", true}, {"::ffff:127.0.0.1", false}, {"169.254.169.254", false}, {"2606:4700:4700::1111", true}} {
+		resolver := &fixedResolver{addresses: []netip.Addr{netip.MustParseAddr(test.address)}}
+		executor := &Executor{resolver: resolver}
+		pinned, err := executor.authorizeEndpoint(context.Background(), record)
+		if !test.allowed {
+			if !errors.Is(err, ErrExecution) {
+				t.Fatalf("%s: %v", test.address, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", test.address, err)
+		}
+		pinnedOptions, _ := pinned.Configuration().Hysteria2()
+		if pinned.Configuration().Address().Host() != netip.MustParseAddr(test.address).Unmap().String() || pinned.Configuration().TLS().ServerName() != "front.example.com" || len(pinnedOptions.PortRanges()) != 2 {
+			t.Fatalf("%s lost pinned semantics", test.address)
+		}
+	}
+}
+
 func TestAuthorizeEndpointPreservesVMessAndShadowsocksSemantics(t *testing.T) {
 	address, err := endpoint.NewAddress("edge.example.com", 443)
 	if err != nil {

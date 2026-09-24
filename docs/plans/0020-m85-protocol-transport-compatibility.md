@@ -1,8 +1,26 @@
 # M8.5 protocol and transport compatibility
 
-Status: C1–C2 complete; C3 implementation complete, qualification pending; C4 planned. Prepared on 2026-09-24
+Status: C1–C3 complete; C4 implementation ready for maintainer qualification. Prepared on 2026-09-24
 on `docs/m85-protocol-transport-roadmap`. C1 branch:
 `codex/m85-c1-endpoint-capabilities`, based on `b8d5b50`.
+
+## C4 implementation record
+
+Status: implementation on `codex/m85-c4-hysteria2-quic`; maintainer qualification pending.
+The existing ef3 Hysteria2 password, bandwidth, Salamander and TLS fields are
+reused. A bounded port set is added only to Hysteria2 ef3 encodings that use it;
+earlier ef3 bytes remain unchanged. URI and sing-box JSON ingestion reject unknown
+connection fields. Both renderers map the typed options to their native schemas.
+The sing-box build moves to revision 3 with `with_quic,with_utls`, which changes
+its evidence profile to `egressfox.sing-box/v3` without changing source commit.
+The probe authorizes all DNS answers and pins an allowed literal server address;
+port hopping remains on that same address and TLS SNI remains original.
+
+Focused parser, renderer and authorization tests passed locally. A controlled
+sing-box Hysteria2 server fixture exercises both client engines through the
+existing probe. The kind harness adds both managed Gateway variants. The
+maintainer will run the native, controlled QUIC, kind, Docker and release gates;
+none are claimed passed in this record.
 
 The [P1 M8.5 roadmap](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
 owns the mandatory families, transport/security scope and milestone exit contract.
@@ -154,7 +172,7 @@ Reality/Vision and advanced transports remain C3. Hysteria2 and QUIC remain C4.
 
 ## C3 execution record
 
-Status: **implementation complete; validation pending** on `codex/m85-c3-advanced-transports`. The exact selected
+Status: **qualified by the maintainer** on `codex/m85-c3-advanced-transports`. The exact selected
 VLESS combinations and stage-by-stage status are in the
 [engine matrix](../designs/engine-protocol-compatibility.md#c3-bounded-profile-and-evidence-stages).
 [ADR 0022](../decisions/0022-c3-reality-and-transport-profile.md) records the
@@ -188,7 +206,7 @@ both engines. Its XHTTP server initially used a certificate path outside the
 Mihomo safe paths. The fixture now mounts the certificate under `/data/cert`;
 a direct diagnostic Mihomo client reached that corrected in-cluster server.
 The expanded run still ended at XHTTP `stream-one` with `NoEligibleEndpoints`
-after the earlier failed observations. A clean full kind rerun, including all
-three managed XHTTP modes and M8/C2 regressions, is required. The maintainer
-will execute that and the deferred broader release/build checks. C3 must not
-be marked qualified until the mandatory managed path and release inputs pass.
+after the earlier failed observations. The maintainer subsequently reported a
+clean full C3 kind rerun passing managed Reality/Vision and all three Mihomo
+XHTTP modes, along with C3 unit, native traffic, envtest and Docker checks.
+That report closes C3 and is separate from the pending C4 qualification.

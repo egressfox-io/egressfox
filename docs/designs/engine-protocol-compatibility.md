@@ -1,6 +1,6 @@
 # M8.5 engine protocol and transport compatibility matrix
 
-Status: C1–C2 complete; C3 local traffic qualified, expanded managed qualification pending, 2026-09-25. This is the **single
+Status: C1–C2 complete; C3 qualified by the maintainer; C4 implemented with expensive qualification pending, 2026-09-25. This is the **single
 authoritative combination matrix** for M8.5. It distinguishes an upstream source
 feature from the **exact EgressFox build profile** and from an EgressFox
 source-to-managed-traffic claim. The [M8 subscription matrix](subscription-compatibility.md)
@@ -11,15 +11,15 @@ remains the authority for currently admitted input formats.
 | Profile | Source and build | Consequence |
 | --- | --- | --- |
 | Mihomo `egressfox.mihomo/v1` | 1.19.31, commit `ab405bad5beeeac8b003bb01f60f134f6df54471`, build revision 1, Go 1.27.1, `with_gvisor` | The pinned [parser](https://github.com/MetaCubeX/mihomo/blob/ab405bad5beeeac8b003bb01f60f134f6df54471/adapter/parser.go) registers VLESS, VMess, Trojan, SS, SOCKS5, HTTP and Hysteria2. Its [VLESS outbound](https://github.com/MetaCubeX/mihomo/blob/ab405bad5beeeac8b003bb01f60f134f6df54471/adapter/outbound/vless.go) includes Reality, Vision, HTTP/2, gRPC and XHTTP options. |
-| sing-box `egressfox.sing-box/v2` | 1.14.1, commit `1ac1a339cb1223e9c70eae14c44411c75033c02d`, build revision 2, Go 1.27.1, `with_utls`, EgressFox command overlay | The pinned [outbound registry](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/include/registry.go) includes the common TCP families. Its [transport union](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/option/v2ray_transport.go) includes HTTP, WS, QUIC, gRPC and HTTPUpgrade, **not XHTTP**. `with_utls` compiles Reality/uTLS; the no-tag [QUIC stub](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/include/quic_stub.go) still rejects Hysteria2. `with_grpc` is absent, so the [lite gRPC implementation](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/transport/v2ray/grpc_lite.go) is selected. |
+| sing-box `egressfox.sing-box/v3` | 1.14.1, commit `1ac1a339cb1223e9c70eae14c44411c75033c02d`, build revision 3, Go 1.27.1, `with_quic,with_utls`, EgressFox command overlay | The pinned [outbound registry](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/include/registry.go) includes Hysteria2 when `with_quic` is set. Its [transport union](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/option/v2ray_transport.go) includes HTTP, WS, QUIC, gRPC and HTTPUpgrade, **not XHTTP**. `with_utls` retains Reality/uTLS. `with_grpc` is absent, so the [lite gRPC implementation](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/transport/v2ray/grpc_lite.go) is selected. |
 
-The source references above were checked against the local corresponding-source
-archives produced by the existing release tooling and the build tags in
+The C1/C3 source references were checked against local corresponding-source
+archives produced by the existing release tooling. The C4 build profile in
 [`release/manifest.json`](../../release/manifest.json). The [official sing-box
 build-tag contract](https://sing-box.sagernet.org/installation/build-from-source/)
 describes `with_quic`, `with_utls` and `with_grpc`. A source type or current
-upstream website alone is **not** a claim that this build can execute it. No
-engine version or build revision changes in C1.
+upstream website alone is **not** a claim that this build can execute it. The
+C4 profile revision must still pass the maintainer's native and traffic checks.
 
 ## Meaning of status
 
@@ -47,7 +47,7 @@ engine version or build revision changes in C1.
 | VLESS HTTPUpgrade over TLS | WS upgrade mode | Dedicated HTTPUpgrade transport | Basic path/Host **local and managed traffic passed** both engines; full kind rerun pending | Mihomo `ws-opts.v2ray-http-upgrade` interoperated with the pinned sing-box server. Early data, headers and method are unqualified and rejected. VMess/Trojan remain unqualified. |
 | VLESS TCP + Reality + Vision, SNI/ALPN/client fingerprint | Supported | `with_utls` build revision 2 supports Reality/Vision | URI/Xray/sing-box JSON, native validation and **local and managed traffic passed** both engines; full kind rerun pending | UUID, flow, public key, private short ID, SNI, ordered ALPN and fingerprint are preserved. No TLS substitution. Ordinary TLS Vision and Reality with advanced transports remain unqualified. [Pinned sing-box Reality implementation](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/common/tls/reality_client.go) requires uTLS. |
 | VLESS XHTTP with ordinary TLS, path/Host and explicit `stream-one`, `stream-up` or `packet-up` mode | **Local traffic qualified in all three modes** | **Unsupported**: absent from pinned transport union | Mihomo-only URI/Xray input, native validation and local traffic; managed path pending | `auto` and advanced headers/padding/upload/download options are rejected until their connection semantics can be bounded. No WS/gRPC substitution. |
-| Hysteria2 over UDP/QUIC with TLS, password, bandwidth and optional Salamander | Source supports | **Unsupported by current build**: `with_quic` absent; stub rejects outbound | Typed basic domain; **C4 pending** after separately reviewed build revision | UDP server/port, password, TLS/SNI, ALPN, bandwidth/CC, obfuscation secret, timeout and authorized DNS. Port hopping, Gecko, realm, QUIC tuning and certificate pinning need C4 parameter-level contracts. [Pinned Mihomo options](https://github.com/MetaCubeX/mihomo/blob/ab405bad5beeeac8b003bb01f60f134f6df54471/adapter/outbound/hysteria2.go); [pinned sing-box options](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/option/hysteria2.go). |
+| Hysteria2 over UDP/QUIC with TLS, password, bandwidth, optional Salamander and bounded port hopping | Source supports | `with_quic,with_utls` revision 3 source supports | **C4 implementation and synthetic tests; native, controlled QUIC and managed traffic pending maintainer qualification** | UDP server/port, password, TLS/SNI, ALPN, verification mode, paired integer Mbps, Salamander password and at most 16 port entries covering at most 256 UDP ports. Probe resolves and checks every DNS answer, then pins the engine server to one authorized literal while retaining SNI and the full port set. Both engines' hop configurations use that same server address. Non-default hop interval, Gecko, realm, QUIC tuning and certificate pinning are rejected at ingestion. [Pinned Mihomo options](https://github.com/MetaCubeX/mihomo/blob/ab405bad5beeeac8b003bb01f60f134f6df54471/adapter/outbound/hysteria2.go); [pinned sing-box options](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/option/hysteria2.go). |
 | Hysteria2 over TCP; Reality downgraded to ordinary TLS; XHTTP replaced by WS | Invalid or incompatible | Invalid or incompatible | **Unsupported** permanently as substitutions | These do not preserve the requested wire protocol. |
 
 ## C2 qualification contract
@@ -127,10 +127,11 @@ keeps the original `ef1_`/`ef2_` bytes and protected observations intact.
   engine-specific negative capability cases are recorded above. Managed traffic
   remains the final qualification gate until the kind scenario passes. XHTTP
   remains Mihomo-specific. No fallback to another transport/security method.
-- **C4:** Review a sing-box build revision enabling `with_quic` before claiming
-  Hysteria2. Extend the typed QUIC options and UDP destination authorization for
-  every dial/port-hop/realm address. Native check, controlled QUIC through-engine
-  probe and managed traffic are required. No custom QUIC client in EgressFox.
+- **C4:** The build revision enables `with_quic` and keeps `with_utls`. The
+  bounded typed Hysteria2 subset, UDP address pinning, renderer and test fixtures
+  are implemented. Native check, controlled QUIC through-engine probe and managed
+  traffic remain required qualification evidence. Realm is unsupported. No custom
+  QUIC client exists in EgressFox.
 
 Each new combination must pass subscription → model → identity/dedup → exact
 capability gate → renderer → native validation → through-engine probe → managed
