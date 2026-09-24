@@ -18,7 +18,10 @@ port hopping remains on that same address and TLS SNI remains original.
 
 Focused parser, renderer and authorization tests passed locally. A controlled
 sing-box Hysteria2 server fixture exercises both client engines through the
-existing probe. The kind harness adds both managed Gateway variants. The
+existing probe. The kind harness adds both managed Gateway variants with a
+two-port UDP service and application traffic before and after the default hop
+interval. The harness checks sustained traffic through the hop configuration;
+packet-level port traces remain outside this fixture. The
 maintainer will run the native, controlled QUIC, kind, Docker and release gates;
 none are claimed passed in this record.
 
