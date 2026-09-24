@@ -24,9 +24,19 @@ import (
 func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	var mode atomic.Int32
 	var requests atomic.Int32
+	var firstHWID atomic.Value
+	var rotatedHWID atomic.Bool
 	body := "trojan://synthetic-secret@edge.example.com:443?security=tls#edge\n"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		currentHWID := r.Header.Get("X-Hwid")
+		if currentHWID == "" {
+			rotatedHWID.Store(true)
+		} else if previous := firstHWID.Load(); previous == nil {
+			firstHWID.Store(currentHWID)
+		} else if previous.(string) != currentHWID {
+			rotatedHWID.Store(true)
+		}
 		if r.Header.Get("Authorization") != "Bearer synthetic" && r.Header.Get("Authorization") != "Bearer rotated" {
 			t.Error("authorization missing")
 		}
@@ -60,7 +70,7 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	ctx := context.Background()
 	urlSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"url": []byte(server.URL)}}
 	authSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "auth", Namespace: "egress"}, Data: map[string][]byte{"value": []byte("Bearer synthetic")}}
-	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("11111111-2222-3333-4444-555555555555"), Generation: 1}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "url"}, AuthorizationSecretRef: &egressv1alpha1.SecretKeyReference{Name: "auth", Key: "value"}, AllowHTTP: true, AllowPrivateNetworks: true}}}}}
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("11111111-2222-3333-4444-555555555555"), Generation: 1}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "url"}, AuthorizationSecretRef: &egressv1alpha1.SecretKeyReference{Name: "auth", Key: "value"}, AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true}}}}}
 	reader := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(urlSecret, authSecret, pool).Build()
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {
@@ -129,6 +139,9 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	}
 	if requests.Load() < 5 {
 		t.Fatalf("requests = %d", requests.Load())
+	}
+	if rotatedHWID.Load() {
+		t.Fatal("restart, 304, failure or credential rotation changed the automatic HWID")
 	}
 	mode.Store(5)
 	if changed, err := operatoradapter.RefreshHTTP(ctx, reader, store, pool, pool.Spec.Sources[0], now.Add(4*time.Hour)); err != nil || changed {
@@ -226,7 +239,7 @@ func TestHTTP304WithoutCacheFailsAfterOneUnconditionalRetry(t *testing.T) {
 	}))
 	defer server.Close()
 	ctx := context.Background()
-	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("pool-uid"), Generation: 1}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "url"}, AllowHTTP: true, AllowPrivateNetworks: true}}}}}
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("pool-uid"), Generation: 1}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "url"}, AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true}}}}}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"url": []byte(server.URL)}}
 	reader := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(pool, secret).Build()
 	dir := t.TempDir()
@@ -255,7 +268,7 @@ func TestHTTPAutoFormatIgnoresIncorrectContentType(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}))
 	defer server.Close()
-	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "auto-pool", Namespace: "egress", UID: "auto-pool-uid"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatAuto, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "value"}, AllowHTTP: true, AllowPrivateNetworks: true}}}}}
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "auto-pool", Namespace: "egress", UID: "auto-pool-uid"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatAuto, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "value"}, AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true}}}}}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"value": []byte(server.URL)}}
 	reader := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(secret, pool).Build()
 	dir := t.TempDir()
@@ -295,7 +308,7 @@ func TestInFlightHTTPRefreshRejectsRotatedInput(t *testing.T) {
 		_, _ = w.Write([]byte("trojan://synthetic@edge.example.com:443?security=tls"))
 	}))
 	defer server.Close()
-	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("pool-uid"), Generation: 1}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "url"}, AllowHTTP: true, AllowPrivateNetworks: true}}}}}
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("pool-uid"), Generation: 1}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "main", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "url"}, AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true}}}}}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"url": []byte(server.URL)}}
 	reader := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(pool, secret).Build()
 	dir := t.TempDir()

@@ -11,7 +11,7 @@ import (
 
 // profileHeaders resolves the effective static request context. An empty
 // User-Agent value is deliberate: net/http then suppresses its implicit agent.
-func profileHeaders(poolUID, sourceID string, profile *egressv1alpha1.HTTPClientProfile) (http.Header, error) {
+func profileHeaders(clientIdentity string, profile *egressv1alpha1.HTTPClientProfile) (http.Header, error) {
 	headers := make(http.Header)
 	mode := "Default"
 	if profile != nil && profile.Mode != "" {
@@ -20,7 +20,7 @@ func profileHeaders(poolUID, sourceID string, profile *egressv1alpha1.HTTPClient
 	switch mode {
 	case "Default":
 		headers.Set("User-Agent", "Happ/1.0")
-		headers.Set("X-Hwid", stableHWID(poolUID, sourceID))
+		headers.Set("X-Hwid", stableHWID(clientIdentity))
 		headers.Set("X-Device-Os", "iOS")
 		headers.Set("X-Ver-Os", "18.3")
 		headers.Set("X-Device-Model", "iPhone 14 Pro Max")
@@ -83,12 +83,54 @@ func likelyCredentialHeader(name string) bool {
 	return strings.Contains(lower, "authorization") || strings.Contains(lower, "cookie") || strings.Contains(lower, "token") || strings.Contains(lower, "api-key") || strings.Contains(lower, "secret") || strings.Contains(lower, "password")
 }
 
-func stableHWID(poolUID, sourceID string) string {
-	digest := sha256.Sum256([]byte("egressfox-http-client-hwid-v1\x00" + poolUID + "\x00" + sourceID))
+func stableHWID(identity string) string {
+	material := "egressfox-http-client-hwid-v2\x00" + identity
+	if strings.HasPrefix(identity, "legacy:") {
+		parts := strings.SplitN(strings.TrimPrefix(identity, "legacy:"), "/", 2)
+		material = "egressfox-http-client-hwid-v1\x00" + parts[0] + "\x00" + parts[1]
+	}
+	digest := sha256.Sum256([]byte(material))
 	digest[6] = digest[6]&0x0f | 0x80
 	digest[8] = digest[8]&0x3f | 0x80
 	value := hex.EncodeToString(digest[:16])
 	return strings.ToUpper(value[:8] + "-" + value[8:12] + "-" + value[12:16] + "-" + value[16:20] + "-" + value[20:32])
+}
+
+func clientIdentity(poolUID, sourceID, explicit string) (string, error) {
+	if explicit == "" {
+		return "legacy:" + poolUID + "/" + sourceID, nil
+	}
+	if len(explicit) > 160 {
+		return "", poolFailure("client_identity")
+	}
+	prefix, value, found := strings.Cut(explicit, ":")
+	if !found {
+		return "", poolFailure("client_identity")
+	}
+	if prefix == "legacy" {
+		uid, previousID, found := strings.Cut(value, "/")
+		if !found || !validIdentityPart(uid, 80) || !validIdentityPart(previousID, 63) {
+			return "", poolFailure("client_identity")
+		}
+		return explicit, nil
+	}
+	if prefix != "stable" || !validIdentityPart(value, 128) {
+		return "", poolFailure("client_identity")
+	}
+	return explicit, nil
+}
+
+func validIdentityPart(value string, max int) bool {
+	if value == "" || len(value) > max {
+		return false
+	}
+	for _, ch := range value {
+		if ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '-' || ch == '_' || ch == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func validHeaderName(value string) bool {

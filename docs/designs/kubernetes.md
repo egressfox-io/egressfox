@@ -44,7 +44,7 @@ engine profiles clearly. Secret rotation must trigger reconciliation.
 
 M8's `sources[]` entry has exactly one `secretRef` or `http`. HTTP requires a URL
 Secret key and optionally an Authorization Secret key; `allowHTTP`,
-`allowPrivateNetworks` and `allowInsecureTLS` are separate opt-ins. The existing
+`allowPrivateNetworks`, `allowLoopback` and `allowInsecureTLS` are separate opt-ins. The existing
 pool `refreshInterval` owns scheduling, and HTTP `maxStale` bounds fallback
 independently. Source status
 is keyed by safe ID and reports `Fresh`, `Cached`, `Expired` or `Unavailable` with a
@@ -60,6 +60,11 @@ Secret indexes include those extra references. Effective headers enter the priva
 cache fingerprint, so profile or credential rotation cannot reuse a validator.
 Existing objects retain their format and work without migration. See the
 [subscription matrix](subscription-compatibility.md).
+`http.clientIdentity` gives a durable, non-secret continuity reference for the
+automatic HWID. It is separate from Pool UID/source ID provenance and the private
+cache fingerprint. An omitted reference preserves the legacy Pool UID/source ID
+assignment on upgrade; setting the previous effective reference before a rename
+or move preserves its HWID. It does not keep incompatible cached responses.
 
 Do not use a separate CRD for every normalized endpoint or observation. The API
 server is not a time-series database. If pool inventory needs durable transport

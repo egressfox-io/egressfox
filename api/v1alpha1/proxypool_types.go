@@ -73,6 +73,13 @@ type SubscriptionSource struct {
 
 type HTTPSource struct {
 	URLSecretRef SecretKeyReference `json:"urlSecretRef"`
+	// ClientIdentity preserves the automatic HWID across a source rename or move.
+	// Omission uses legacy:<Pool UID>/<source ID> for upgrade compatibility.
+	// Use a unique stable:<opaque> value for a portable logical subscription.
+	// Changing this field deliberately resets the automatic HWID.
+	// +kubebuilder:validation:MaxLength=160
+	// +optional
+	ClientIdentity string `json:"clientIdentity,omitempty"`
 	// +optional
 	AuthorizationSecretRef *SecretKeyReference `json:"authorizationSecretRef,omitempty"`
 	// SecretHeaders supplies credential-bearing provider headers from same-namespace Secrets.
@@ -87,6 +94,10 @@ type HTTPSource struct {
 	AllowHTTP bool `json:"allowHTTP,omitempty"`
 	// +optional
 	AllowPrivateNetworks bool `json:"allowPrivateNetworks,omitempty"`
+	// AllowLoopback explicitly permits loopback source destinations. Link-local
+	// and cloud metadata destinations remain prohibited.
+	// +optional
+	AllowLoopback bool `json:"allowLoopback,omitempty"`
 	// AllowInsecureTLS disables certificate verification for this source only.
 	// +optional
 	AllowInsecureTLS bool `json:"allowInsecureTLS,omitempty"`

@@ -198,8 +198,10 @@ a future file or Secret adapter can use it without changing parsers. The stable
 source identity is a caller-assigned safe `SourceID`. Locations, query strings and
 headers are secret-bearing configuration and never become identity or provenance.
 
-HTTP uses HTTPS by default. Plain HTTP and private/non-public destinations require
-separate explicit options. Resolution policy applies to actual dial addresses,
+HTTP uses HTTPS by default. Plain HTTP, ordinary private destinations and
+loopback require separate explicit options. Link-local, metadata, multicast and
+unspecified destinations remain prohibited even with private-network permission.
+Resolution policy applies to actual dial addresses,
 including IP literals and IPv4-mapped IPv6, and to every redirect. Redirects are
 bounded and same-origin. M2 neither requests nor decodes compressed content. Retry,
 cache validators, persistent content cache and cross-origin credential forwarding
@@ -274,6 +276,11 @@ verifies integrity and re-parses through M2. A failed fetch or parse never commi
 new bytes. Removed/incompatible source records are pruned, and unvalidated records
 older than eight days are removed. Raw cache bytes and fingerprints never
 enter CR status or metadata.
+The durable client identity reference in [ADR 0020](../decisions/0020-subscription-identity-and-source-destination-policy.md)
+controls the automatic HWID independently of source provenance and cache identity.
+The legacy default preserves existing HWIDs. Explicit identity continuity survives
+source renames or moves; request/format changes still invalidate incompatible cache
+bytes and validators without rotating HWID.
 
 File, environment, ConfigMap and Vault adapters are not in the committed P1 path.
 Subscription quota/expiry remains optional attributed metadata, never trusted

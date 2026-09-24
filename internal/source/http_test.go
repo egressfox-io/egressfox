@@ -23,7 +23,7 @@ func TestHTTPAcquisition(t *testing.T) {
 		_, _ = fmt.Fprint(w, "trojan://secret@example.com:443")
 	}))
 	defer server.Close()
-	httpSource, err := source.NewHTTP(sourceID(t, "http-source"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, Headers: http.Header{"Authorization": {"Bearer synthetic"}}})
+	httpSource, err := source.NewHTTP(sourceID(t, "http-source"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true, Headers: http.Header{"Authorization": {"Bearer synthetic"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestHTTPFailuresAreBoundedAndRedacted(t *testing.T) {
 		http.Error(w, strings.Repeat("x", 100), http.StatusUnauthorized)
 	}))
 	defer server.Close()
-	options := source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, Headers: http.Header{"Authorization": {"Bearer " + secret}}}
+	options := source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true, Headers: http.Header{"Authorization": {"Bearer " + secret}}}
 	httpSource, err := source.NewHTTP(sourceID(t, "http-source"), server.URL+"?token="+secret, options)
 	if err != nil {
 		t.Fatal(err)
@@ -66,13 +66,13 @@ func TestHTTPSizeTimeoutAndRedirectPolicy(t *testing.T) {
 	defer large.Close()
 	limits := source.DefaultLimits()
 	limits.MaxSourceBytes = 5
-	s, _ := source.NewHTTP(sourceID(t, "large"), large.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, Limits: limits})
+	s, _ := source.NewHTTP(sourceID(t, "large"), large.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true, Limits: limits})
 	if _, err := s.Acquire(context.Background()); err == nil {
 		t.Fatal("oversized response accepted")
 	}
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
 	defer slow.Close()
-	s, _ = source.NewHTTP(sourceID(t, "slow"), slow.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, Timeout: 20 * time.Millisecond})
+	s, _ = source.NewHTTP(sourceID(t, "slow"), slow.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true, Timeout: 20 * time.Millisecond})
 	if _, err := s.Acquire(context.Background()); err == nil {
 		t.Fatal("timeout accepted")
 	}
@@ -80,7 +80,7 @@ func TestHTTPSizeTimeoutAndRedirectPolicy(t *testing.T) {
 	defer target.Close()
 	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
 	defer redirect.Close()
-	s, _ = source.NewHTTP(sourceID(t, "redirect"), redirect.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true})
+	s, _ = source.NewHTTP(sourceID(t, "redirect"), redirect.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true})
 	if _, err := s.Acquire(context.Background()); err == nil {
 		t.Fatal("cross-origin redirect accepted")
 	}
@@ -93,7 +93,7 @@ func TestHTTPConfigurationAndCancellation(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
 	defer server.Close()
-	s, err := source.NewHTTP(sourceID(t, "cancelled"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true})
+	s, err := source.NewHTTP(sourceID(t, "cancelled"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,6 +22,12 @@ format and admission settings. A profile change therefore cannot reuse cached
 content or conditional validators. Equivalent profile objects produce the same
 fingerprint; unrelated metadata still does not affect it.
 
+[ADR 0020](0020-subscription-identity-and-source-destination-policy.md) adds an
+explicit durable continuity reference for source renames and moves while retaining
+this exact legacy assignment for existing sources. It also narrows the original
+private-network opt-in so loopback requires separate intent and link-local metadata
+destinations remain prohibited.
+
 ## Context
 
 M2 admits bounded source snapshots but the M6/M7 operator reads subscription bytes

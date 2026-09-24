@@ -37,7 +37,7 @@ func TestConditionalFetchAndValidatorRemoval(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	s, err := source.NewHTTP(sourceID(t, "conditional"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true})
+	s, err := source.NewHTTP(sourceID(t, "conditional"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestRetryFetchClassificationAndCancellation(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	}))
 	defer server.Close()
-	s, _ := source.NewHTTP(sourceID(t, "retry"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true})
+	s, _ := source.NewHTTP(sourceID(t, "retry"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true})
 	result, err := source.RetryFetch(context.Background(), func(ctx context.Context) (source.FetchResult, error) { return s.Fetch(ctx, "", "") }, func(int) time.Duration { return 0 })
 	if err != nil || string(result.Payload.Bytes()) != "ok" || calls.Load() != 3 {
 		t.Fatalf("retry = %v, %v, calls=%d", result, err, calls.Load())
@@ -85,14 +85,14 @@ func TestHTTPSVerificationNeedsExplicitOptIn(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
 	defer server.Close()
-	secure, err := source.NewHTTP(sourceID(t, "tls-secure"), server.URL, source.HTTPOptions{AllowPrivateNetworks: true})
+	secure, err := source.NewHTTP(sourceID(t, "tls-secure"), server.URL, source.HTTPOptions{AllowPrivateNetworks: true, AllowLoopback: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := secure.Fetch(context.Background(), "", ""); err == nil || source.Retryable(err) {
 		t.Fatalf("untrusted TLS was accepted or retried: %v", err)
 	}
-	insecure, err := source.NewHTTP(sourceID(t, "tls-opt-in"), server.URL, source.HTTPOptions{AllowPrivateNetworks: true, AllowInsecureTLS: true})
+	insecure, err := source.NewHTTP(sourceID(t, "tls-opt-in"), server.URL, source.HTTPOptions{AllowPrivateNetworks: true, AllowLoopback: true, AllowInsecureTLS: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestHTTPRetryStatusClassification(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	}))
 	defer server.Close()
-	s, _ := source.NewHTTP(sourceID(t, "status-retry"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true})
+	s, _ := source.NewHTTP(sourceID(t, "status-retry"), server.URL, source.HTTPOptions{AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true})
 	result, err := source.RetryFetch(context.Background(), func(ctx context.Context) (source.FetchResult, error) { return s.Fetch(ctx, "", "") }, func(int) time.Duration { return 0 })
 	if err != nil || string(result.Payload.Bytes()) != "ok" || calls.Load() != 2 {
 		t.Fatalf("429 retry = %v, %v, %d", result, err, calls.Load())

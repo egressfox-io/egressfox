@@ -117,7 +117,7 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	if err := kubeClient.Create(ctx, urlSecret); err != nil {
 		t.Fatal(err)
 	}
-	httpPool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "http-pool", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "managed", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "subscription-url", Key: "url"}, AllowHTTP: true, AllowPrivateNetworks: true}}}, Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}}}}
+	httpPool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "http-pool", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Sources: []egressv1alpha1.SubscriptionSource{{ID: "managed", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "subscription-url", Key: "url"}, AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true}}}, Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}}}}
 	if err := kubeClient.Create(ctx, httpPool); err != nil {
 		t.Fatalf("HTTP union rejected: %v", err)
 	}
@@ -129,12 +129,14 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 	compatPool.ResourceVersion = ""
 	compatPool.UID = ""
 	compatPool.Spec.Sources[0].Format = egressv1alpha1.SourceFormatAuto
+	compatPool.Spec.Sources[0].HTTP.ClientIdentity = "stable:provider-a"
+	compatPool.Spec.Sources[0].HTTP.AllowLoopback = true
 	compatPool.Spec.Sources[0].HTTP.Profile = &egressv1alpha1.HTTPClientProfile{UserAgent: "ProviderClient/2", HWID: "fixed-hwid", DeviceOS: "Android", OSVersion: "15", DeviceModel: "Pixel", Headers: map[string]string{"X-Variant": "mobile"}}
 	compatPool.Spec.Sources[0].HTTP.SecretHeaders = []egressv1alpha1.HTTPSecretHeader{{Name: "X-Api-Key", SecretRef: egressv1alpha1.SecretKeyReference{Name: "provider-key", Key: "token"}}}
 	if err := kubeClient.Create(ctx, compatPool); err != nil {
 		t.Fatalf("compatibility profile rejected: %v", err)
 	}
-	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(compatPool), compatPool); err != nil || compatPool.Spec.Sources[0].HTTP.Profile.HWID != "fixed-hwid" || len(compatPool.Spec.Sources[0].HTTP.SecretHeaders) != 1 {
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(compatPool), compatPool); err != nil || compatPool.Spec.Sources[0].HTTP.Profile.HWID != "fixed-hwid" || len(compatPool.Spec.Sources[0].HTTP.SecretHeaders) != 1 || compatPool.Spec.Sources[0].HTTP.ClientIdentity != "stable:provider-a" || !compatPool.Spec.Sources[0].HTTP.AllowLoopback {
 		t.Fatalf("compatibility fields did not round-trip: %v", err)
 	}
 	invalidProfile := compatPool.DeepCopy()

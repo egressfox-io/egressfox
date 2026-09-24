@@ -20,6 +20,10 @@ spec:
       http:
         urlSecretRef: {name: sample-http-access, key: url}
         authorizationSecretRef: {name: sample-http-access, key: authorization}
+        # For a new portable subscription, assign a unique stable: identity.
+        # To preserve an existing HWID during a rename, use
+        # clientIdentity: legacy:<current-Pool-UID>/provider-a before renaming.
+        # clientIdentity: stable:provider-a-installation-1
         # Omit profile for the stable built-in client identity. To override:
         # profile: {userAgent: "ProviderClient/2", hwid: "fixed-device-id"}
         # To suppress all client-identification headers: profile: {mode: Clean}

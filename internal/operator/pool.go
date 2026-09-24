@@ -279,8 +279,20 @@ func ResolveHTTP(ctx context.Context, reader client.Reader, pool *egressv1alpha1
 			return HTTPConfig{}, poolFailure("source_authorization")
 		}
 	}
-	headers := http.Header{}
-	headers, err = profileHeaders(string(pool.UID), desired.ID, desired.HTTP.Profile)
+	clientID, err := clientIdentity(string(pool.UID), desired.ID, desired.HTTP.ClientIdentity)
+	if err != nil {
+		return HTTPConfig{}, err
+	}
+	for _, other := range pool.Spec.Sources {
+		if other.HTTP == nil || other.ID == desired.ID {
+			continue
+		}
+		otherIdentity, err := clientIdentity(string(pool.UID), other.ID, other.HTTP.ClientIdentity)
+		if err != nil || otherIdentity == clientID {
+			return HTTPConfig{}, poolFailure("client_identity_conflict")
+		}
+	}
+	headers, err := profileHeaders(clientID, desired.HTTP.Profile)
 	if err != nil {
 		return HTTPConfig{}, err
 	}
@@ -307,18 +319,19 @@ func ResolveHTTP(ctx context.Context, reader client.Reader, pool *egressv1alpha1
 		}
 		headers.Set(name, string(value))
 	}
-	httpSource, err := source.NewHTTP(id, string(urlBytes), source.HTTPOptions{AllowHTTP: desired.HTTP.AllowHTTP, AllowPrivateNetworks: desired.HTTP.AllowPrivateNetworks, AllowInsecureTLS: desired.HTTP.AllowInsecureTLS, Headers: headers})
+	httpSource, err := source.NewHTTP(id, string(urlBytes), source.HTTPOptions{AllowHTTP: desired.HTTP.AllowHTTP, AllowPrivateNetworks: desired.HTTP.AllowPrivateNetworks, AllowLoopback: desired.HTTP.AllowLoopback, AllowInsecureTLS: desired.HTTP.AllowInsecureTLS, Headers: headers})
 	if err != nil {
 		return HTTPConfig{}, poolFailure("source_http")
 	}
 	identity, _ := json.Marshal(struct {
-		Variant                                                                                        string
-		URL                                                                                            string
-		Authorization                                                                                  string
-		Headers                                                                                        http.Header
-		Format                                                                                         egressv1alpha1.SourceFormat
-		AllowEmpty, AllowPartial, AllowInsecureTLS, AllowHTTP, AllowPrivateNetworks, SourceInsecureTLS bool
-	}{"HTTP", string(urlBytes), string(authorization), headers, desired.Format, desired.AllowEmpty, desired.AllowPartial, pool.Spec.AllowInsecureTLS, desired.HTTP.AllowHTTP, desired.HTTP.AllowPrivateNetworks, desired.HTTP.AllowInsecureTLS})
+		Variant                                                                                                       string
+		URL                                                                                                           string
+		Authorization                                                                                                 string
+		Headers                                                                                                       http.Header
+		ClientIdentity                                                                                                string
+		Format                                                                                                        egressv1alpha1.SourceFormat
+		AllowEmpty, AllowPartial, AllowInsecureTLS, AllowHTTP, AllowPrivateNetworks, AllowLoopback, SourceInsecureTLS bool
+	}{"HTTP", string(urlBytes), string(authorization), headers, clientID, desired.Format, desired.AllowEmpty, desired.AllowPartial, pool.Spec.AllowInsecureTLS, desired.HTTP.AllowHTTP, desired.HTTP.AllowPrivateNetworks, desired.HTTP.AllowLoopback, desired.HTTP.AllowInsecureTLS})
 	return HTTPConfig{Key: string(pool.UID) + "/" + desired.ID, Fingerprint: sha256.Sum256(identity), SourceID: id, HTTP: httpSource, Revisions: revisions}, nil
 }
 

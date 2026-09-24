@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -26,7 +27,7 @@ func TestHTTPProfileWireAndFingerprint(t *testing.T) {
 	ctx := context.Background()
 	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("pool-uid")}}
 	source := egressv1alpha1.SubscriptionSource{ID: "primary", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{
-		URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "value"}, AllowHTTP: true, AllowPrivateNetworks: true,
+		URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "value"}, AllowHTTP: true, AllowPrivateNetworks: true, AllowLoopback: true,
 	}}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"value": []byte(server.URL)}}
 	reader := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(secret).Build()
@@ -96,6 +97,126 @@ func TestHTTPProfileRejectsUnsafeHeaders(t *testing.T) {
 			t.Fatalf("unsafe profile result: %v", err)
 		}
 	}
+	source.HTTP.Profile = nil
+	source.HTTP.ClientIdentity = "invalid-reference"
+	if _, err := operatoradapter.ResolveHTTP(ctx, reader, pool, source); err == nil || strings.Contains(err.Error(), "canary") {
+		t.Fatal("invalid subscription identity was admitted or leaked")
+	}
+	source.HTTP.ClientIdentity = "stable:duplicate"
+	pool.Spec.Sources = []egressv1alpha1.SubscriptionSource{source, {ID: "other", Format: source.Format, HTTP: &egressv1alpha1.HTTPSource{ClientIdentity: "stable:duplicate"}}}
+	if _, err := operatoradapter.ResolveHTTP(ctx, reader, pool, source); err == nil {
+		t.Fatal("two Pool sources reused one logical subscription identity")
+	}
+}
+
+func TestHTTPClientIdentityContinuityAndLegacyMigration(t *testing.T) {
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("X-Hwid"))
+		_, _ = w.Write([]byte("trojan://synthetic@example.com:443"))
+	}))
+	defer server.Close()
+	ctx := context.Background()
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress", UID: types.UID("11111111-2222-3333-4444-555555555555")}}
+	src := egressv1alpha1.SubscriptionSource{ID: "primary", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "value"}, AllowHTTP: true, AllowLoopback: true}}
+	pool.Spec.Sources = []egressv1alpha1.SubscriptionSource{src}
+	urlSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"value": []byte(server.URL)}}
+	reader := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(urlSecret).Build()
+	fetch := func(current *egressv1alpha1.ProxyPool) operatoradapter.HTTPConfig {
+		t.Helper()
+		config, err := operatoradapter.ResolveHTTP(ctx, reader, current, current.Spec.Sources[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := config.HTTP.Acquire(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return config
+	}
+	base := fetch(pool)
+	automatic := seen[len(seen)-1]
+	if automatic != "F0131178-AC86-813E-855B-16AD650E68C5" {
+		t.Fatal("legacy automatic HWID changed during migration")
+	}
+	var workers sync.WaitGroup
+	results := make(chan operatoradapter.HTTPConfig, 32)
+	errors := make(chan error, 32)
+	for range 32 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			config, err := operatoradapter.ResolveHTTP(ctx, reader, pool, pool.Spec.Sources[0])
+			if err != nil {
+				errors <- err
+				return
+			}
+			results <- config
+		}()
+	}
+	workers.Wait()
+	close(results)
+	close(errors)
+	for err := range errors {
+		t.Fatal(err)
+	}
+	for config := range results {
+		if config.Fingerprint != base.Fingerprint {
+			t.Fatal("concurrent identity resolution diverged")
+		}
+	}
+	oldIdentity := "legacy:" + string(pool.UID) + "/primary"
+	pool.Spec.Sources[0].HTTP.ClientIdentity = oldIdentity
+	if explicitLegacy := fetch(pool); explicitLegacy.Fingerprint != base.Fingerprint || seen[len(seen)-1] != automatic {
+		t.Fatal("explicit legacy identity changed existing assignment or cache identity")
+	}
+	urlSecret.Data["value"] = []byte(server.URL + "?renewed=1")
+	if err := reader.Update(ctx, urlSecret); err != nil {
+		t.Fatal(err)
+	}
+	if rotatedURL := fetch(pool); rotatedURL.Fingerprint == base.Fingerprint || seen[len(seen)-1] != automatic {
+		t.Fatal("URL Secret rotation reused cache identity or changed HWID")
+	}
+	pool.Spec.Sources[0].ID = "renamed"
+	pool.Spec.Sources[0].Format = egressv1alpha1.SourceFormatAuto
+	pool.Spec.Sources[0].HTTP.Profile = &egressv1alpha1.HTTPClientProfile{UserAgent: "Different/1", DeviceOS: "Android"}
+	if updated := fetch(pool); updated.Fingerprint == base.Fingerprint || seen[len(seen)-1] != automatic {
+		t.Fatal("renamed/reconfigured subscription rotated HWID or kept incompatible cache")
+	}
+	moved := pool.DeepCopy()
+	moved.UID = types.UID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	if movedConfig := fetch(moved); movedConfig.Key == base.Key || seen[len(seen)-1] != automatic {
+		t.Fatal("explicit continuity reference failed across Pool move")
+	}
+	moved.Spec.Sources[0].HTTP.Profile.HWID = "fixed-user-hwid"
+	fetch(moved)
+	if seen[len(seen)-1] != "fixed-user-hwid" {
+		t.Fatal("explicit HWID override did not take precedence")
+	}
+	moved.Spec.Sources[0].HTTP.Profile.HWID = ""
+	fetch(moved)
+	if seen[len(seen)-1] != automatic {
+		t.Fatal("removing override did not restore automatic assignment")
+	}
+	moved.Spec.Sources[0].HTTP.Profile = &egressv1alpha1.HTTPClientProfile{Mode: "Clean"}
+	fetch(moved)
+	if seen[len(seen)-1] != "" {
+		t.Fatal("clean mode transmitted an HWID")
+	}
+	moved.Spec.Sources[0].HTTP.Profile = nil
+	fetch(moved)
+	if seen[len(seen)-1] != automatic {
+		t.Fatal("leaving clean mode reset the automatic HWID")
+	}
+	moved.Spec.Sources[0].HTTP.ClientIdentity = "stable:portable-subscription-2"
+	fetch(moved)
+	if seen[len(seen)-1] == automatic {
+		t.Fatal("explicit identity reset did not rotate automatic HWID")
+	}
+	moved.Spec.Sources[0].HTTP.ClientIdentity = ""
+	fetch(moved)
+	if seen[len(seen)-1] == automatic {
+		t.Fatal("recreated source unexpectedly retained deleted Pool identity")
+	}
 }
 
 func TestHTTPSecretHeaderWireAndRotation(t *testing.T) {
@@ -110,7 +231,7 @@ func TestHTTPSecretHeaderWireAndRotation(t *testing.T) {
 	source := egressv1alpha1.SubscriptionSource{ID: "main", Format: egressv1alpha1.SourceFormatURIList, HTTP: &egressv1alpha1.HTTPSource{
 		URLSecretRef:  egressv1alpha1.SecretKeyReference{Name: "url", Key: "value"},
 		SecretHeaders: []egressv1alpha1.HTTPSecretHeader{{Name: "X-Api-Key", SecretRef: egressv1alpha1.SecretKeyReference{Name: "header", Key: "value"}}},
-		AllowHTTP:     true, AllowPrivateNetworks: true,
+		AllowHTTP:     true, AllowPrivateNetworks: true, AllowLoopback: true,
 	}}
 	urlSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"value": []byte(server.URL)}}
 	headerSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "header", Namespace: "egress"}, Data: map[string][]byte{"value": []byte("synthetic-one")}}

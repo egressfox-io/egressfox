@@ -51,6 +51,13 @@ cache-identity material. Clean mode suppresses Go's implicit User-Agent. Xray
 client configurations are untrusted input: only bounded supported external proxy
 outbounds are extracted, while source-supplied routing, DNS, local listeners and
 unsupported security fields never enter gateway policy or runtime configuration.
+The M8 hardening boundary narrows `allowPrivateNetworks` to ordinary private
+destinations. Loopback requires an additional opt-in; link-local/cloud metadata,
+multicast, unspecified and reserved/control ranges remain denied after DNS
+resolution, before each actual dial, including retries and same-origin redirects.
+The automatic HWID derives from a durable non-secret client identity reference,
+separate from the private HTTP cache fingerprint. Cache invalidation and expiry
+never reset subscription identity.
 
 ## Assets, actors, and trust boundaries
 

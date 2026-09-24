@@ -71,7 +71,7 @@ spec:
         urlSecretRef: {name: subscription-access, key: url}
         authorizationSecretRef: {name: subscription-access, key: authorization}
         maxStale: 24h
-      format: URIList
+      format: Auto
   probe:
     targetSecretRef: {name: probe-target, key: url}
   refreshInterval: 5m
@@ -79,15 +79,33 @@ spec:
 
 Exactly one of `secretRef` and `http` is required per source. Mixed sources are
 supported. Existing Secret sources need no migration. HTTPS and public destination
-addresses are the default. Plain HTTP requires `http.allowHTTP: true`; private,
-loopback or cluster destinations separately require
-`http.allowPrivateNetworks: true`. Source TLS certificate verification is enabled
+addresses are the default. Plain HTTP requires `http.allowHTTP: true`; ordinary
+RFC1918/IPv6 ULA and in-cluster destinations require
+`http.allowPrivateNetworks: true`. Loopback independently requires
+`http.allowLoopback: true`; link-local, metadata, multicast, unspecified and
+reserved/control destinations remain prohibited. DNS answers are authorized at
+the actual dial, including retries and same-origin redirects. Source TLS
+certificate verification is enabled
 by default and can be disabled only with a separate trusted
 `http.allowInsecureTLS: true` opt-in. These source-fetch flags do not authorize
 probe targets or endpoint addresses. Existing format values and admission flags
 remain valid. The additive `JSON` and `Auto` formats, Default/Custom/Clean HTTP
 profiles and supported endpoint variants are defined in the
 [subscription compatibility matrix](../designs/subscription-compatibility.md).
+
+The automatic HWID belongs to a logical subscription, not its URL or cache entry.
+Existing sources keep their exact Pool UID/source ID based HWID after upgrade. To
+rename `provider-a`, first set `http.clientIdentity` to
+`legacy:<current-Pool-UID>/provider-a`, apply it, then change the source ID. Keep
+that reference when moving the source to another Pool. For a new portable source,
+assign a unique `stable:<opaque>` reference before its first refresh. A user-set
+`profile.hwid` overrides the automatic value; removing the override restores it.
+Changing `clientIdentity` deliberately rotates the automatic value. A deleted
+source recreated without its previous reference may receive a new HWID; preserve
+the reference or a fixed override when migrating clusters. HWID continuity does
+not preserve incompatible cache bytes or ETags. Format or request-context changes
+cause an unconditional refresh, while an already healthy published Gateway remains
+available if that refresh fails.
 
 The pool `refreshInterval` (30 seconds to 24 hours, default five minutes) schedules
 conditional refresh. The HTTP source's `maxStale` (one minute to seven days,

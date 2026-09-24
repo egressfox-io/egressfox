@@ -145,6 +145,11 @@ spec:
                           description: AllowInsecureTLS disables certificate verification
                             for this source only.
                           type: boolean
+                        allowLoopback:
+                          description: |-
+                            AllowLoopback explicitly permits loopback source destinations. Link-local
+                            and cloud metadata destinations remain prohibited.
+                          type: boolean
                         allowPrivateNetworks:
                           type: boolean
                         authorizationSecretRef:
@@ -163,6 +168,14 @@ spec:
                           - key
                           - name
                           type: object
+                        clientIdentity:
+                          description: |-
+                            ClientIdentity preserves the automatic HWID across a source rename or move.
+                            Omission uses legacy:<Pool UID>/<source ID> for upgrade compatibility.
+                            Use a unique stable:<opaque> value for a portable logical subscription.
+                            Changing this field deliberately resets the automatic HWID.
+                          maxLength: 160
+                          type: string
                         maxStale:
                           default: 24h
                           description: MaxStale bounds cache fallback from the last

@@ -20,6 +20,17 @@ import (
 
 const defaultHTTPTimeout = 15 * time.Second
 
+var sourceSpecialUsePrefixes = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
+
 type Resolver interface {
 	LookupNetIP(context.Context, string, string) ([]netip.Addr, error)
 }
@@ -30,6 +41,7 @@ type HTTPOptions struct {
 	MaxRedirects         int
 	AllowHTTP            bool
 	AllowPrivateNetworks bool
+	AllowLoopback        bool
 	AllowInsecureTLS     bool
 	Headers              http.Header
 	Resolver             Resolver
@@ -119,6 +131,7 @@ func (s HTTP) Fetch(ctx context.Context, etag, lastModified string) (FetchResult
 	defer cancel()
 	transport := &http.Transport{
 		DisableCompression:     true,
+		DisableKeepAlives:      true,
 		MaxResponseHeaderBytes: 16 << 10,
 		DialContext:            s.dialContext,
 	}
@@ -258,7 +271,7 @@ func (s HTTP) dialContext(ctx context.Context, network, address string) (net.Con
 	}
 	for _, candidate := range addresses {
 		candidate = candidate.Unmap()
-		if !s.options.AllowPrivateNetworks && !publicAddress(candidate) {
+		if !destinationAllowed(candidate, s.options.AllowPrivateNetworks, s.options.AllowLoopback) {
 			continue
 		}
 		connection, dialErr := (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort(candidate.String(), port))
@@ -273,13 +286,26 @@ func publicAddress(address netip.Addr) bool {
 	if !address.IsValid() || !address.IsGlobalUnicast() || address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast() {
 		return false
 	}
-	if address.Is4() {
-		value := address.As4()
-		if value[0] == 100 && value[1]&0xc0 == 64 {
+	for _, prefix := range sourceSpecialUsePrefixes {
+		if prefix.Contains(address) {
 			return false
 		}
 	}
 	return true
+}
+
+func destinationAllowed(address netip.Addr, allowPrivate, allowLoopback bool) bool {
+	address = address.Unmap()
+	if !address.IsValid() || address.IsUnspecified() || address.IsMulticast() || address.IsLinkLocalUnicast() {
+		return false
+	}
+	if address.IsLoopback() {
+		return allowLoopback
+	}
+	if address.IsPrivate() {
+		return allowPrivate
+	}
+	return publicAddress(address)
 }
 
 func canonicalOrigin(location *url.URL) string {
