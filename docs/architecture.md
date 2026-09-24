@@ -1,6 +1,6 @@
 # Architecture and domain language
 
-Status: M1–M8 core and Kubernetes behavior implemented; P1 M9–M12 designed; the
+Status: M1–M8 core and Kubernetes behavior implemented; P1 M8.5–M12 designed; the
 standalone/runtime/publication architecture is accepted future direction. [ADRs](decisions/README.md)
 record durable boundaries; detailed designs distinguish shipped behavior from
 requirements for later work.
@@ -148,6 +148,13 @@ Detailed endpoint identity rules belong in
 selection belong in [observations and selection](designs/observations-and-selection.md).
 Artifact and composition requirements belong in
 [artifact publication and composition](designs/artifact-publication-and-composition.md).
+
+Planned [M8.5 compatibility](roadmap/p1.md#m85--protocol-and-transport-compatibility)
+extends typed connection semantics and version-aware engine capability checks
+within these boundaries. C1 must settle identity compatibility and safe
+observation migration before new protocol fields can affect deduplication or
+health. Subscription content never controls EgressFox routing, local listeners or
+runtime composition.
 
 ## Component boundaries and code placement
 

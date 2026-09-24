@@ -6,6 +6,9 @@ boundary is recorded in [ADR 0006](../decisions/0006-versioned-endpoint-identity
 The bounded M8 compatibility extension is specified in the
 [subscription matrix](subscription-compatibility.md) and
 [ADR 0019](../decisions/0019-subscription-endpoint-semantics.md).
+The planned [M8.5 milestone](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
+expands connection semantics only after C1 resolves the exact engine capability
+and identity gates; this document does not claim those combinations work today.
 
 ## Decisions and requirements
 
@@ -284,8 +287,10 @@ bytes and validators without rotating HWID.
 
 File, environment, ConfigMap and Vault adapters are not in the committed P1 path.
 Subscription quota/expiry remains optional attributed metadata, never trusted
-selection policy. Structured engine-native input formats and protocol expansion need
-separate demand and semantic review.
+selection policy. The bounded structured subscription formats already admitted
+by M8 remain governed by the [compatibility matrix](subscription-compatibility.md).
+M8.5 protocol/transport expansion requires C1 semantic and engine review; it
+does not authorize native configuration composition.
 
 An M2 committed snapshot is the complete current contribution of one source. A
 successful replacement removes relationships absent from that source while an
@@ -315,5 +320,7 @@ Tests must not contact real subscription providers.
 No proxy implementation, lossless editor for arbitrary engine configuration,
 cross-tenant inventory sharing, or universal schema is proposed. Q1 is resolved by
 [ADR 0006](../decisions/0006-versioned-endpoint-identity.md), and Q2 by
-[ADR 0007](../decisions/0007-safe-source-snapshots.md). Structured engine formats,
-additional protocols and persistent source caching remain later work.
+[ADR 0007](../decisions/0007-safe-source-snapshots.md). M8 implemented protected
+persistent source caching and bounded JSON extraction. Additional connection
+combinations belong to M8.5 after C1; arbitrary native configuration import
+remains outside this milestone.

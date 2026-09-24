@@ -38,6 +38,7 @@ capabilities form one product path rather than independent feature bids.
 | P1-01 | Managed single-replica Mihomo/sing-box SOCKS workload and ClusterIP Service, with BYO preserved | M7 |
 | P1-02 | Exact-generation activation and runtime-readiness evidence distinct from publication | M7 |
 | P1-03 | Secret-referenced HTTP source refresh with validators, bounded retry and protected LKG cache | M8 |
+| P1-09 | Practical VLESS, VMess, Trojan, Shadowsocks, SOCKS5, HTTP/HTTPS proxy and Hysteria2 compatibility, with applicable transports/security and exact-engine traffic qualification | M8.5 |
 | P1-04 | Multiple named target/probe/selection profiles over one shared source inventory | M9 |
 | P1-05 | One bounded EgressPolicy per gateway with ordered common routing and explicit final behavior | M10 |
 | P1-06 | Low-cardinality lifecycle metrics, optional ServiceMonitor and supported dashboard/alerts | M11 |
@@ -83,12 +84,12 @@ with a concrete use case:
   references, Kubernetes Secrets, and Vault. HTTP options include authentication,
   custom headers, User-Agent, retries and backoff; cache features are P1 above.
 - Formats: URI lists, Base64 envelopes, Mihomo/Clash YAML and sing-box JSON.
-- Reality with VLESS Vision is mandatory before v1.0 and needs a separate typed
-  endpoint, renderer, probe and native-traffic qualification milestone. The M8
-  compatibility extension classifies these records as unsupported; it does not
-  substitute ordinary TLS or discard their public key, short ID or flow.
-- Protocol ecosystems: VLESS, VMess, Trojan, Shadowsocks, Hysteria/Hysteria2, TUIC,
-  SOCKS, HTTP proxies, WireGuard where appropriate, and later supported protocols.
+- Reality with VLESS Vision and the other [M8.5 combinations](p1.md#m85--protocol-and-transport-compatibility)
+  are mandatory before M9; the M8 compatibility extension still classifies them
+  as unsupported until their full path is implemented. It never substitutes
+  ordinary TLS or discards a public key, short ID or flow.
+- Protocol ecosystems beyond the mandatory M8.5 families, including TUIC,
+  Hysteria 1 and WireGuard where appropriate, remain unscheduled.
 - Filtering: protocol, source, country, ASN, IPv4/IPv6, tags, names, allow/deny rules,
   latency and historical availability.
 - Strategy alternatives: all, seeded random, lowest latency, highest availability,

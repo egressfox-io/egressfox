@@ -4,6 +4,10 @@ Status: M8 compatibility extension complete. This is the bounded input and
 engine contract for the pinned Mihomo v1.19.31 and sing-box v1.14.1 profiles.
 An accepted record still requires native validation and successful Gateway
 activation; parsing alone never proves reachability.
+This is the implemented baseline for the planned
+[M8.5 compatibility milestone](../roadmap/p1.md#m85--protocol-and-transport-compatibility),
+not a claim that its additional protocol, transport or security combinations
+are supported yet.
 
 ## HTTP request profiles
 

@@ -76,16 +76,19 @@ into a self-contained, namespace-scoped egress Service without changing which si
 owns the data plane. M7 added the managed authenticated SOCKS runtime and
 exact-generation activation evidence. M8 added resilient managed HTTP source
 refresh with a protected cache. The remaining must-have path adds
-target-aware selection profiles, bounded routing policy, operational metrics and a
-redacted explanation surface.
+M8.5 practical proxy protocol/transport compatibility before target-aware
+selection profiles, bounded routing policy, operational metrics and a redacted
+explanation surface. M8.5 covers documented combinations found in subscriptions,
+not every option or cross-product supported by either engine.
 
 P1 intentionally chooses product completeness over feature count. BYO remains a
 supported mode, `EgressPolicy` expresses engine-executed routing rather than workload
 attachment, and readiness never becomes a claim that arbitrary destination traffic
 works. Operator HA, transparent routing, cross-namespace references, future
 Vault/S3/filesystem/stdout publisher adapters and `EgressOutput`, native deep merge,
-broad protocols and a Web UI remain outside P1. The post-P1 roadmap points to
-standalone, runtime and publication work without duplicating M8–M12 primitives.
+protocols beyond the bounded M8.5 contract and a Web UI remain outside P1. The
+post-P1 roadmap points to standalone, runtime and publication work without
+duplicating M8–M12 primitives.
 
 ## Non-goals
 

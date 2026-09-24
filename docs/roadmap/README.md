@@ -19,13 +19,12 @@ time-bounded cache, and its compatibility completion adds request profiles and
 bounded URI/JSON subscription decoding. There is still no product CLI,
 cross-namespace API or HA topology.
 
-**Next implementation stage: M8.5 protocol and transport compatibility, then P1
-M9.** The authoritative
-[P1 product roadmap](p1.md) now orders managed runtime/activation, resilient source
-refresh, target-aware selection, bounded routing policy, observability and
-explainability. M7–M8 are complete; M8.5 and later P1 behavior are not
-implemented. A public alpha is a separate maintainer decision and requires the
-protected repository settings in the release guide.
+**Next implementation milestone: M8.5 protocol and transport compatibility,
+beginning with C1; M9 follows.** The authoritative [P1 product roadmap](p1.md)
+defines the seven-milestone path from managed runtime through explainability.
+M7–M8 are complete; M8.5 and later P1 behavior are not implemented. A public
+alpha is a separate maintainer decision and requires the protected repository
+settings in the release guide.
 
 ## P0 milestones
 
@@ -58,7 +57,7 @@ No dates or quality claims are inferred from this milestone sequence.
 
 ## P1 and later horizons
 
-The [P1 product roadmap](p1.md) is the single authority for its objective, six
+The [P1 product roadmap](p1.md) is the single authority for its objective, seven
 milestones, dependencies, scope tiers and exit criteria. The full
 [catalog](features.md) preserves optional and later ideas without turning them into
 implicit milestones.

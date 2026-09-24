@@ -94,6 +94,12 @@ internal capability checks and descriptive errors. A user-facing capability
 matrix/discovery CLI is P1. A capability name alone is insufficient if semantics
 change by version or build flags.
 
+The planned [M8.5 C1 gate](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
+must establish a per-combination matrix for the exact pinned Mihomo and sing-box
+builds before broader protocol claims. Capability checks must cover applicable
+transport, security, authentication and QUIC parameters together; they cannot
+infer parity from a shared protocol name.
+
 An unsupported-feature error should name the engine/version, model field and
 requested behavior, with a safe reason. It must not emit endpoint URIs or native
 config. Do not substitute selector for balancing, drop unsupported rules, downgrade
