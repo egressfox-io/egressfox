@@ -56,9 +56,7 @@ func AssessEndpoint(profile artifact.Profile, configuration endpoint.Configurati
 	}
 	result := Assessment{Build: BuildAvailable, Implemented: true}
 	switch configuration.Protocol() {
-	case endpoint.ProtocolVLESS, endpoint.ProtocolTrojan, endpoint.ProtocolVMess, endpoint.ProtocolShadowsocks:
-	case endpoint.ProtocolSOCKS5, endpoint.ProtocolHTTPProxy:
-		result.Implemented, result.Field, result.Feature = false, "endpoint.protocol", configuration.Protocol().String()
+	case endpoint.ProtocolVLESS, endpoint.ProtocolTrojan, endpoint.ProtocolVMess, endpoint.ProtocolShadowsocks, endpoint.ProtocolSOCKS5, endpoint.ProtocolHTTPProxy:
 	case endpoint.ProtocolHysteria2:
 		result.Implemented, result.Field, result.Feature = false, "endpoint.protocol", "hysteria2"
 		if profile == artifact.SingBox1141 {

@@ -50,6 +50,8 @@ type outbound struct {
 	ServerPort uint16     `json:"server_port,omitempty"`
 	UUID       string     `json:"uuid,omitempty"`
 	Password   string     `json:"password,omitempty"`
+	Username   string     `json:"username,omitempty"`
+	Version    string     `json:"version,omitempty"`
 	Security   string     `json:"security,omitempty"`
 	AlterID    *int       `json:"alter_id,omitempty"`
 	Method     string     `json:"method,omitempty"`
@@ -131,6 +133,16 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 		result.Type = "shadowsocks"
 		result.Method = configuration.Method()
 		result.Password = configuration.Credential().Reveal()
+	case endpoint.ProtocolSOCKS5:
+		result.Type = "socks"
+		result.Version = "5"
+		result.Username = configuration.Credential().RevealUsername()
+		result.Password = configuration.Credential().Reveal()
+	case endpoint.ProtocolHTTPProxy:
+		result.Type = "http"
+		result.Username = configuration.Credential().RevealUsername()
+		result.Password = configuration.Credential().Reveal()
+		result.Network = ""
 	default:
 		return outbound{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.protocol", Feature: configuration.Protocol().String()}
 	}

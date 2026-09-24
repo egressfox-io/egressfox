@@ -34,6 +34,7 @@ type proxy struct {
 	Port           uint16         `yaml:"port"`
 	UUID           string         `yaml:"uuid,omitempty"`
 	Password       string         `yaml:"password,omitempty"`
+	Username       string         `yaml:"username,omitempty"`
 	Cipher         string         `yaml:"cipher,omitempty"`
 	AlterID        *int           `yaml:"alterId,omitempty"`
 	TLS            bool           `yaml:"tls"`
@@ -115,6 +116,17 @@ func (r Renderer) renderProxy(item engine.NamedRecord) (proxy, error) {
 		result.Type = "ss"
 		result.Cipher = configuration.Method()
 		result.Password = configuration.Credential().Reveal()
+	case endpoint.ProtocolSOCKS5:
+		result.Type = "socks5"
+		result.Username = configuration.Credential().RevealUsername()
+		result.Password = configuration.Credential().Reveal()
+	case endpoint.ProtocolHTTPProxy:
+		result.Type = "http"
+		result.Username = configuration.Credential().RevealUsername()
+		result.Password = configuration.Credential().Reveal()
+		if configuration.TLS().Enabled() {
+			result.SNI = configuration.TLS().ServerName()
+		}
 	default:
 		return proxy{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.protocol", Feature: configuration.Protocol().String()}
 	}

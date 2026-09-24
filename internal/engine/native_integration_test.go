@@ -64,7 +64,7 @@ func TestPinnedNativeValidation(t *testing.T) {
 				}
 				return listener
 			})
-			for name, gateway := range map[string]policy.Gateway{"byo": testGateway(t, false), "managed-authenticated": managed, "vmess-and-shadowsocks": compatibilityGateway(t)} {
+			for name, gateway := range map[string]policy.Gateway{"byo": testGateway(t, false), "managed-authenticated": managed, "vmess-and-shadowsocks": compatibilityGateway(t), "c2-proxies": c2ProxyGateway(t)} {
 				t.Run(name, func(t *testing.T) {
 					candidate, err := test.renderer.Render(gateway)
 					if err != nil {

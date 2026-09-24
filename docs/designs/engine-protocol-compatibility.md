@@ -40,8 +40,8 @@ engine version or build revision changes in C1.
 | Trojan password, TCP/WS, ordinary TLS | Supported | Supported | **Implemented and tested** in M1–M8 | Password, server/port, required TLS/SNI, WS path/Host; existing tests. Trojan without TLS is invalid domain data. |
 | VMess UUID, alter ID 0, admitted payload cipher, TCP/WS, plain or TLS | Supported | Supported | **Implemented and tested** in M8 | UUID, cipher distinct from TLS, server/port, WS path/Host, SNI; [M8 matrix](subscription-compatibility.md) and plans 0018–0019. Legacy alter IDs and other ciphers remain unsupported input. |
 | Shadowsocks plugin-free admitted AEAD methods over TCP | Supported | Supported | **Implemented and tested** in M8 | Method and password are both connection-critical; plugins and 2022 methods require separate C2 qualification. |
-| SOCKS5 TCP, optional username/password | Supported | Supported | Typed domain; **C2 pending** | Explicit SOCKS version 5, server/port, anonymous or username/password auth; probe DNS/IP behavior must be controlled. UDP extensions are unverified and excluded. |
-| HTTP CONNECT TCP, optional Basic auth; HTTPS CONNECT with TLS | Supported | Supported | Typed domain; **C2 pending** | Server/port, auth pair, TLS/SNI/verification for HTTPS. Extra headers, HTTP version, paths and HTTP/3 are unverified for the pinned pair and rejected. [sing-box HTTP](https://sing-box.sagernet.org/configuration/outbound/http/) documents fields introduced only in 1.15. |
+| SOCKS5 TCP, optional username/password | Supported | Supported | C2 source, render, native and controlled probe/traffic pass; managed kind pending | Explicit SOCKS version 5, server/port, anonymous or username/password auth; probe DNS/IP behavior must be controlled. UDP extensions are unverified and excluded. |
+| HTTP CONNECT TCP, optional Basic auth; HTTPS CONNECT with TLS | Supported | Supported | C2 source, render, native and controlled probe/traffic pass; managed kind pending | Server/port, auth pair, TLS/SNI/verification for HTTPS. Extra headers, HTTP version, paths and HTTP/3 are unverified for the pinned pair and rejected. [sing-box HTTP](https://sing-box.sagernet.org/configuration/outbound/http/) documents fields introduced only in 1.15. |
 | VLESS/VMess HTTP/2 with TLS | Supported | HTTP transport with TLS; exact HTTP/2 negotiation needs proof | Typed path/host; **C3 pending** | HTTP/2 without TLS is rejected in C1 to prevent sing-box's HTTP/1.1 behavior. Pinned Mihomo Trojan has no HTTP/2 option, so Trojan/HTTP2 is invalid for the common C1 domain. |
 | VLESS/VMess/Trojan gRPC | Supported | Lite gRPC; standard `with_grpc` build absent | Typed service; **C3 pending** | Preserve service name and mode; qualify lite implementation against target servers. |
 | VLESS/VMess/Trojan HTTPUpgrade | WS upgrade mode; exact interop unverified | Dedicated HTTPUpgrade transport | Typed path/host; **C3 pending** | Early data, request headers and method require C3 types. Equivalence of Mihomo WS upgrade and sing-box HTTPUpgrade is **unverified**, so no current support claim. |
@@ -49,6 +49,29 @@ engine version or build revision changes in C1.
 | VLESS XHTTP, mode/path/authority and connection-critical request settings | **Engine-specific source support** in pinned VLESS outbound | **Unsupported**: absent from pinned transport union | Discriminator reserved; **C3 pending**, no C1 constructor | Mihomo modes include `auto`, `stream-one`, `stream-up`, `packet-up`; headers, padding, upload/download settings and HTTP version can change the connection. No WS/gRPC substitution. Current sing-box parity would require a separately reviewed upstream change or an explicit engine-specific M8.5 exception. |
 | Hysteria2 over UDP/QUIC with TLS, password, bandwidth and optional Salamander | Source supports | **Unsupported by current build**: `with_quic` absent; stub rejects outbound | Typed basic domain; **C4 pending** after separately reviewed build revision | UDP server/port, password, TLS/SNI, ALPN, bandwidth/CC, obfuscation secret, timeout and authorized DNS. Port hopping, Gecko, realm, QUIC tuning and certificate pinning need C4 parameter-level contracts. [Pinned Mihomo options](https://github.com/MetaCubeX/mihomo/blob/ab405bad5beeeac8b003bb01f60f134f6df54471/adapter/outbound/hysteria2.go); [pinned sing-box options](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/option/hysteria2.go). |
 | Hysteria2 over TCP; Reality downgraded to ordinary TLS; XHTTP replaced by WS | Invalid or incompatible | Invalid or incompatible | **Unsupported** permanently as substitutions | These do not preserve the requested wire protocol. |
+
+## C2 qualification contract
+
+C2 retains the four existing basic families above without changing their admitted
+TCP/WS, ordinary TLS, credential or cipher subsets. The following new forms are
+the only C2 additions; each needs the same subscription → identity → capability
+→ renderer → native check → controlled probe → managed Gateway traffic path for
+**both** pinned profiles before its status changes to implemented.
+
+| Input and canonical form | Mihomo mapping | sing-box mapping | Exclusions |
+| --- | --- | --- | --- |
+| `socks5://host:port` or `socks5://user:password@host:port` in a URI list or JSON URI array; Xray `socks` outbound; sing-box `socks` outbound with version 5 or omitted. `SOCKS5`, TCP, TLS disabled, no auth or a nonempty username/password pair. | `type: socks5`, `username`/`password` when present, `udp: false` | `type: socks`, `version: "5"`, `username`/`password` when present, `network: "tcp"` | SOCKS4/4a, SOCKS-over-TLS, UDP, `socks5h`/curl DNS semantics, empty-password auth and dial options. SOCKS5 passes the destination hostname to the proxy; endpoint-server DNS remains the engine's dial concern. |
+| Explicit URI-list `http://host:port` or `http://user:password@host:port`; Xray `http` outbound; sing-box `http` outbound without TLS. `HTTPProxy`, TCP, TLS disabled, no auth or nonempty Basic pair. | `type: http`, TLS false, optional `username`/`password` | `type: http`, optional `username`/`password` | Arbitrary HTTP links in auto-detected or generic JSON URI lists, extra headers, path, HTTP version and non-Basic authentication. The engine uses CONNECT for tunneled targets. |
+| Explicit URI-list `https://host:port` or `https://user:password@host:port`; sing-box `http` outbound with TLS; Xray `http` outbound with ordinary TLS stream. `HTTPProxy`, TCP, TLS enabled with effective SNI and verification mode. | `type: http`, `tls: true`, `sni`, `skip-cert-verify`, optional auth | `type: http`, `tls.enabled`, `tls.server_name`, `tls.insecure`, optional auth | HTTPS describes TLS **to the proxy**, independent of target HTTPS. Certificate pinning, ALPN, client fingerprints, custom CAs and extra HTTP options remain unsupported. |
+
+HTTP(S) proxy URIs require an explicit `FormatURIList` or
+`FormatBase64URIList` source setting. Automatic format detection intentionally
+does not infer an HTTP proxy inventory from an HTTP link. JSON requires the
+recognized outbound schema for HTTP(S); unambiguous `socks5://` records are
+accepted in URI lists and JSON URI arrays. Existing public logical IDs
+never include credentials; the protected connection revision distinguishes no auth
+from authenticated connections and password rotation. C2 does not reinterpret
+legacy `ef1_`/`ef2_` identities.
 
 ## Subscription and identity implications
 

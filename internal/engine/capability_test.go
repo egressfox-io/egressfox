@@ -55,7 +55,10 @@ func TestExactProfileCapabilityGate(t *testing.T) {
 		if err := engine.CheckEndpoint(profile, legacy); err != nil {
 			t.Fatalf("legacy %s: %v", profile, err)
 		}
-		for _, configuration := range []endpoint.Configuration{advanced, vision, httpProxy} {
+		if err := engine.CheckEndpoint(profile, httpProxy); err != nil {
+			t.Fatalf("HTTP CONNECT %s: %v", profile, err)
+		}
+		for _, configuration := range []endpoint.Configuration{advanced, vision} {
 			err := engine.CheckEndpoint(profile, configuration)
 			if !errors.Is(err, engine.ErrUnsupported) {
 				t.Fatalf("%s: want capability rejection, got %v", profile, err)

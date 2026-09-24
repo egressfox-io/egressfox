@@ -98,3 +98,40 @@ needs synthetic fixtures, identity/admission/security tests, both applicable
 renderers, exact-profile native checks, through-engine probes and managed traffic.
 The C3/C4 contracts and explicit engine-specific gates remain in the
 [matrix](../designs/engine-protocol-compatibility.md).
+
+## C2 execution record
+
+Status: in progress on `codex/m85-c2-main-protocols`.
+
+The [C2 qualification contract](../designs/engine-protocol-compatibility.md#c2-qualification-contract)
+fixes the exact new variants before product changes. Existing VLESS, VMess,
+Trojan and Shadowsocks basic forms, acquisition/cache, identity, probe isolation,
+selection and managed activation are reused. No CRD, release profile or schema
+change is planned. The existing ef3 private revision distinguishes authentication
+and TLS-to-proxy semantics; C2 will add golden/regression evidence rather than
+reversion old records.
+
+1. Extend bounded URI/Xray/sing-box decoding and existing admission for explicit
+   SOCKS5, HTTP and HTTPS proxy records. Retain conservative auto detection and
+   explicit unsupported classifications for advanced options.
+2. Extend the shared exact-profile capability gate and both renderers. Validate
+   field-level output, redaction and negative cases before native validation.
+3. Prove native checks and controlled authenticated/anonymous SOCKS5, HTTP
+   CONNECT and HTTPS CONNECT traffic via both engines; exercise probe errors and
+   existing main-protocol regressions.
+4. Qualify the managed Gateway path in the Kubernetes 1.32 kind environment,
+   update owning compatibility/security docs, run required repository checks and
+   record the exact evidence. C2 remains open if managed traffic is unavailable.
+
+Local C2 evidence: both pinned executables natively validate the new artifacts;
+controlled local SOCKS5 anonymous/authenticated, HTTP CONNECT
+anonymous/authenticated and HTTPS CONNECT anonymous/authenticated traffic passes
+through each engine. Wrong proxy credentials fail before reaching the target.
+The existing probe executor produces successful exact-profile observations for
+all three proxy families. The synthetic HTTPS server uses an explicit
+test-only verification opt-out; URI-based HTTPS keeps verification enabled.
+`make check`, `make docs`, focused race tests and `make vuln` passed before the
+managed kind gate. Kubernetes 1.32 kind qualification is running; its result
+must be recorded before C2 can be marked complete.
+
+Reality/Vision and advanced transports remain C3. Hysteria2 and QUIC remain C4.
