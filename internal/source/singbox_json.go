@@ -36,24 +36,41 @@ func decodeSingBoxRecords(records []json.RawMessage, limits Limits) ([]parseInpu
 
 func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseInput {
 	unsupported := func(code string) parseInput { return parseInput{kind: DiagnosticUnsupported, code: code} }
-	if kind != "vless" && kind != "trojan" && kind != "vmess" && kind != "shadowsocks" {
+	if kind != "vless" && kind != "trojan" && kind != "vmess" && kind != "shadowsocks" && kind != "socks" && kind != "http" {
 		return unsupported("unsupported_protocol")
 	}
 	for key := range object {
 		switch key {
-		case "type", "tag", "server", "server_port", "uuid", "password", "method", "security", "alter_id", "network", "tls", "transport", "flow":
+		case "type", "tag", "server", "server_port", "uuid", "password", "method", "security", "alter_id", "network", "tls", "transport", "flow", "username", "version":
 		default:
 			return unsupported("singbox_outbound_option")
 		}
 	}
+	if kind == "socks" || kind == "http" {
+		for key := range object {
+			switch key {
+			case "type", "tag", "server", "server_port", "username", "password":
+			case "version", "network":
+				if kind != "socks" {
+					return unsupported("singbox_proxy_option")
+				}
+			case "tls":
+				if kind != "http" {
+					return unsupported("singbox_proxy_option")
+				}
+			default:
+				return unsupported("singbox_proxy_option")
+			}
+		}
+	}
 	var record struct {
-		Tag, Server, UUID, Password, Method, Security, Network, Flow string
-		ServerPort, AlterID                                          int
+		Tag, Server, UUID, Password, Method, Security, Network, Flow, Username, Version string
+		ServerPort, AlterID                                                             int
 	}
 	for _, item := range []struct {
 		key    string
 		target *string
-	}{{"tag", &record.Tag}, {"server", &record.Server}, {"uuid", &record.UUID}, {"password", &record.Password}, {"method", &record.Method}, {"security", &record.Security}, {"network", &record.Network}, {"flow", &record.Flow}} {
+	}{{"tag", &record.Tag}, {"server", &record.Server}, {"uuid", &record.UUID}, {"password", &record.Password}, {"method", &record.Method}, {"security", &record.Security}, {"network", &record.Network}, {"flow", &record.Flow}, {"username", &record.Username}, {"version", &record.Version}} {
 		if raw := object[item.key]; raw != nil && json.Unmarshal(raw, item.target) != nil {
 			return parseInput{kind: DiagnosticMalformed, code: "singbox_field_type"}
 		}
@@ -65,6 +82,9 @@ func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseI
 		return parseInput{kind: DiagnosticMalformed, code: "singbox_alter_id"}
 	}
 	if record.Flow != "" || record.AlterID != 0 {
+		return unsupported("singbox_protocol_option")
+	}
+	if kind != "socks" && object["version"] != nil || kind != "socks" && kind != "http" && object["username"] != nil {
 		return unsupported("singbox_protocol_option")
 	}
 	if record.Network != "" && record.Network != "tcp" {
@@ -161,6 +181,28 @@ func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseI
 		}
 		if err != nil {
 			return unsupported("singbox_ss_option")
+		}
+	case "socks", "http":
+		if record.UUID != "" || record.Method != "" || record.Security != "" || object["transport"] != nil && !emptyJSON(object["transport"]) {
+			return unsupported("singbox_protocol_option")
+		}
+		if kind == "socks" && record.Version != "" && record.Version != "5" {
+			return unsupported("singbox_socks_version")
+		}
+		if kind == "socks" && tls.Enabled() || kind == "http" && object["network"] != nil {
+			return unsupported("singbox_proxy_option")
+		}
+		protocol := endpoint.ProtocolHTTPProxy
+		if kind == "socks" {
+			protocol = endpoint.ProtocolSOCKS5
+		}
+		credential, err := endpoint.NewProxyCredential(protocol, record.Username, record.Password)
+		if err != nil {
+			return unsupported("singbox_proxy_auth")
+		}
+		configuration, err = endpoint.NewExtendedConfiguration(protocol, address, credential, transport, tls, endpoint.SecurityOptions{}, endpoint.FlowNone, nil)
+		if err != nil {
+			return parseInput{kind: DiagnosticInvalid, code: "invalid_endpoint"}
 		}
 	}
 	return parseInput{configuration: configuration, alias: record.Tag}

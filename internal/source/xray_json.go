@@ -94,6 +94,9 @@ type xrayServer struct {
 
 func parseXrayOutbound(object map[string]json.RawMessage, protocol string, remaining int) []parseInput {
 	unsupported := func(code string) []parseInput { return []parseInput{{kind: DiagnosticUnsupported, code: code}} }
+	if protocol == "socks" || protocol == "http" {
+		return parseXrayProxyOutbound(object, protocol, remaining)
+	}
 	if protocol != "vless" && protocol != "vmess" && protocol != "trojan" && protocol != "shadowsocks" {
 		return unsupported("unsupported_protocol")
 	}

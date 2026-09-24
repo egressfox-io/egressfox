@@ -11,7 +11,9 @@ expands connection semantics only after C1 resolves the exact engine capability
 and identity gates; this document does not claim those combinations work today.
 The C1 [v3 identity decision](../decisions/0021-version-three-connection-semantics-and-capabilities.md)
 and [engine matrix](engine-protocol-compatibility.md) define the typed domain
-foundation. Source parsers still admit only the bounded M8 formats and variants.
+foundation. C2 adds bounded SOCKS5 and HTTP(S) proxy entries in explicit URI
+lists and supported Xray/sing-box outbound objects; the full admitted subset is
+in the [subscription matrix](subscription-compatibility.md).
 
 ## Decisions and requirements
 

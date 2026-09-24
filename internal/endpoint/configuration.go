@@ -102,7 +102,11 @@ func NewProxyCredential(protocol Protocol, username, password string) (Credentia
 	if protocol != ProtocolSOCKS5 && protocol != ProtocolHTTPProxy {
 		return Credential{}, invalid("proxy.protocol", "must be SOCKS5 or HTTP proxy")
 	}
-	if len(username) > 255 || len(password) > 4096 || !utf8.ValidString(username) || !utf8.ValidString(password) || (username == "") != (password == "") {
+	maxPassword := 4096
+	if protocol == ProtocolSOCKS5 {
+		maxPassword = 255
+	}
+	if len(username) > 255 || len(password) > maxPassword || !utf8.ValidString(username) || !utf8.ValidString(password) || (username == "") != (password == "") || protocol == ProtocolHTTPProxy && strings.Contains(username, ":") {
 		return Credential{}, invalid("proxy.authentication", "must be an empty pair or valid username and password")
 	}
 	for _, value := range []string{username, password} {

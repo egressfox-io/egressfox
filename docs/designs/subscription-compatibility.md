@@ -1,13 +1,12 @@
 # Subscription compatibility matrix
 
-Status: M8 compatibility extension complete. This is the bounded input and
+Status: M8 compatibility extension complete; M8.5 C2 proxy entries under
+qualification in the [C2 plan](../plans/0020-m85-protocol-transport-compatibility.md). This is the bounded input and
 engine contract for the pinned Mihomo v1.19.31 and sing-box v1.14.1 profiles.
 An accepted record still requires native validation and successful Gateway
 activation; parsing alone never proves reachability.
-This is the implemented baseline for the planned
-[M8.5 compatibility milestone](../roadmap/p1.md#m85--protocol-and-transport-compatibility),
-not a claim that its additional protocol, transport or security combinations
-are supported yet.
+The [M8.5 compatibility milestone](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
+still reserves advanced transport/security and QUIC work for C3/C4.
 The [M8.5 engine matrix](engine-protocol-compatibility.md) owns pinned-build and
 future-combination status; this table remains the shipped M8 input contract.
 
@@ -73,6 +72,9 @@ published Gateway generation in place.
 | Trojan | Password, TCP or WS path/Host, ordinary TLS with SNI and verification flag | TLS-less, Reality, ALPN, fingerprint, other transports |
 | VMess | Base64 JSON share or supported Xray outbound, UUID, alter ID zero, `auto`/`aes-128-gcm`/`chacha20-poly1305`/`none`, TCP or WS path/Host, optional ordinary TLS | Legacy alter IDs, non-UUID IDs, fingerprint, ALPN, other transports |
 | Shadowsocks | SIP002 plain/percent-encoded or Base64 userinfo, legacy Base64 whole URI, and supported Xray outbound; `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`, TCP | Plugins, 2022 methods, stream ciphers, extra transport/security |
+| SOCKS5 | `socks5://host:port` or `socks5://user:password@host:port` in URI lists or JSON URI arrays; Xray `socks` servers/users; sing-box `socks` version 5 (or omitted); TCP, optional nonempty username/password pair | SOCKS4/4a, `socks5h`/curl DNS interpretation, UDP, TLS, empty-password auth and unsupported dial options |
+| HTTP proxy | Explicit URI-list `http://host:port` with optional Basic pair; Xray `http` settings; sing-box `http` outbound; TCP CONNECT | Arbitrary HTTP links in Auto/JSON URI arrays, paths, extra headers, non-Basic auth and HTTP version overrides |
+| HTTPS proxy | Explicit URI-list `https://host:port` with optional Basic pair; Xray `http` with ordinary TLS stream; sing-box `http` with enabled TLS; SNI and verification mode preserved | Treating an HTTPS target tunneled over a plain HTTP proxy as HTTPS-to-proxy; custom CA/pin, ALPN and fingerprint options |
 | Engines | Both pinned Mihomo and sing-box render the supported subset | Other engine versions and variants without exact-profile validation |
 
 Explicit `URIList`, `Base64URIList`, `JSON` and `Auto` formats are available for
@@ -83,6 +85,17 @@ falling back to URI fragment parsing. Format fallback acts only on already acqui
 bytes; it never multiplies HTTP requests. Existing `allowPartial: false` remains
 the default: any unsupported record rejects the entire new snapshot and preserves
 the previous compatible HTTP cache and artifact LKG.
+
+HTTP(S) proxy URIs require explicit `URIList` or `Base64URIList` selection.
+`Auto` does not infer a proxy subscription from an HTTP link; generic JSON URI
+arrays are not HTTP(S) proxy-entry schemas. Unambiguous `socks5://` URIs are
+accepted in Auto and JSON URI arrays. Recognized Xray/sing-box outbound
+objects are explicit proxy-entry contexts. Proxy URI userinfo is percent-decoded,
+and a fragment is only a display alias. SOCKS5 sends target hostnames to the
+SOCKS server; EgressFox does not infer curl's `socks5` versus `socks5h` behavior.
+HTTPS proxy means TLS to the proxy itself, then HTTP CONNECT through that TLS
+connection. A self-signed proxy certificate requires an explicit insecure-TLS
+admission choice; URI input has no query flag that weakens verification.
 
 ```text
 vless://11111111-1111-4111-8111-111111111111@edge.example.com:443?security=tls

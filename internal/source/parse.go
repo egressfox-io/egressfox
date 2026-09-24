@@ -95,7 +95,8 @@ func Parse(payload Payload, options ParseOptions) (Snapshot, Report, error) {
 		}
 		configuration, alias, kind, code := input.configuration, input.alias, input.kind, input.code
 		if code == "" && configuration.Protocol() == endpoint.ProtocolUnknown {
-			configuration, alias, kind, code = parseURI(string(line))
+			allowHTTPProxyURI := format != FormatJSON && options.Format != FormatAuto
+			configuration, alias, kind, code = parseURI(string(line), allowHTTPProxyURI)
 		}
 		if code != "" {
 			addDiagnostic(&report, Diagnostic{payload.source, recordNumber, kind, code})
@@ -264,7 +265,7 @@ func recognizableURIList(data []byte) bool {
 			continue
 		}
 		text := strings.ToLower(string(line))
-		for _, scheme := range []string{"vless://", "trojan://", "vmess://", "ss://", "hysteria://", "hysteria2://", "tuic://"} {
+		for _, scheme := range []string{"vless://", "trojan://", "vmess://", "ss://", "socks5://", "hysteria://", "hysteria2://", "tuic://"} {
 			if strings.HasPrefix(text, scheme) {
 				return true
 			}
@@ -297,12 +298,18 @@ func decodeEnvelope(data []byte, max int) ([]byte, error) {
 	return decoded[:n], nil
 }
 
-func parseURI(raw string) (endpoint.Configuration, string, DiagnosticKind, string) {
+func parseURI(raw string, allowHTTPProxyURI bool) (endpoint.Configuration, string, DiagnosticKind, string) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" {
 		return endpoint.Configuration{}, "", DiagnosticMalformed, "invalid_uri"
 	}
 	scheme := strings.ToLower(u.Scheme)
+	if scheme == "socks5" || scheme == "http" || scheme == "https" {
+		if scheme != "socks5" && !allowHTTPProxyURI {
+			return endpoint.Configuration{}, "", DiagnosticUnsupported, "proxy_uri_requires_explicit_format"
+		}
+		return parseProxyURI(u, scheme)
+	}
 	if scheme == "vmess" {
 		return parseVMessURI(raw)
 	}
