@@ -64,36 +64,45 @@ func AssessEndpoint(profile artifact.Profile, configuration endpoint.Configurati
 		}
 		return result, nil
 	}
-	if configuration.Flow() != endpoint.FlowNone {
-		result.Implemented, result.Field, result.Feature = false, "endpoint.flow", "vision"
-	}
 	security := configuration.SecurityOptions()
 	if _, reality := security.Reality(); reality {
-		result.Implemented, result.Field, result.Feature = false, "endpoint.security", "reality"
-		if profile == artifact.SingBox1141 {
-			result.Build = BuildUnavailable // no with_utls tag
+		// Reality/Vision over direct VLESS TCP is the bounded C3 profile.
+		// Other security/transport pairs retain their explicit capability gate.
+		if configuration.Protocol() == endpoint.ProtocolVLESS && configuration.Transport().Kind() == endpoint.TransportTCP && configuration.Flow() == endpoint.FlowVision {
+			return result, nil
 		}
+		result.Implemented, result.Field, result.Feature = false, "endpoint.security", "reality_transport"
+		return result, nil
+	}
+	if configuration.Flow() != endpoint.FlowNone {
+		result.Implemented, result.Field, result.Feature = false, "endpoint.flow", "vision"
 		return result, nil
 	}
 	if security.Fingerprint() != "" {
-		result.Implemented, result.Field, result.Feature = false, "endpoint.security", "client_fingerprint"
-		if profile == artifact.SingBox1141 {
-			result.Build = BuildUnavailable // no with_utls tag
+		if configuration.Protocol() != endpoint.ProtocolVLESS || configuration.Transport().Kind() != endpoint.TransportTCP {
+			result.Implemented, result.Field, result.Feature = false, "endpoint.security", "client_fingerprint"
+			return result, nil
 		}
-		return result, nil
 	}
 	if len(security.ALPN()) != 0 {
-		result.Implemented, result.Field, result.Feature = false, "endpoint.security", "alpn"
-		return result, nil
+		if configuration.Protocol() != endpoint.ProtocolVLESS || configuration.Transport().Kind() != endpoint.TransportTCP {
+			result.Implemented, result.Field, result.Feature = false, "endpoint.security", "alpn"
+			return result, nil
+		}
 	}
 	switch configuration.Transport().Kind() {
 	case endpoint.TransportTCP, endpoint.TransportWebSocket:
-	case endpoint.TransportHTTP2, endpoint.TransportGRPC:
-		result.Implemented, result.Field, result.Feature = false, "endpoint.transport", configuration.Transport().Kind().String()
-	case endpoint.TransportHTTPUpgrade:
-		result.Implemented, result.Field, result.Feature = false, "endpoint.transport", "httpupgrade"
-		if profile == artifact.Mihomo11931 {
-			result.Build = BuildUnverified // WS upgrade needs wire-compatibility proof
+	case endpoint.TransportHTTP2, endpoint.TransportGRPC, endpoint.TransportHTTPUpgrade:
+		// The bounded VLESS transport variants have direct renderer mappings.
+		// Other protocol pairings remain pending their own traffic evidence.
+		if configuration.Protocol() != endpoint.ProtocolVLESS || !configuration.TLS().Enabled() {
+			result.Implemented, result.Field, result.Feature = false, "endpoint.transport", configuration.Transport().Kind().String()
+		}
+	case endpoint.TransportXHTTP:
+		if profile == artifact.SingBox1141 {
+			result.Implemented, result.Build, result.Field, result.Feature = false, BuildUnavailable, "endpoint.transport", "xhttp"
+		} else if configuration.Protocol() != endpoint.ProtocolVLESS || !configuration.TLS().Enabled() {
+			result.Implemented, result.Field, result.Feature = false, "endpoint.transport", "xhttp_protocol"
 		}
 	default:
 		result.Implemented, result.Build, result.Field, result.Feature = false, BuildUnverified, "endpoint.transport", configuration.Transport().Kind().String()

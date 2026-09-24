@@ -37,7 +37,7 @@ type Profile struct {
 
 var (
 	Mihomo11931 = Profile{EngineMihomo, "1.19.31", "egressfox.mihomo/v1", "application/yaml"}
-	SingBox1141 = Profile{EngineSingBox, "1.14.1", "egressfox.sing-box/v1", "application/json"}
+	SingBox1141 = Profile{EngineSingBox, "1.14.1", "egressfox.sing-box/v2", "application/json"}
 )
 
 func (p Profile) String() string {

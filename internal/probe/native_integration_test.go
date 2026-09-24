@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -28,7 +30,141 @@ import (
 	"github.com/egressfox-io/egressfox/internal/engine/singbox"
 	"github.com/egressfox-io/egressfox/internal/observation"
 	"github.com/egressfox-io/egressfox/internal/probe"
+	"github.com/egressfox-io/egressfox/internal/source"
 )
+
+func TestRealityVisionControlledObservations(t *testing.T) {
+	serverBinary := os.Getenv("EGRESSFOX_SINGBOX_BINARY")
+	if serverBinary == "" {
+		t.Skip("set EGRESSFOX_SINGBOX_BINARY to a with_utls build")
+	}
+	const privateKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"
+	const publicKey = "hlF7wMOf6Ha3ZGy1407gPa9xzLrWdFDBapcK2MvAPn4"
+	work := t.TempDir()
+	deception := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	defer deception.Close()
+	deceptionPort := deception.Listener.Addr().(*net.TCPAddr).Port
+	port := availablePort(t)
+	server := map[string]any{
+		"log": map[string]any{"disabled": true},
+		"inbounds": []any{map[string]any{
+			"type": "vless", "tag": "server", "listen": "127.0.0.1", "listen_port": port,
+			"users": []any{map[string]any{"name": "synthetic", "uuid": "11111111-1111-4111-8111-111111111111", "flow": "xtls-rprx-vision"}},
+			"tls": map[string]any{"enabled": true, "server_name": "front.example.com", "reality": map[string]any{
+				"enabled": true, "private_key": privateKey, "short_id": []string{"a1b2"},
+				"handshake": map[string]any{"server": "127.0.0.1", "server_port": deceptionPort},
+			}},
+		}},
+		"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
+		"route":     map[string]any{"final": "direct"},
+	}
+	content, _ := json.Marshal(server)
+	path := filepath.Join(work, "reality-server.json")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(serverBinary, "run", "-c", path, "-D", work)
+	command.Stdout, command.Stderr = io.Discard, io.Discard
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
+	waitForPort(t, port)
+	time.Sleep(100 * time.Millisecond)
+	uri := "vless://11111111-1111-4111-8111-111111111111@127.0.0.1:" + strconv.Itoa(port) + "?security=reality&type=tcp&sni=front.example.com&pbk=" + publicKey + "&sid=a1b2&fp=chrome&flow=xtls-rprx-vision"
+	sourceID, _ := endpoint.NewSourceID("c3-reality-probe")
+	inline, err := source.NewInline(sourceID, []byte(uri), source.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := inline.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _, err := source.Parse(payload, source.ParseOptions{Format: source.FormatURIList})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := snapshot.Records()[0]
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	defer destination.Close()
+	targetID, _ := observation.NewTargetID("c3-reality")
+	target, err := observation.NewHTTPTarget(targetID, destination.URL, http.StatusNoContent, 10*time.Second, observation.HTTPOptions{AllowHTTP: true, AllowPrivate: true, MaxResponseBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vantage, _ := observation.NewVantageID("c3-native")
+	for _, test := range []struct {
+		name, env string
+		profile   artifact.Profile
+		renderer  engine.Renderer
+	}{
+		{"mihomo", "EGRESSFOX_MIHOMO_BINARY", artifact.Mihomo11931, mihomo.Renderer{}},
+		{"sing-box", "EGRESSFOX_SINGBOX_BINARY", artifact.SingBox1141, singbox.Renderer{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			binary := os.Getenv(test.env)
+			if binary == "" {
+				t.Skipf("set %s", test.env)
+			}
+			checker, err := artifact.NewNativeChecker(test.profile, binary, 10*time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			executor, err := probe.NewExecutor(probe.Config{Renderer: test.renderer, Checker: checker, Binary: binary, Vantage: vantage, StartupTimeout: 5 * time.Second, AllowPrivateEndpoints: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := executor.Execute(context.Background(), record, target)
+			if err != nil || result.Outcome() != observation.OutcomeSuccess || result.Key().Profile() != test.profile {
+				t.Fatalf("Reality probe did not succeed: %v", err)
+			}
+		})
+	}
+}
+
+func TestUnsupportedXHTTPDoesNotCreateHealthObservation(t *testing.T) {
+	binary := os.Getenv("EGRESSFOX_SINGBOX_BINARY")
+	if binary == "" {
+		t.Skip("set EGRESSFOX_SINGBOX_BINARY")
+	}
+	address, _ := endpoint.NewAddress("edge.example.com", 443)
+	credential, _ := endpoint.NewVLESSCredential("11111111-1111-4111-8111-111111111111")
+	transport, err := endpoint.NewXHTTPTransport("/xhttp", "front.example.com", "stream-one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tls, _ := endpoint.NewTLS("edge.example.com", false)
+	configuration, err := endpoint.NewExtendedConfiguration(endpoint.ProtocolVLESS, address, credential, transport, tls, endpoint.SecurityOptions{}, endpoint.FlowNone, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := endpoint.NewSourceID("xhttp")
+	recordID, _ := endpoint.NewRecordID("node")
+	provenance, _ := endpoint.NewProvenance(sourceID, recordID)
+	record, err := endpoint.NewRecord(configuration, provenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetID, _ := observation.NewTargetID("unsupported-xhttp")
+	target, err := observation.NewHTTPTarget(targetID, "https://example.com/", http.StatusOK, time.Second, observation.HTTPOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vantage, _ := observation.NewVantageID("c3-native")
+	checker, err := artifact.NewNativeChecker(artifact.SingBox1141, binary, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor, err := probe.NewExecutor(probe.Config{Renderer: singbox.Renderer{}, Checker: checker, Binary: binary, Vantage: vantage, StartupTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := executor.Execute(context.Background(), record, target)
+	if !errors.Is(err, engine.ErrUnsupported) || !reflect.DeepEqual(result, observation.Observation{}) {
+		t.Fatalf("unsupported XHTTP became an observation: %v", err)
+	}
+}
 
 func TestPinnedEnginesProduceControlledObservations(t *testing.T) {
 	serverBinary := os.Getenv("EGRESSFOX_SINGBOX_BINARY")

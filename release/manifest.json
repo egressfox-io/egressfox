@@ -99,15 +99,15 @@
     {
       "name": "sing-box",
       "version": "1.14.1",
-      "profile": "egressfox.sing-box/v1",
+      "profile": "egressfox.sing-box/v2",
       "license": "GPL-3.0-or-later",
       "build": {
-        "revision": 1,
+        "revision": 2,
         "goVersion": "1.27.1",
         "package": "./cmd/sing-box",
         "binaryName": "egressfox-engine-s",
         "overlayDirectory": "release/overlays/sing-box",
-        "tags": [],
+        "tags": ["with_utls"],
         "dependencyOverrides": [
           "github.com/go-chi/chi/v5@v5.3.0",
           "github.com/go-jose/go-jose/v4@v4.1.4",

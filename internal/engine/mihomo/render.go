@@ -28,26 +28,51 @@ type configuration struct {
 }
 
 type proxy struct {
-	Name           string         `yaml:"name"`
-	Type           string         `yaml:"type"`
-	Server         string         `yaml:"server"`
-	Port           uint16         `yaml:"port"`
-	UUID           string         `yaml:"uuid,omitempty"`
-	Password       string         `yaml:"password,omitempty"`
-	Username       string         `yaml:"username,omitempty"`
-	Cipher         string         `yaml:"cipher,omitempty"`
-	AlterID        *int           `yaml:"alterId,omitempty"`
-	TLS            bool           `yaml:"tls"`
-	ServerName     string         `yaml:"servername,omitempty"`
-	SNI            string         `yaml:"sni,omitempty"`
-	SkipCertVerify bool           `yaml:"skip-cert-verify"`
-	Network        string         `yaml:"network"`
-	WebSocket      *webSocketOpts `yaml:"ws-opts,omitempty"`
+	Name              string         `yaml:"name"`
+	Type              string         `yaml:"type"`
+	Server            string         `yaml:"server"`
+	Port              uint16         `yaml:"port"`
+	UUID              string         `yaml:"uuid,omitempty"`
+	Password          string         `yaml:"password,omitempty"`
+	Username          string         `yaml:"username,omitempty"`
+	Cipher            string         `yaml:"cipher,omitempty"`
+	AlterID           *int           `yaml:"alterId,omitempty"`
+	TLS               bool           `yaml:"tls"`
+	ServerName        string         `yaml:"servername,omitempty"`
+	SNI               string         `yaml:"sni,omitempty"`
+	SkipCertVerify    bool           `yaml:"skip-cert-verify"`
+	Network           string         `yaml:"network"`
+	WebSocket         *webSocketOpts `yaml:"ws-opts,omitempty"`
+	HTTP2             *http2Opts     `yaml:"h2-opts,omitempty"`
+	GRPC              *grpcOpts      `yaml:"grpc-opts,omitempty"`
+	XHTTP             *xhttpOpts     `yaml:"xhttp-opts,omitempty"`
+	Flow              string         `yaml:"flow,omitempty"`
+	ALPN              []string       `yaml:"alpn,omitempty"`
+	ClientFingerprint string         `yaml:"client-fingerprint,omitempty"`
+	RealityOpts       *realityOpts   `yaml:"reality-opts,omitempty"`
+}
+
+type realityOpts struct {
+	PublicKey string `yaml:"public-key"`
+	ShortID   string `yaml:"short-id"`
 }
 
 type webSocketOpts struct {
-	Path    string            `yaml:"path"`
-	Headers map[string]string `yaml:"headers,omitempty"`
+	Path        string            `yaml:"path"`
+	Headers     map[string]string `yaml:"headers,omitempty"`
+	HTTPUpgrade bool              `yaml:"v2ray-http-upgrade,omitempty"`
+}
+type http2Opts struct {
+	Host []string `yaml:"host,omitempty"`
+	Path string   `yaml:"path"`
+}
+type grpcOpts struct {
+	ServiceName string `yaml:"grpc-service-name"`
+}
+type xhttpOpts struct {
+	Path string `yaml:"path"`
+	Host string `yaml:"host,omitempty"`
+	Mode string `yaml:"mode"`
 }
 type proxyGroup struct {
 	Name    string   `yaml:"name"`
@@ -91,6 +116,13 @@ func (r Renderer) renderProxy(item engine.NamedRecord) (proxy, error) {
 	result := proxy{
 		Name: item.Name, Server: configuration.Address().Host(), Port: configuration.Address().Port(),
 		TLS: configuration.TLS().Enabled(), SkipCertVerify: configuration.TLS().InsecureSkipVerify(), Network: "tcp",
+	}
+	security := configuration.SecurityOptions()
+	result.Flow = configuration.Flow().String()
+	result.ALPN = security.ALPN()
+	result.ClientFingerprint = security.Fingerprint()
+	if reality, enabled := security.Reality(); enabled {
+		result.RealityOpts = &realityOpts{PublicKey: reality.PublicKey(), ShortID: reality.RevealShortID()}
 	}
 	switch configuration.Protocol() {
 	case endpoint.ProtocolVLESS:
@@ -138,6 +170,24 @@ func (r Renderer) renderProxy(item engine.NamedRecord) (proxy, error) {
 		if host := configuration.Transport().WebSocketHost(); host != "" {
 			result.WebSocket.Headers = map[string]string{"Host": host}
 		}
+	case endpoint.TransportHTTP2:
+		result.Network = "h2"
+		result.HTTP2 = &http2Opts{Path: configuration.Transport().Path()}
+		if host := configuration.Transport().Host(); host != "" {
+			result.HTTP2.Host = []string{host}
+		}
+	case endpoint.TransportHTTPUpgrade:
+		result.Network = "ws"
+		result.WebSocket = &webSocketOpts{Path: configuration.Transport().Path(), HTTPUpgrade: true}
+		if host := configuration.Transport().Host(); host != "" {
+			result.WebSocket.Headers = map[string]string{"Host": host}
+		}
+	case endpoint.TransportGRPC:
+		result.Network = "grpc"
+		result.GRPC = &grpcOpts{ServiceName: configuration.Transport().Service()}
+	case endpoint.TransportXHTTP:
+		result.Network = "xhttp"
+		result.XHTTP = &xhttpOpts{Path: configuration.Transport().Path(), Host: configuration.Transport().Host(), Mode: configuration.Transport().Mode()}
 	default:
 		return proxy{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.transport", Feature: configuration.Transport().Kind().String()}
 	}

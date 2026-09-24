@@ -138,6 +138,7 @@ func (manifest Manifest) Validate() error {
 		return fmt.Errorf("Kubernetes compatibility contract: %w", err)
 	}
 	expected := map[string]artifact.Profile{"mihomo": artifact.Mihomo11931, "sing-box": artifact.SingBox1141}
+	expectedBuildRevision := map[string]int{"mihomo": 1, "sing-box": 2}
 	seenEngines := make(map[string]bool)
 	for _, engine := range manifest.Engines {
 		profile, ok := expected[engine.Name]
@@ -148,7 +149,7 @@ func (manifest Manifest) Validate() error {
 		if engine.Version != profile.Version || engine.Profile != profile.RendererSchema || engine.License == "" {
 			return fmt.Errorf("engine %s does not match the compiled compatibility profile", engine.Name)
 		}
-		if engine.Build.Revision != 1 || engine.Build.GoVersion != "1.27.1" || engine.Build.Package == "" ||
+		if engine.Build.Revision != expectedBuildRevision[engine.Name] || engine.Build.GoVersion != "1.27.1" || engine.Build.Package == "" ||
 			!safeArchivePath(engine.Build.BinaryName) || strings.Contains(engine.Build.BinaryName, "/") ||
 			(engine.Build.OverlayDirectory != "" && !safeArchivePath(engine.Build.OverlayDirectory)) ||
 			!slices.IsSorted(engine.Build.DependencyOverrides) {

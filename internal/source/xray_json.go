@@ -107,7 +107,7 @@ func parseXrayOutbound(object map[string]json.RawMessage, protocol string, remai
 	}
 	var alias string
 	_ = json.Unmarshal(object["tag"], &alias)
-	transport, tls, code := parseXrayStream(object["streamSettings"])
+	transport, tls, securityOptions, code := parseXrayAdvancedStream(object["streamSettings"])
 	if code != "" {
 		return unsupported(code)
 	}
@@ -195,7 +195,7 @@ func parseXrayOutbound(object map[string]json.RawMessage, protocol string, remai
 				inputs = append(inputs, parseInput{kind: DiagnosticInvalid, code: "invalid_address"})
 				continue
 			}
-			if user.Flow != "" || user.AlterID != 0 {
+			if user.AlterID != 0 || user.Flow != "" && (protocol != "vless" || user.Flow != endpoint.FlowVision.String()) {
 				inputs = append(inputs, parseInput{kind: DiagnosticUnsupported, code: "xray_user_option"})
 				continue
 			}
@@ -208,13 +208,21 @@ func parseXrayOutbound(object map[string]json.RawMessage, protocol string, remai
 				}
 				credential, err := endpoint.NewVLESSCredential(user.ID)
 				if err == nil {
-					configuration, err = endpoint.NewConfiguration(endpoint.ProtocolVLESS, address, credential, transport, tls)
+					flow := endpoint.FlowNone
+					if user.Flow != "" {
+						flow = endpoint.FlowVision
+					}
+					configuration, err = endpoint.NewExtendedConfiguration(endpoint.ProtocolVLESS, address, credential, transport, tls, securityOptions, flow, nil)
 				}
 				if err != nil {
 					inputs = append(inputs, parseInput{kind: DiagnosticInvalid, code: "xray_credential"})
 					continue
 				}
 			case "vmess":
+				if len(securityOptions.ALPN()) != 0 || securityOptions.Fingerprint() != "" {
+					inputs = append(inputs, parseInput{kind: DiagnosticUnsupported, code: "xray_vmess_security_option"})
+					continue
+				}
 				credential, err := endpoint.NewVMessCredential(user.ID)
 				if err == nil {
 					configuration, err = endpoint.NewVMessConfiguration(address, credential, transport, tls, valueOr(user.Security, "auto"))
@@ -224,6 +232,10 @@ func parseXrayOutbound(object map[string]json.RawMessage, protocol string, remai
 					continue
 				}
 			case "trojan":
+				if len(securityOptions.ALPN()) != 0 || securityOptions.Fingerprint() != "" {
+					inputs = append(inputs, parseInput{kind: DiagnosticUnsupported, code: "xray_trojan_security_option"})
+					continue
+				}
 				credential, err := endpoint.NewTrojanCredential(user.Password)
 				if err == nil {
 					configuration, err = endpoint.NewConfiguration(endpoint.ProtocolTrojan, address, credential, transport, tls)
@@ -275,7 +287,7 @@ func parseXrayStream(raw json.RawMessage) (endpoint.Transport, endpoint.TLSConfi
 		return transport, tls, "unsupported_security"
 	}
 	for key, value := range fields {
-		if key != "security" && key != "network" && key != "method" && key != "wsSettings" && key != "tlsSettings" && !emptyJSON(value) {
+		if key != "security" && key != "network" && key != "method" && key != "wsSettings" && key != "tlsSettings" && key != "httpSettings" && key != "httpupgradeSettings" && key != "grpcSettings" && key != "xhttpSettings" && !emptyJSON(value) {
 			return transport, tls, "xray_stream_option"
 		}
 	}
@@ -300,12 +312,18 @@ func parseXrayStream(raw json.RawMessage) (endpoint.Transport, endpoint.TLSConfi
 	} else if !emptyJSON(fields["tlsSettings"]) {
 		return transport, tls, "tls_option_without_tls"
 	}
+	if network != "xhttp" && !emptyJSON(fields["xhttpSettings"]) {
+		return transport, tls, "xray_transport_option"
+	}
 	switch network {
 	case "", "tcp", "raw":
-		if !emptyJSON(fields["wsSettings"]) {
+		if !emptyJSON(fields["wsSettings"]) || !emptyJSON(fields["httpSettings"]) || !emptyJSON(fields["httpupgradeSettings"]) || !emptyJSON(fields["grpcSettings"]) {
 			return transport, tls, "xray_transport_option"
 		}
 	case "ws", "websocket":
+		if !emptyJSON(fields["httpSettings"]) || !emptyJSON(fields["httpupgradeSettings"]) || !emptyJSON(fields["grpcSettings"]) {
+			return transport, tls, "xray_transport_option"
+		}
 		if !onlyJSONKeys(fields["wsSettings"], "path", "headers") {
 			return transport, tls, "xray_ws_option"
 		}
@@ -329,10 +347,155 @@ func parseXrayStream(raw json.RawMessage) (endpoint.Transport, endpoint.TLSConfi
 		if err != nil {
 			return transport, tls, "invalid_transport"
 		}
+	case "h2", "http", "httpupgrade":
+		if !emptyJSON(fields["wsSettings"]) || !emptyJSON(fields["grpcSettings"]) || network != "httpupgrade" && !emptyJSON(fields["httpupgradeSettings"]) || network == "httpupgrade" && !emptyJSON(fields["httpSettings"]) {
+			return transport, tls, "xray_transport_option"
+		}
+		rawSettings := fields["httpSettings"]
+		if network == "httpupgrade" {
+			rawSettings = fields["httpupgradeSettings"]
+		}
+		if !onlyJSONKeys(rawSettings, "path", "host") {
+			return transport, tls, "xray_transport_option"
+		}
+		var settings struct {
+			Path string          `json:"path"`
+			Host json.RawMessage `json:"host"`
+		}
+		if json.Unmarshal(rawSettings, &settings) != nil {
+			return transport, tls, "xray_transport_option"
+		}
+		host := ""
+		if len(settings.Host) != 0 {
+			if json.Unmarshal(settings.Host, &host) != nil {
+				var hosts []string
+				if json.Unmarshal(settings.Host, &hosts) != nil || len(hosts) != 1 {
+					return transport, tls, "xray_http_host"
+				}
+				host = hosts[0]
+			}
+		}
+		var err error
+		if network == "httpupgrade" {
+			transport, err = endpoint.NewHTTPUpgradeTransport(settings.Path, host)
+		} else {
+			transport, err = endpoint.NewHTTP2Transport(settings.Path, host)
+		}
+		if err != nil {
+			return transport, tls, "invalid_transport"
+		}
+	case "grpc":
+		if !emptyJSON(fields["wsSettings"]) || !emptyJSON(fields["httpSettings"]) || !emptyJSON(fields["httpupgradeSettings"]) || !onlyJSONKeys(fields["grpcSettings"], "serviceName") {
+			return transport, tls, "xray_grpc_option"
+		}
+		var settings struct {
+			ServiceName string `json:"serviceName"`
+		}
+		if json.Unmarshal(fields["grpcSettings"], &settings) != nil {
+			return transport, tls, "xray_grpc_option"
+		}
+		var err error
+		transport, err = endpoint.NewGRPCTransport(settings.ServiceName)
+		if err != nil {
+			return transport, tls, "invalid_transport"
+		}
+	case "xhttp":
+		if !emptyJSON(fields["wsSettings"]) || !emptyJSON(fields["httpSettings"]) || !emptyJSON(fields["httpupgradeSettings"]) || !emptyJSON(fields["grpcSettings"]) || !onlyJSONKeys(fields["xhttpSettings"], "path", "host", "mode") {
+			return transport, tls, "xray_xhttp_option"
+		}
+		var settings struct {
+			Path string `json:"path"`
+			Host string `json:"host"`
+			Mode string `json:"mode"`
+		}
+		if json.Unmarshal(fields["xhttpSettings"], &settings) != nil {
+			return transport, tls, "xray_xhttp_option"
+		}
+		var err error
+		transport, err = endpoint.NewXHTTPTransport(settings.Path, settings.Host, settings.Mode)
+		if err != nil {
+			return transport, tls, "invalid_transport"
+		}
 	default:
 		return transport, tls, "unsupported_transport"
 	}
 	return transport, tls, ""
+}
+
+// parseXrayAdvancedStream keeps Reality and TLS extensions in the canonical
+// security model while reusing the strict transport decoder for the base stream.
+func parseXrayAdvancedStream(raw json.RawMessage) (endpoint.Transport, endpoint.TLSConfig, endpoint.SecurityOptions, string) {
+	if emptyJSON(raw) {
+		transport, tls, code := parseXrayStream(raw)
+		return transport, tls, endpoint.SecurityOptions{}, code
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "xray_stream"
+	}
+	var mode string
+	_ = json.Unmarshal(fields["security"], &mode)
+	var serverName, fingerprint, publicKey, shortID string
+	var alpn []string
+	var insecure bool
+	switch mode {
+	case "reality":
+		if !onlyJSONKeys(fields["realitySettings"], "serverName", "publicKey", "shortId", "fingerprint", "alpn") || !emptyJSON(fields["tlsSettings"]) {
+			return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "xray_reality_option"
+		}
+		var reality struct {
+			ServerName, PublicKey, ShortID, Fingerprint string
+			ALPN                                        []string
+		}
+		if json.Unmarshal(fields["realitySettings"], &reality) != nil {
+			return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "xray_reality_option"
+		}
+		serverName, publicKey, shortID, fingerprint, alpn = reality.ServerName, reality.PublicKey, reality.ShortID, reality.Fingerprint, reality.ALPN
+		if serverName == "" || publicKey == "" || fingerprint == "" {
+			return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "incomplete_reality"
+		}
+	case "tls":
+		if !onlyJSONKeys(fields["tlsSettings"], "serverName", "allowInsecure", "alpn", "fingerprint") || !emptyJSON(fields["realitySettings"]) {
+			return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "xray_tls_option"
+		}
+		var ordinary struct {
+			ServerName    string   `json:"serverName"`
+			AllowInsecure bool     `json:"allowInsecure"`
+			ALPN          []string `json:"alpn"`
+			Fingerprint   string   `json:"fingerprint"`
+		}
+		if len(fields["tlsSettings"]) != 0 && json.Unmarshal(fields["tlsSettings"], &ordinary) != nil {
+			return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "xray_tls_option"
+		}
+		serverName, insecure, alpn, fingerprint = ordinary.ServerName, ordinary.AllowInsecure, ordinary.ALPN, ordinary.Fingerprint
+	default:
+		if !emptyJSON(fields["realitySettings"]) {
+			return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "reality_option_without_reality"
+		}
+	}
+	var reality *endpoint.Reality
+	if mode == "reality" {
+		value, err := endpoint.NewReality(publicKey, shortID)
+		if err != nil {
+			return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "invalid_reality"
+		}
+		reality = &value
+	}
+	options, err := endpoint.NewSecurityOptions(alpn, fingerprint, reality)
+	if err != nil {
+		return endpoint.Transport{}, endpoint.TLSConfig{}, endpoint.SecurityOptions{}, "invalid_security_option"
+	}
+	// parseXrayStream checks the remaining fields and their transport semantics.
+	// Feed it only the ordinary TLS fields that it already understands.
+	if mode == "reality" || mode == "tls" {
+		fields["security"] = json.RawMessage(`"tls"`)
+		delete(fields, "realitySettings")
+		settings, _ := json.Marshal(map[string]any{"serverName": serverName, "allowInsecure": insecure})
+		fields["tlsSettings"] = settings
+	}
+	base, _ := json.Marshal(fields)
+	transport, tls, code := parseXrayStream(base)
+	return transport, tls, options, code
 }
 
 func onlyJSONKeys(raw json.RawMessage, allowed ...string) bool {

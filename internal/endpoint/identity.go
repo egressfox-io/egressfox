@@ -210,7 +210,7 @@ func canonicalConfiguration(c Configuration, includeCredential bool) []byte {
 	if version3 {
 		encoder.writeString(c.transport.Path())
 		encoder.writeString(c.transport.Host())
-		encoder.writeString(c.transport.Service())
+		encoder.writeString(c.transport.identityService())
 		encoder.writeUint8(uint8(c.advanced.flow))
 		encoder.writeUint8(uint8(len(c.advanced.security.alpn)))
 		for _, value := range c.advanced.security.alpn {

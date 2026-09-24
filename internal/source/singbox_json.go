@@ -81,7 +81,7 @@ func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseI
 	if raw := object["alter_id"]; raw != nil && json.Unmarshal(raw, &record.AlterID) != nil {
 		return parseInput{kind: DiagnosticMalformed, code: "singbox_alter_id"}
 	}
-	if record.Flow != "" || record.AlterID != 0 {
+	if record.AlterID != 0 || record.Flow != "" && (kind != "vless" || record.Flow != endpoint.FlowVision.String()) {
 		return unsupported("singbox_protocol_option")
 	}
 	if kind != "socks" && object["version"] != nil || kind != "socks" && kind != "http" && object["username"] != nil {
@@ -96,14 +96,17 @@ func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseI
 	}
 	transport := endpoint.NewTCPTransport()
 	if raw := object["transport"]; raw != nil && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		if !onlyJSONKeys(raw, "type", "path", "headers") {
+		if !onlyJSONKeys(raw, "type", "path", "headers", "host", "service_name") {
 			return unsupported("singbox_transport_option")
 		}
 		var settings struct {
-			Type, Path string
-			Headers    map[string]string
+			Type        string            `json:"type"`
+			Path        string            `json:"path"`
+			ServiceName string            `json:"service_name"`
+			Host        json.RawMessage   `json:"host"`
+			Headers     map[string]string `json:"headers"`
 		}
-		if json.Unmarshal(raw, &settings) != nil || settings.Type != "ws" {
+		if json.Unmarshal(raw, &settings) != nil {
 			return unsupported("unsupported_transport")
 		}
 		host := ""
@@ -113,20 +116,57 @@ func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseI
 			}
 			host = value
 		}
-		transport, err = endpoint.NewWebSocketTransportWithHost(settings.Path, host)
+		switch settings.Type {
+		case "ws":
+			if len(settings.Host) != 0 || settings.ServiceName != "" {
+				return unsupported("singbox_transport_option")
+			}
+			transport, err = endpoint.NewWebSocketTransportWithHost(settings.Path, host)
+		case "http":
+			if len(settings.Headers) != 0 || settings.ServiceName != "" {
+				return unsupported("singbox_transport_option")
+			}
+			if len(settings.Host) != 0 {
+				var hosts []string
+				if json.Unmarshal(settings.Host, &hosts) != nil || len(hosts) != 1 {
+					return unsupported("singbox_http_host")
+				}
+				host = hosts[0]
+			}
+			transport, err = endpoint.NewHTTP2Transport(settings.Path, host)
+		case "httpupgrade":
+			if len(settings.Headers) != 0 || settings.ServiceName != "" {
+				return unsupported("singbox_transport_option")
+			}
+			if len(settings.Host) != 0 && json.Unmarshal(settings.Host, &host) != nil {
+				return unsupported("singbox_upgrade_host")
+			}
+			transport, err = endpoint.NewHTTPUpgradeTransport(settings.Path, host)
+		case "grpc":
+			if settings.Path != "" || len(settings.Host) != 0 || len(settings.Headers) != 0 {
+				return unsupported("singbox_transport_option")
+			}
+			transport, err = endpoint.NewGRPCTransport(settings.ServiceName)
+		default:
+			return unsupported("unsupported_transport")
+		}
 		if err != nil {
 			return parseInput{kind: DiagnosticInvalid, code: "invalid_transport"}
 		}
 	}
 	tls := endpoint.DisabledTLS()
+	securityOptions := endpoint.SecurityOptions{}
 	if raw := object["tls"]; raw != nil && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		if !onlyJSONKeys(raw, "enabled", "server_name", "insecure") {
+		if !onlyJSONKeys(raw, "enabled", "server_name", "insecure", "alpn", "utls", "reality") {
 			return unsupported("singbox_tls_option")
 		}
 		var settings struct {
-			Enabled    bool   `json:"enabled"`
-			ServerName string `json:"server_name"`
-			Insecure   bool   `json:"insecure"`
+			Enabled    bool            `json:"enabled"`
+			ServerName string          `json:"server_name"`
+			Insecure   bool            `json:"insecure"`
+			ALPN       []string        `json:"alpn"`
+			UTLS       json.RawMessage `json:"utls"`
+			Reality    json.RawMessage `json:"reality"`
 		}
 		if json.Unmarshal(raw, &settings) != nil || !settings.Enabled {
 			return unsupported("singbox_tls_option")
@@ -134,6 +174,43 @@ func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseI
 		tls, err = endpoint.NewTLS(settings.ServerName, settings.Insecure)
 		if err != nil {
 			return parseInput{kind: DiagnosticInvalid, code: "invalid_tls"}
+		}
+		fingerprint := ""
+		if len(settings.UTLS) != 0 {
+			if !onlyJSONKeys(settings.UTLS, "enabled", "fingerprint") {
+				return unsupported("singbox_utls_option")
+			}
+			var utls struct {
+				Enabled     bool
+				Fingerprint string
+			}
+			if json.Unmarshal(settings.UTLS, &utls) != nil || !utls.Enabled {
+				return unsupported("singbox_utls_option")
+			}
+			fingerprint = utls.Fingerprint
+		}
+		var reality *endpoint.Reality
+		if len(settings.Reality) != 0 {
+			if !onlyJSONKeys(settings.Reality, "enabled", "public_key", "short_id") {
+				return unsupported("singbox_reality_option")
+			}
+			var value struct {
+				Enabled   bool   `json:"enabled"`
+				PublicKey string `json:"public_key"`
+				ShortID   string `json:"short_id"`
+			}
+			if json.Unmarshal(settings.Reality, &value) != nil || !value.Enabled || settings.ServerName == "" || settings.Insecure {
+				return unsupported("singbox_reality_option")
+			}
+			parsed, parseErr := endpoint.NewReality(value.PublicKey, value.ShortID)
+			if parseErr != nil {
+				return parseInput{kind: DiagnosticInvalid, code: "invalid_reality"}
+			}
+			reality = &parsed
+		}
+		securityOptions, err = endpoint.NewSecurityOptions(settings.ALPN, fingerprint, reality)
+		if err != nil {
+			return parseInput{kind: DiagnosticInvalid, code: "invalid_security_option"}
 		}
 	}
 	var configuration endpoint.Configuration
@@ -144,12 +221,19 @@ func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseI
 		}
 		credential, err := endpoint.NewVLESSCredential(record.UUID)
 		if err == nil {
-			configuration, err = endpoint.NewConfiguration(endpoint.ProtocolVLESS, address, credential, transport, tls)
+			flow := endpoint.FlowNone
+			if record.Flow != "" {
+				flow = endpoint.FlowVision
+			}
+			configuration, err = endpoint.NewExtendedConfiguration(endpoint.ProtocolVLESS, address, credential, transport, tls, securityOptions, flow, nil)
 		}
 		if err != nil {
 			return parseInput{kind: DiagnosticInvalid, code: "invalid_credential"}
 		}
 	case "trojan":
+		if len(securityOptions.ALPN()) != 0 || securityOptions.Fingerprint() != "" {
+			return unsupported("singbox_trojan_security_option")
+		}
 		if record.UUID != "" || record.Method != "" || record.Security != "" {
 			return unsupported("singbox_protocol_option")
 		}
@@ -161,6 +245,9 @@ func parseSingBoxOutbound(object map[string]json.RawMessage, kind string) parseI
 			return parseInput{kind: DiagnosticInvalid, code: "invalid_credential"}
 		}
 	case "vmess":
+		if len(securityOptions.ALPN()) != 0 || securityOptions.Fingerprint() != "" {
+			return unsupported("singbox_vmess_security_option")
+		}
 		if record.Password != "" || record.Method != "" {
 			return unsupported("singbox_protocol_option")
 		}

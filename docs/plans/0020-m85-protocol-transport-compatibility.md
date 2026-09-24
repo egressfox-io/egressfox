@@ -1,6 +1,6 @@
 # M8.5 protocol and transport compatibility
 
-Status: C1–C2 complete; C3–C4 planned. Prepared on 2026-09-24
+Status: C1–C2 complete; C3 implementation complete, qualification pending; C4 planned. Prepared on 2026-09-24
 on `docs/m85-protocol-transport-roadmap`. C1 branch:
 `codex/m85-c1-endpoint-capabilities`, based on `b8d5b50`.
 
@@ -151,3 +151,44 @@ The first kind invocation was invalidated by editing the shell harness while
 it was running; the entire stable second invocation completed successfully.
 
 Reality/Vision and advanced transports remain C3. Hysteria2 and QUIC remain C4.
+
+## C3 execution record
+
+Status: **implementation complete; validation pending** on `codex/m85-c3-advanced-transports`. The exact selected
+VLESS combinations and stage-by-stage status are in the
+[engine matrix](../designs/engine-protocol-compatibility.md#c3-bounded-profile-and-evidence-stages).
+[ADR 0022](../decisions/0022-c3-reality-and-transport-profile.md) records the
+new sing-box `with_utls` build revision, Reality/Vision, bounded transports and
+ef3 preservation. The source commit, version, Go version, overrides, GPL source
+and notices remain pinned; Dockerfile and release manifest now request the same
+uTLS build tag. Hysteria2/QUIC remain C4.
+
+Current implementation reuses the C1 endpoint model, identity, capability gate,
+probe address pinning, selection, renderer and managed activation paths. URI,
+Xray and sing-box JSON sources preserve Reality key, private short ID, SNI,
+fingerprint, ALPN and Vision. VLESS HTTP/2, HTTPUpgrade and gRPC use existing
+typed transports. A bounded XHTTP constructor admits three explicit Mihomo
+modes, with the existing ef3 service slot carrying the mode without changing
+older ef3 canonical bytes. Unsupported fields and engine pairs fail explicitly.
+
+Prior validation: `make fmt`, `make check`, `make docs` and `make vuln` passed;
+the pinned vulnerability scan found no reachable vulnerabilities (one imported
+finding was not called). A local linux/amd64 image build with sing-box
+`with_utls` succeeded. Synthetic native checks and through-engine application
+traffic passed VLESS Reality/Vision, HTTP/2, HTTPUpgrade, gRPC, WebSocket Host
+and ordinary TLS with `qq`/ALPN through both engines, and XHTTP `stream-one`,
+`stream-up` and `packet-up` through Mihomo. Reality through-engine probe tests
+passed both engines. The XHTTP sing-box capability gate rejected the
+domain-valid endpoint.
+
+The first completed kind 1.32 run passed a narrower managed Reality/Vision and
+HTTPUpgrade scenario through both engines. A later expanded managed run passed
+Reality/Vision, HTTPUpgrade, HTTP/2, gRPC, WebSocket Host and uTLS/ALPN through
+both engines. Its XHTTP server initially used a certificate path outside the
+Mihomo safe paths. The fixture now mounts the certificate under `/data/cert`;
+a direct diagnostic Mihomo client reached that corrected in-cluster server.
+The expanded run still ended at XHTTP `stream-one` with `NoEligibleEndpoints`
+after the earlier failed observations. A clean full kind rerun, including all
+three managed XHTTP modes and M8/C2 regressions, is required. The maintainer
+will execute that and the deferred broader release/build checks. C3 must not
+be marked qualified until the mandatory managed path and release inputs pass.

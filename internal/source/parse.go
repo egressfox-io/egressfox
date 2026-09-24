@@ -352,9 +352,12 @@ func parseURI(raw string, allowHTTPProxyURI bool) (endpoint.Configuration, strin
 	if values, present := query["encryption"]; present && values[0] == "" {
 		return endpoint.Configuration{}, "", DiagnosticMalformed, "empty_parameter"
 	}
-	_, hasALPN := query["alpn"]
-	if hasALPN || query.Get("flow") != "" {
-		return endpoint.Configuration{}, "", DiagnosticUnsupported, "unsupported_parameter"
+	flow := endpoint.FlowNone
+	if raw := query.Get("flow"); raw != "" {
+		if scheme != "vless" || raw != endpoint.FlowVision.String() {
+			return endpoint.Configuration{}, "", DiagnosticUnsupported, "unsupported_flow"
+		}
+		flow = endpoint.FlowVision
 	}
 	if scheme == "vless" && valueOr(query.Get("encryption"), "none") != "none" {
 		return endpoint.Configuration{}, "", DiagnosticUnsupported, "unsupported_encryption"
@@ -368,13 +371,19 @@ func parseURI(raw string, allowHTTPProxyURI bool) (endpoint.Configuration, strin
 		}
 	}
 	security := valueOr(query.Get("security"), map[bool]string{true: "tls", false: "none"}[scheme == "trojan"])
-	if security != "none" && security != "tls" {
+	if security != "none" && security != "tls" && security != "reality" {
 		return endpoint.Configuration{}, "", DiagnosticUnsupported, "unsupported_security"
 	}
 	if scheme == "trojan" && security != "tls" {
 		return endpoint.Configuration{}, "", DiagnosticInvalid, "trojan_requires_tls"
 	}
 	transportName := valueOr(query.Get("type"), "tcp")
+	if transportName != "grpc" && query.Get("serviceName") != "" {
+		return endpoint.Configuration{}, "", DiagnosticUnsupported, "transport_option"
+	}
+	if transportName != "xhttp" && query.Get("mode") != "" {
+		return endpoint.Configuration{}, "", DiagnosticUnsupported, "transport_option"
+	}
 	var transport endpoint.Transport
 	switch transportName {
 	case "tcp":
@@ -387,6 +396,17 @@ func parseURI(raw string, allowHTTPProxyURI bool) (endpoint.Configuration, strin
 			return endpoint.Configuration{}, "", DiagnosticInvalid, "websocket_path_required"
 		}
 		transport, err = endpoint.NewWebSocketTransportWithHost(query.Get("path"), query.Get("host"))
+	case "h2", "http":
+		transport, err = endpoint.NewHTTP2Transport(query.Get("path"), query.Get("host"))
+	case "httpupgrade":
+		transport, err = endpoint.NewHTTPUpgradeTransport(query.Get("path"), query.Get("host"))
+	case "grpc":
+		if query.Get("path") != "" || query.Get("host") != "" {
+			return endpoint.Configuration{}, "", DiagnosticUnsupported, "grpc_option"
+		}
+		transport, err = endpoint.NewGRPCTransport(query.Get("serviceName"))
+	case "xhttp":
+		transport, err = endpoint.NewXHTTPTransport(query.Get("path"), query.Get("host"), query.Get("mode"))
 	default:
 		return endpoint.Configuration{}, "", DiagnosticUnsupported, "unsupported_transport"
 	}
@@ -402,7 +422,7 @@ func parseURI(raw string, allowHTTPProxyURI bool) (endpoint.Configuration, strin
 		return endpoint.Configuration{}, "", DiagnosticInvalid, "invalid_address"
 	}
 	tls := endpoint.DisabledTLS()
-	if security == "tls" {
+	if security == "tls" || security == "reality" {
 		tls, err = endpoint.NewTLS(query.Get("sni"), insecure)
 		if err != nil {
 			return endpoint.Configuration{}, "", DiagnosticInvalid, "invalid_tls"
@@ -419,7 +439,28 @@ func parseURI(raw string, allowHTTPProxyURI bool) (endpoint.Configuration, strin
 	if err != nil {
 		return endpoint.Configuration{}, "", DiagnosticInvalid, "invalid_credential"
 	}
-	configuration, err := endpoint.NewConfiguration(protocol, address, credential, transport, tls)
+	var reality *endpoint.Reality
+	if security == "reality" {
+		if scheme != "vless" || query.Get("sni") == "" || insecure || query.Get("pbk") == "" || query.Get("fp") == "" {
+			return endpoint.Configuration{}, "", DiagnosticInvalid, "incomplete_reality"
+		}
+		value, realityErr := endpoint.NewReality(query.Get("pbk"), query.Get("sid"))
+		if realityErr != nil {
+			return endpoint.Configuration{}, "", DiagnosticInvalid, "invalid_reality"
+		}
+		reality = &value
+	} else if query.Get("pbk") != "" || query.Get("sid") != "" {
+		return endpoint.Configuration{}, "", DiagnosticUnsupported, "reality_option_without_reality"
+	}
+	var alpn []string
+	if raw, present := query["alpn"]; present {
+		alpn = strings.Split(raw[0], ",")
+	}
+	options, err := endpoint.NewSecurityOptions(alpn, query.Get("fp"), reality)
+	if err != nil {
+		return endpoint.Configuration{}, "", DiagnosticInvalid, "invalid_security_option"
+	}
+	configuration, err := endpoint.NewExtendedConfiguration(protocol, address, credential, transport, tls, options, flow, nil)
 	if err != nil {
 		return endpoint.Configuration{}, "", DiagnosticInvalid, "invalid_endpoint"
 	}
@@ -428,7 +469,7 @@ func parseURI(raw string, allowHTTPProxyURI bool) (endpoint.Configuration, strin
 
 func knownParameter(key string) bool {
 	switch key {
-	case "encryption", "type", "security", "sni", "allowInsecure", "path", "flow", "host", "alpn":
+	case "encryption", "type", "security", "sni", "allowInsecure", "path", "flow", "host", "serviceName", "mode", "alpn", "fp", "pbk", "sid":
 		return true
 	default:
 		return false

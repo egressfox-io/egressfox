@@ -67,8 +67,8 @@ published Gateway generation in place.
 | --- | --- | --- |
 | Envelope | Plain URI lines; one standard/Base64-unpadded URI-list envelope; JSON array of URI strings; JSON object with exactly one `nodes` or `proxies` URI array; complete Xray/V2Ray or sing-box configuration object with `outbounds`; array of complete Xray/V2Ray profiles; array of supported sing-box outbound records | Recursive Base64, arbitrary JSON search, Mihomo YAML, generic native engine config import |
 | Xray config | Extract proxy `outbounds` only; expand bounded `settings.vnext[].users[]`, `settings.servers[]`, and shorthand single settings; deduplicate across profiles | Imported routing, DNS, inbounds, observatory, metadata; service outbounds (freedom/direct, blackhole/block, DNS, loopback, balancer) are skipped; unknown connection fields are unsupported |
-| sing-box JSON | Extract bounded typed `outbounds` from a client config or typed outbound array; map only supported external proxies | Service outbounds (direct/block/selector/urltest/DNS) are skipped; native routing, listeners, unknown or advanced outbound fields are never imported |
-| VLESS | UUID, no flow, TCP or WS path/Host, none or ordinary TLS with SNI and verification flag | Reality, Vision, custom encryption, ALPN, fingerprint, gRPC, XHTTP and other transports |
+| sing-box JSON | Extract bounded typed `outbounds` from a client config or typed outbound array; map only supported external proxies, including selected C3 VLESS transport/TLS/Reality fields | Service outbounds (direct/block/selector/urltest/DNS) are skipped; native routing, listeners and unknown connection fields are never imported |
+| VLESS | UUID; TCP or WS path/Host with none or ordinary TLS; C3 URI/Xray/sing-box JSON Reality + Vision on TCP; selected ordinary-TLS HTTP/2, HTTPUpgrade and gRPC; Mihomo-only XHTTP path/Host/explicit mode | Unknown flow or fingerprint, incomplete Reality, custom encryption, unqualified headers/early data/transport options and engine-specific variants outside the [C3 matrix](engine-protocol-compatibility.md#c3-bounded-profile-and-evidence-stages) |
 | Trojan | Password, TCP or WS path/Host, ordinary TLS with SNI and verification flag | TLS-less, Reality, ALPN, fingerprint, other transports |
 | VMess | Base64 JSON share or supported Xray outbound, UUID, alter ID zero, `auto`/`aes-128-gcm`/`chacha20-poly1305`/`none`, TCP or WS path/Host, optional ordinary TLS | Legacy alter IDs, non-UUID IDs, fingerprint, ALPN, other transports |
 | Shadowsocks | SIP002 plain/percent-encoded or Base64 userinfo, legacy Base64 whole URI, and supported Xray outbound; `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`, TCP | Plugins, 2022 methods, stream ciphers, extra transport/security |
@@ -126,7 +126,7 @@ VMess/TCP with UUID, alter ID zero and `auto` security, and Shadowsocks/TCP with
 `aes-128-gcm`. Other listed protocol variants rely on the native validation and
 traffic evidence in plan 0018; they are not implied by this kind fixture.
 
-Reality remains mandatory before v1.0. Its exact public key, short ID, server
-name, fingerprint, flow and transport combination must enter a typed endpoint
-model, both renderers, probe validation and controlled traffic tests together.
-Mihomo YAML import and richer provider metadata remain separate future work.
+The C3 selected Reality/Vision and transport forms are recorded with their
+source, native, local traffic and partial managed evidence in
+[plan 0020](../plans/0020-m85-protocol-transport-compatibility.md). Mihomo YAML
+import and richer provider metadata remain separate future work.

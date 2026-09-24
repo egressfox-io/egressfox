@@ -8,10 +8,9 @@ import (
 	"unicode/utf8"
 )
 
-// Advanced transports have distinct typed constructors. XHTTP is reserved for
-// C3: its mode and parameter contract is not guessed from a share URI in C1.
+// Advanced transports have distinct typed constructors.
 type advancedTransport struct {
-	path, host, service string
+	path, host, service, mode string
 }
 
 func (t *advancedTransport) valid(kind TransportKind) bool {
@@ -20,9 +19,11 @@ func (t *advancedTransport) valid(kind TransportKind) bool {
 	}
 	switch kind {
 	case TransportHTTP2, TransportHTTPUpgrade:
-		return t.path != "" && t.service == ""
+		return t.path != "" && t.service == "" && t.mode == ""
 	case TransportGRPC:
-		return t.service != "" && t.path == "" && t.host == ""
+		return t.service != "" && t.path == "" && t.host == "" && t.mode == ""
+	case TransportXHTTP:
+		return t.path != "" && t.service == "" && (t.mode == "stream-one" || t.mode == "stream-up" || t.mode == "packet-up")
 	case TransportQUIC:
 		return t.path == "" && t.host == "" && t.service == ""
 	default:
@@ -64,6 +65,20 @@ func NewHTTPUpgradeTransport(path, host string) (Transport, error) {
 	return newHTTPTransport(TransportHTTPUpgrade, path, host)
 }
 
+// NewXHTTPTransport admits only the pinned Mihomo basic HTTP stream modes.
+// All other XHTTP options remain explicit unsupported subscription fields.
+func NewXHTTPTransport(path, host, mode string) (Transport, error) {
+	if mode != "stream-one" && mode != "stream-up" && mode != "packet-up" {
+		return Transport{}, invalid("transport.xhttp.mode", "is unsupported")
+	}
+	transport, err := newHTTPTransport(TransportXHTTP, path, host)
+	if err != nil {
+		return Transport{}, err
+	}
+	transport.advanced.mode = mode
+	return transport, nil
+}
+
 func NewGRPCTransport(service string) (Transport, error) {
 	if service == "" || len(service) > 1024 || !utf8.ValidString(service) || strings.ContainsAny(service, "\x00\r\n") {
 		return Transport{}, invalid("transport.grpc.service", "must be a nonempty bounded service name")
@@ -96,6 +111,22 @@ func (t Transport) Service() string {
 		return ""
 	}
 	return t.advanced.service
+}
+
+func (t Transport) Mode() string {
+	if t.advanced == nil {
+		return ""
+	}
+	return t.advanced.mode
+}
+
+// identityService reuses the existing v3 service slot for the newly admitted
+// XHTTP mode. Earlier v3 canonical bytes are unchanged.
+func (t Transport) identityService() string {
+	if t.kind == TransportXHTTP {
+		return t.Mode()
+	}
+	return t.Service()
 }
 
 // Reality is client authentication for a Reality TLS handshake, not an
@@ -153,7 +184,7 @@ func NewSecurityOptions(alpn []string, fingerprint string, reality *Reality) (Se
 	}
 	if fingerprint != "" {
 		switch fingerprint {
-		case "chrome", "firefox", "safari", "ios", "android", "edge":
+		case "chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq":
 		default:
 			return SecurityOptions{}, invalid("security.fingerprint", "is not in the admitted common set")
 		}
@@ -265,6 +296,9 @@ func (a *advancedConnection) valid(c Configuration) bool {
 	}
 	if c.protocol == ProtocolTrojan && c.transport.kind == TransportHTTP2 {
 		return false // pinned Mihomo Trojan has no HTTP/2 transport
+	}
+	if c.transport.kind == TransportXHTTP && c.protocol != ProtocolVLESS {
+		return false
 	}
 	if c.protocol == ProtocolSOCKS5 || c.protocol == ProtocolHTTPProxy {
 		return c.transport.kind == TransportTCP && (c.protocol == ProtocolHTTPProxy || !c.tls.enabled) && a.flow == FlowNone && a.hysteria == nil && a.security.reality == nil && a.security.fingerprint == "" && len(a.security.alpn) == 0

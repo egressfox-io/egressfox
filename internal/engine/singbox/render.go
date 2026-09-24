@@ -56,20 +56,35 @@ type outbound struct {
 	AlterID    *int       `json:"alter_id,omitempty"`
 	Method     string     `json:"method,omitempty"`
 	Network    string     `json:"network,omitempty"`
+	Flow       string     `json:"flow,omitempty"`
 	TLS        *tlsConfig `json:"tls,omitempty"`
 	Transport  *transport `json:"transport,omitempty"`
 	Outbounds  []string   `json:"outbounds,omitempty"`
 	Default    string     `json:"default,omitempty"`
 }
 type tlsConfig struct {
-	Enabled    bool   `json:"enabled"`
-	ServerName string `json:"server_name"`
-	Insecure   bool   `json:"insecure"`
+	Enabled    bool           `json:"enabled"`
+	ServerName string         `json:"server_name"`
+	Insecure   bool           `json:"insecure"`
+	ALPN       []string       `json:"alpn,omitempty"`
+	UTLS       *utlsConfig    `json:"utls,omitempty"`
+	Reality    *realityConfig `json:"reality,omitempty"`
+}
+type utlsConfig struct {
+	Enabled     bool   `json:"enabled"`
+	Fingerprint string `json:"fingerprint"`
+}
+type realityConfig struct {
+	Enabled   bool   `json:"enabled"`
+	PublicKey string `json:"public_key"`
+	ShortID   string `json:"short_id"`
 }
 type transport struct {
-	Type    string            `json:"type"`
-	Path    string            `json:"path"`
-	Headers map[string]string `json:"headers,omitempty"`
+	Type        string            `json:"type"`
+	Path        string            `json:"path,omitempty"`
+	Host        any               `json:"host,omitempty"`
+	ServiceName string            `json:"service_name,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
 }
 type routeConfig struct {
 	Final                 string `json:"final"`
@@ -116,6 +131,8 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 		return outbound{}, err
 	}
 	result := outbound{Tag: item.Name, Server: configuration.Address().Host(), ServerPort: configuration.Address().Port(), Network: "tcp"}
+	security := configuration.SecurityOptions()
+	result.Flow = configuration.Flow().String()
 	switch configuration.Protocol() {
 	case endpoint.ProtocolVLESS:
 		result.Type = "vless"
@@ -147,7 +164,13 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 		return outbound{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.protocol", Feature: configuration.Protocol().String()}
 	}
 	if configuration.TLS().Enabled() {
-		result.TLS = &tlsConfig{Enabled: true, ServerName: configuration.TLS().ServerName(), Insecure: configuration.TLS().InsecureSkipVerify()}
+		result.TLS = &tlsConfig{Enabled: true, ServerName: configuration.TLS().ServerName(), Insecure: configuration.TLS().InsecureSkipVerify(), ALPN: security.ALPN()}
+		if security.Fingerprint() != "" {
+			result.TLS.UTLS = &utlsConfig{Enabled: true, Fingerprint: security.Fingerprint()}
+		}
+		if reality, enabled := security.Reality(); enabled {
+			result.TLS.Reality = &realityConfig{Enabled: true, PublicKey: reality.PublicKey(), ShortID: reality.RevealShortID()}
+		}
 	}
 	switch configuration.Transport().Kind() {
 	case endpoint.TransportTCP:
@@ -156,6 +179,15 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 		if host := configuration.Transport().WebSocketHost(); host != "" {
 			result.Transport.Headers = map[string]string{"Host": host}
 		}
+	case endpoint.TransportHTTP2:
+		result.Transport = &transport{Type: "http", Path: configuration.Transport().Path()}
+		if host := configuration.Transport().Host(); host != "" {
+			result.Transport.Host = []string{host}
+		}
+	case endpoint.TransportHTTPUpgrade:
+		result.Transport = &transport{Type: "httpupgrade", Path: configuration.Transport().Path(), Host: configuration.Transport().Host()}
+	case endpoint.TransportGRPC:
+		result.Transport = &transport{Type: "grpc", ServiceName: configuration.Transport().Service()}
 	default:
 		return outbound{}, &engine.CapabilityError{Profile: r.Profile(), Field: "inventory.transport", Feature: configuration.Transport().Kind().String()}
 	}
