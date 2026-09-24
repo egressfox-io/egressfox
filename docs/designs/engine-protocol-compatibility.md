@@ -1,6 +1,6 @@
 # M8.5 engine protocol and transport compatibility matrix
 
-Status: C1 research and domain contract, 2026-09-24. This is the **single
+Status: C1 research and C2 traffic qualification, 2026-09-24. This is the **single
 authoritative combination matrix** for M8.5. It distinguishes an upstream source
 feature from the **exact EgressFox build profile** and from an EgressFox
 source-to-managed-traffic claim. The [M8 subscription matrix](subscription-compatibility.md)
@@ -40,8 +40,8 @@ engine version or build revision changes in C1.
 | Trojan password, TCP/WS, ordinary TLS | Supported | Supported | **Implemented and tested** in M1–M8 | Password, server/port, required TLS/SNI, WS path/Host; existing tests. Trojan without TLS is invalid domain data. |
 | VMess UUID, alter ID 0, admitted payload cipher, TCP/WS, plain or TLS | Supported | Supported | **Implemented and tested** in M8 | UUID, cipher distinct from TLS, server/port, WS path/Host, SNI; [M8 matrix](subscription-compatibility.md) and plans 0018–0019. Legacy alter IDs and other ciphers remain unsupported input. |
 | Shadowsocks plugin-free admitted AEAD methods over TCP | Supported | Supported | **Implemented and tested** in M8 | Method and password are both connection-critical; plugins and 2022 methods require separate C2 qualification. |
-| SOCKS5 TCP, optional username/password | Supported | Supported | C2 source, render, native and controlled probe/traffic pass; managed kind pending | Explicit SOCKS version 5, server/port, anonymous or username/password auth; probe DNS/IP behavior must be controlled. UDP extensions are unverified and excluded. |
-| HTTP CONNECT TCP, optional Basic auth; HTTPS CONNECT with TLS | Supported | Supported | C2 source, render, native and controlled probe/traffic pass; managed kind pending | Server/port, auth pair, TLS/SNI/verification for HTTPS. Extra headers, HTTP version, paths and HTTP/3 are unverified for the pinned pair and rejected. [sing-box HTTP](https://sing-box.sagernet.org/configuration/outbound/http/) documents fields introduced only in 1.15. |
+| SOCKS5 TCP, optional username/password | Supported | Supported | **Implemented and tested in C2**, including both managed engines | Explicit SOCKS version 5, server/port, anonymous or username/password auth; probe DNS/IP behavior is controlled. UDP extensions are unverified and excluded. |
+| HTTP CONNECT TCP, optional Basic auth; HTTPS CONNECT with TLS | Supported | Supported | **Implemented and tested in C2**, including both managed engines | Server/port, auth pair, TLS/SNI/verification for HTTPS. Extra headers, HTTP version, paths and HTTP/3 are unverified for the pinned pair and rejected. [sing-box HTTP](https://sing-box.sagernet.org/configuration/outbound/http/) documents fields introduced only in 1.15. |
 | VLESS/VMess HTTP/2 with TLS | Supported | HTTP transport with TLS; exact HTTP/2 negotiation needs proof | Typed path/host; **C3 pending** | HTTP/2 without TLS is rejected in C1 to prevent sing-box's HTTP/1.1 behavior. Pinned Mihomo Trojan has no HTTP/2 option, so Trojan/HTTP2 is invalid for the common C1 domain. |
 | VLESS/VMess/Trojan gRPC | Supported | Lite gRPC; standard `with_grpc` build absent | Typed service; **C3 pending** | Preserve service name and mode; qualify lite implementation against target servers. |
 | VLESS/VMess/Trojan HTTPUpgrade | WS upgrade mode; exact interop unverified | Dedicated HTTPUpgrade transport | Typed path/host; **C3 pending** | Early data, request headers and method require C3 types. Equivalence of Mihomo WS upgrade and sing-box HTTPUpgrade is **unverified**, so no current support claim. |
@@ -54,13 +54,13 @@ engine version or build revision changes in C1.
 
 C2 retains the four existing basic families above without changing their admitted
 TCP/WS, ordinary TLS, credential or cipher subsets. The following new forms are
-the only C2 additions; each needs the same subscription → identity → capability
-→ renderer → native check → controlled probe → managed Gateway traffic path for
-**both** pinned profiles before its status changes to implemented.
+the only C2 additions. Their subscription → identity → capability → renderer →
+native check → controlled probe → managed Gateway traffic path passed for
+**both** pinned profiles; exact evidence is in [plan 0020](../plans/0020-m85-protocol-transport-compatibility.md).
 
 | Input and canonical form | Mihomo mapping | sing-box mapping | Exclusions |
 | --- | --- | --- | --- |
-| `socks5://host:port` or `socks5://user:password@host:port` in a URI list or JSON URI array; Xray `socks` outbound; sing-box `socks` outbound with version 5 or omitted. `SOCKS5`, TCP, TLS disabled, no auth or a nonempty username/password pair. | `type: socks5`, `username`/`password` when present, `udp: false` | `type: socks`, `version: "5"`, `username`/`password` when present, `network: "tcp"` | SOCKS4/4a, SOCKS-over-TLS, UDP, `socks5h`/curl DNS semantics, empty-password auth and dial options. SOCKS5 passes the destination hostname to the proxy; endpoint-server DNS remains the engine's dial concern. |
+| `socks5://host:port` or `socks5://user:password@host:port` in a URI list or JSON URI array; Xray `socks` outbound; sing-box `socks` outbound with version 5 or omitted. `SOCKS5`, TCP, TLS disabled, no auth or a nonempty username/password pair. | `type: socks5`, `username`/`password` when present, `udp: false` | `type: socks`, `version: "5"`, `username`/`password` when present, `network: "tcp"` | Ambiguous `socks://`, SOCKS4/4a, SOCKS-over-TLS, UDP, `socks5h`/curl DNS semantics, empty-password auth and dial options. SOCKS5 passes the destination hostname to the proxy; endpoint-server DNS remains the engine's dial concern. |
 | Explicit URI-list `http://host:port` or `http://user:password@host:port`; Xray `http` outbound; sing-box `http` outbound without TLS. `HTTPProxy`, TCP, TLS disabled, no auth or nonempty Basic pair. | `type: http`, TLS false, optional `username`/`password` | `type: http`, optional `username`/`password` | Arbitrary HTTP links in auto-detected or generic JSON URI lists, extra headers, path, HTTP version and non-Basic authentication. The engine uses CONNECT for tunneled targets. |
 | Explicit URI-list `https://host:port` or `https://user:password@host:port`; sing-box `http` outbound with TLS; Xray `http` outbound with ordinary TLS stream. `HTTPProxy`, TCP, TLS enabled with effective SNI and verification mode. | `type: http`, `tls: true`, `sni`, `skip-cert-verify`, optional auth | `type: http`, `tls.enabled`, `tls.server_name`, `tls.insecure`, optional auth | HTTPS describes TLS **to the proxy**, independent of target HTTPS. Certificate pinning, ALPN, client fingerprints, custom CAs and extra HTTP options remain unsupported. |
 

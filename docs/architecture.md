@@ -150,8 +150,10 @@ Artifact and composition requirements belong in
 [artifact publication and composition](designs/artifact-publication-and-composition.md).
 
 The M8.5 C1 [typed connection and exact-profile capability foundation](decisions/0021-version-three-connection-semantics-and-capabilities.md)
-extends these boundaries without changing current source admissions or engine
-artifacts. New forms use `ef3_`; `ef1_`/`ef2_` and their persisted observations
+established these boundaries without changing then-current source admissions or
+engine artifacts. C2 adds bounded SOCKS5 and HTTP(S) proxy entries through the
+same source/model/capability/render/probe/runtime path. New forms use `ef3_`;
+`ef1_`/`ef2_` and their persisted observations
 remain intact. The [engine matrix](designs/engine-protocol-compatibility.md)
 distinguishes source support, shipped build tags and implemented traffic support.
 Subscription content never controls EgressFox routing, local listeners or runtime

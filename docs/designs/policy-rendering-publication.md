@@ -102,8 +102,9 @@ infer parity from a shared protocol name.
 The C1 [matrix](engine-protocol-compatibility.md) distinguishes pinned source,
 actual build tags and EgressFox support. `engine.CheckEndpoint` is called by both
 renderers and the probe executor before a newly modeled form can become an
-artifact or observation. Its current allowlist remains the M8 qualified subset;
-C2–C4 expand it only with matching end-to-end evidence.
+artifact or observation. Its allowlist now includes the C2-qualified SOCKS5
+and HTTP(S) TCP proxy forms; C3–C4 expand it only with matching end-to-end
+evidence.
 
 An unsupported-feature error should name the engine/version, model field and
 requested behavior, with a safe reason. It must not emit endpoint URIs or native

@@ -195,6 +195,8 @@ func parse(t testing.TB, sourceName string, data []byte, options source.ParseOpt
 func FuzzParseURIList(f *testing.F) {
 	f.Add("trojan://synthetic@example.com:443")
 	f.Add("vless://" + vlessID + "@example.com:443?security=tls")
+	f.Add("socks5://user:p%40ss@[2001:db8::1]:1080")
+	f.Add("https://user:password@proxy.example:8443")
 	f.Fuzz(func(t *testing.T, input string) {
 		if len(input) > 64<<10 {
 			t.Skip()
@@ -209,6 +211,8 @@ func FuzzParseJSON(f *testing.F) {
 	f.Add(`[{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"edge.example.com","port":443,"users":[{"id":"7ae477a8-3884-4dad-a5a8-a5106778cbbb","encryption":"none"}]}]},"streamSettings":{"network":"tcp","security":"tls"}},{"protocol":"freedom"}]}]`)
 	f.Add(`{"outbounds":[{"type":"shadowsocks","server":"edge.example.com","server_port":443,"method":"aes-128-gcm","password":"synthetic"}]}`)
 	f.Add(`{"nodes":["trojan://synthetic@example.com:443"]}`)
+	f.Add(`[{"outbounds":[{"protocol":"socks","settings":{"servers":[{"address":"proxy.example","port":1080,"users":[{"user":"synthetic","pass":"password"}]}]}},{"protocol":"http","settings":{"address":"proxy.example","port":8443},"streamSettings":{"security":"tls","tlsSettings":{"serverName":"proxy.example"}}}]}]`)
+	f.Add(`[{"type":"socks","server":"proxy.example","server_port":1080,"version":"5"},{"type":"http","server":"proxy.example","server_port":8443,"tls":{"enabled":true}}]`)
 	f.Fuzz(func(t *testing.T, input string) {
 		if len(input) > 64<<10 {
 			t.Skip()

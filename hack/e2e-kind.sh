@@ -15,14 +15,17 @@ image_repository=${image%:*}
 image_tag=${image##*:}
 node_image=$($go_command run ./tools/releasectl kubernetes --version "$kubernetes_minor" --field kind-node-image)
 image_archive=""
+cert_dir=""
 cleanup() {
 	status=$?
+	if [ -n "$cert_dir" ]; then rm -rf "$cert_dir"; fi
 	if [ "${KEEP_KIND_CLUSTER_ON_FAILURE:-0}" = 1 ] && [ "$status" -ne 0 ]; then
 		echo "keeping failed kind cluster $cluster for diagnostics" >&2
 		return "$status"
 	fi
   "$kind" delete cluster --name "$cluster" >/dev/null 2>&1 || true
   if [ -n "$image_archive" ]; then rm -f "$image_archive"; fi
+	return "$status"
 }
 trap cleanup EXIT INT TERM
 
@@ -55,7 +58,10 @@ test "$(kubectl auth can-i create statefulsets -n "$namespace" --as "$sa")" = no
 test "$(kubectl auth can-i get nodes --as "$sa")" = no
 
 uuid=11111111-1111-4111-8111-111111111111
-kubectl -n "$namespace" create secret generic proxy-server --from-literal=config.json="{\"log\":{\"level\":\"warn\"},\"inbounds\":[{\"type\":\"vless\",\"tag\":\"in\",\"listen\":\"::\",\"listen_port\":8443,\"users\":[{\"uuid\":\"$uuid\"}]},{\"type\":\"vmess\",\"tag\":\"vmess\",\"listen\":\"::\",\"listen_port\":8445,\"users\":[{\"name\":\"synthetic\",\"uuid\":\"$uuid\",\"alterId\":0}]},{\"type\":\"shadowsocks\",\"tag\":\"shadowsocks\",\"listen\":\"::\",\"listen_port\":8446,\"network\":\"tcp\",\"method\":\"aes-128-gcm\",\"password\":\"synthetic-password\"}],\"outbounds\":[{\"type\":\"direct\",\"tag\":\"direct\"}]}"
+cert_dir=$(mktemp -d)
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$cert_dir/key.pem" -out "$cert_dir/cert.pem" -subj /CN=proxy-server -days 1 >/dev/null 2>&1
+kubectl -n "$namespace" create secret generic proxy-cert --from-file=cert.pem="$cert_dir/cert.pem" --from-file=key.pem="$cert_dir/key.pem"
+kubectl -n "$namespace" create secret generic proxy-server --from-literal=config.json="{\"log\":{\"level\":\"warn\"},\"inbounds\":[{\"type\":\"vless\",\"tag\":\"in\",\"listen\":\"::\",\"listen_port\":8443,\"users\":[{\"uuid\":\"$uuid\"}]},{\"type\":\"vmess\",\"tag\":\"vmess\",\"listen\":\"::\",\"listen_port\":8445,\"users\":[{\"name\":\"synthetic\",\"uuid\":\"$uuid\",\"alterId\":0}]},{\"type\":\"shadowsocks\",\"tag\":\"shadowsocks\",\"listen\":\"::\",\"listen_port\":8446,\"network\":\"tcp\",\"method\":\"aes-128-gcm\",\"password\":\"synthetic-password\"},{\"type\":\"socks\",\"tag\":\"socks-anon\",\"listen\":\"::\",\"listen_port\":8447},{\"type\":\"socks\",\"tag\":\"socks-auth\",\"listen\":\"::\",\"listen_port\":8448,\"users\":[{\"username\":\"synthetic-user\",\"password\":\"synthetic-password\"}]},{\"type\":\"http\",\"tag\":\"http-auth\",\"listen\":\"::\",\"listen_port\":8449,\"users\":[{\"username\":\"synthetic-user\",\"password\":\"synthetic-password\"}]},{\"type\":\"http\",\"tag\":\"https-auth\",\"listen\":\"::\",\"listen_port\":8450,\"users\":[{\"username\":\"synthetic-user\",\"password\":\"synthetic-password\"}],\"tls\":{\"enabled\":true,\"certificate_path\":\"/cert/cert.pem\",\"key_path\":\"/cert/key.pem\"}}],\"outbounds\":[{\"type\":\"direct\",\"tag\":\"direct\"}]}"
 kubectl -n "$namespace" apply -f - <<YAML
 apiVersion: apps/v1
 kind: Deployment
@@ -71,15 +77,15 @@ spec:
           image: $image
           imagePullPolicy: Never
           command: [/usr/local/libexec/egressfox/egressfox-engine-s, run, -c, /config/config.json]
-          volumeMounts: [{name: config, mountPath: /config, readOnly: true}]
-      volumes: [{name: config, secret: {secretName: proxy-server}}]
+          volumeMounts: [{name: config, mountPath: /config, readOnly: true}, {name: cert, mountPath: /cert, readOnly: true}]
+      volumes: [{name: config, secret: {secretName: proxy-server}}, {name: cert, secret: {secretName: proxy-cert}}]
 ---
 apiVersion: v1
 kind: Service
 metadata: {name: proxy-server}
 spec:
   selector: {app: proxy-server}
-  ports: [{name: primary, port: 8443, targetPort: 8443}, {name: rollout, port: 8444, targetPort: 8443}, {name: vmess, port: 8445, targetPort: 8445}, {name: shadowsocks, port: 8446, targetPort: 8446}]
+  ports: [{name: primary, port: 8443, targetPort: 8443}, {name: rollout, port: 8444, targetPort: 8443}, {name: vmess, port: 8445, targetPort: 8445}, {name: shadowsocks, port: 8446, targetPort: 8446}, {name: socks-anon, port: 8447, targetPort: 8447}, {name: socks-auth, port: 8448, targetPort: 8448}, {name: http-auth, port: 8449, targetPort: 8449}, {name: https-auth, port: 8450, targetPort: 8450}]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -530,6 +536,73 @@ YAML
     password=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
     test "$(kubectl -n "$namespace" exec byo-engine -c client -- curl -sS --max-time 10 --proxy "socks5://${username}:${password}@${service}:1080" -o /dev/null -w '%{http_code}' "http://${target_ip}:8080/")" = 200
   done
+done
+# C2: every new proxy family carries managed Gateway traffic on both pinned
+# engines. HTTPS here uses an explicit test-only verification opt-out for the
+# short-lived in-cluster certificate; local tests also cover strict TLS fields.
+for variant in socks-anon socks-auth http-auth https-auth; do
+  format=URIList
+  allow_insecure=false
+  case "$variant" in
+    socks-anon) nodes="socks5://${proxy_ip}:8447" ;;
+    socks-auth) nodes="socks5://synthetic-user:synthetic-password@${proxy_ip}:8448" ;;
+    http-auth) nodes="http://synthetic-user:synthetic-password@${proxy_ip}:8449" ;;
+    https-auth)
+      nodes="{\"outbounds\":[{\"type\":\"http\",\"server\":\"${proxy_ip}\",\"server_port\":8450,\"username\":\"synthetic-user\",\"password\":\"synthetic-password\",\"tls\":{\"enabled\":true,\"server_name\":\"proxy-server\",\"insecure\":true}}]}"
+      format=JSON
+      allow_insecure=true
+      ;;
+  esac
+  kubectl -n "$namespace" create secret generic "c2-${variant}-subscription" --from-literal=nodes="$nodes"
+  kubectl -n "$namespace" apply -f - <<YAML
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata: {name: c2-${variant}}
+spec:
+  sources:
+    - id: controlled
+      secretRef: {name: c2-${variant}-subscription, key: nodes}
+      format: ${format}
+  allowInsecureTLS: ${allow_insecure}
+  probe:
+    targetSecretRef: {name: target, key: url}
+    expectedStatus: 200
+    timeout: 10s
+    allowHTTP: true
+    allowPrivateTargets: true
+    allowPrivateEndpoints: true
+  selection: {strategy: Static, topN: 1}
+  refreshInterval: 30s
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata: {name: c2-${variant}-singbox}
+spec:
+  poolRef: {name: c2-${variant}}
+  engine: SingBox
+  runtime: {managed: {}}
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata: {name: c2-${variant}-mihomo}
+spec:
+  poolRef: {name: c2-${variant}}
+  engine: Mihomo
+  runtime: {managed: {}}
+YAML
+  kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "proxypool/c2-${variant}" --timeout=3m
+  test "$(kubectl -n "$namespace" get proxypool "c2-${variant}" -o jsonpath='{.status.acceptedEndpoints}')" = 1
+  for engine in singbox mihomo; do
+    gateway="c2-${variant}-${engine}"
+    kubectl -n "$namespace" wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True "egressgateway/${gateway}" --timeout=5m
+    service=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.serviceName}')
+    auth=$(kubectl -n "$namespace" get egressgateway "$gateway" -o jsonpath='{.status.clientAuthSecretName}')
+    username=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "username" | base64decode}}')
+    password=$(kubectl -n "$namespace" get secret "$auth" -o go-template='{{index .data "password" | base64decode}}')
+    test "$(kubectl -n "$namespace" exec byo-engine -c client -- curl -sS --max-time 10 --proxy "socks5://${username}:${password}@${service}:1080" -o /dev/null -w '%{http_code}' "http://${target_ip}:8080/")" = 200
+  done
+  kubectl -n "$namespace" delete egressgateway "c2-${variant}-singbox" "c2-${variant}-mihomo" --wait=true
+  kubectl -n "$namespace" delete proxypool "c2-${variant}" --wait=true
 done
 for _ in $(seq 1 75); do
   kubectl -n "$namespace" exec "$provider_pod" -- test -f /data/conditional >/dev/null 2>&1 && break

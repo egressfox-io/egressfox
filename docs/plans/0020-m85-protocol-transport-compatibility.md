@@ -1,14 +1,15 @@
 # M8.5 protocol and transport compatibility
 
-Status: C1 complete; C2–C4 planned. Prepared on 2026-09-24
+Status: C1–C2 complete; C3–C4 planned. Prepared on 2026-09-24
 on `docs/m85-protocol-transport-roadmap`. C1 branch:
 `codex/m85-c1-endpoint-capabilities`, based on `b8d5b50`.
 
 The [P1 M8.5 roadmap](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
 owns the mandatory families, transport/security scope and milestone exit contract.
-The [current compatibility matrix](../designs/subscription-compatibility.md) is
-the implemented M8 baseline, not an M8.5 support claim. This plan orders future
-implementation work; preparing it changes no product behavior.
+The [subscription compatibility matrix](../designs/subscription-compatibility.md)
+records the implemented M8 and C2 input subsets; the [engine matrix](../designs/engine-protocol-compatibility.md)
+owns exact-profile combination status. This plan retains the initial roadmap
+preparation history and records completed C1/C2 evidence below.
 
 ## Dependencies and design gates
 
@@ -101,15 +102,15 @@ The C3/C4 contracts and explicit engine-specific gates remain in the
 
 ## C2 execution record
 
-Status: in progress on `codex/m85-c2-main-protocols`.
+Status: complete on `codex/m85-c2-main-protocols`.
 
 The [C2 qualification contract](../designs/engine-protocol-compatibility.md#c2-qualification-contract)
 fixes the exact new variants before product changes. Existing VLESS, VMess,
 Trojan and Shadowsocks basic forms, acquisition/cache, identity, probe isolation,
 selection and managed activation are reused. No CRD, release profile or schema
-change is planned. The existing ef3 private revision distinguishes authentication
-and TLS-to-proxy semantics; C2 will add golden/regression evidence rather than
-reversion old records.
+change was needed. The existing ef3 private revision distinguishes authentication
+and TLS-to-proxy semantics; C2 added golden/regression evidence without
+reverting old records.
 
 1. Extend bounded URI/Xray/sing-box decoding and existing admission for explicit
    SOCKS5, HTTP and HTTPS proxy records. Retain conservative auto detection and
@@ -130,8 +131,23 @@ through each engine. Wrong proxy credentials fail before reaching the target.
 The existing probe executor produces successful exact-profile observations for
 all three proxy families. The synthetic HTTPS server uses an explicit
 test-only verification opt-out; URI-based HTTPS keeps verification enabled.
-`make check`, `make docs`, focused race tests and `make vuln` passed before the
-managed kind gate. Kubernetes 1.32 kind qualification is running; its result
-must be recorded before C2 can be marked complete.
+`make check`, `make docs`, focused race tests and `make vuln` passed. The
+Kubernetes 1.32 envtest and full kind suite passed. The kind suite used the
+repository-built Mihomo 1.19.31 and no-tag sing-box 1.14.1 profiles and
+confirmed a Ready managed Gateway plus a controlled HTTP 200 through its
+authenticated SOCKS Service for each of SOCKS5 anonymous, SOCKS5 authenticated,
+HTTP CONNECT authenticated and HTTPS CONNECT authenticated, on **both** engines.
+The same suite retained the earlier VMess/Shadowsocks HTTP-source, LKG,
+activation, cache expiry and recovery checks. HTTPS kind traffic used a
+short-lived synthetic certificate with explicit `allowInsecureTLS`; the local
+through-engine test also proves strict verification refuses the untrusted
+certificate. No real provider credentials were used.
+
+Two five-second parser fuzz runs completed 155,431 URI-list executions and
+227,786 JSON executions without failure. `make vuln` found zero reachable
+vulnerabilities and one imported vulnerable package path that EgressFox does
+not call. No API, SQL, engine profile or release manifest change was needed.
+The first kind invocation was invalidated by editing the shell harness while
+it was running; the entire stable second invocation completed successfully.
 
 Reality/Vision and advanced transports remain C3. Hysteria2 and QUIC remain C4.

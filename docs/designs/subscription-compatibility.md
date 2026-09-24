@@ -1,7 +1,7 @@
 # Subscription compatibility matrix
 
-Status: M8 compatibility extension complete; M8.5 C2 proxy entries under
-qualification in the [C2 plan](../plans/0020-m85-protocol-transport-compatibility.md). This is the bounded input and
+Status: M8 compatibility extension and M8.5 C2 proxy entries complete, with
+evidence in the [C2 plan](../plans/0020-m85-protocol-transport-compatibility.md). This is the bounded input and
 engine contract for the pinned Mihomo v1.19.31 and sing-box v1.14.1 profiles.
 An accepted record still requires native validation and successful Gateway
 activation; parsing alone never proves reachability.
@@ -72,7 +72,7 @@ published Gateway generation in place.
 | Trojan | Password, TCP or WS path/Host, ordinary TLS with SNI and verification flag | TLS-less, Reality, ALPN, fingerprint, other transports |
 | VMess | Base64 JSON share or supported Xray outbound, UUID, alter ID zero, `auto`/`aes-128-gcm`/`chacha20-poly1305`/`none`, TCP or WS path/Host, optional ordinary TLS | Legacy alter IDs, non-UUID IDs, fingerprint, ALPN, other transports |
 | Shadowsocks | SIP002 plain/percent-encoded or Base64 userinfo, legacy Base64 whole URI, and supported Xray outbound; `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`, TCP | Plugins, 2022 methods, stream ciphers, extra transport/security |
-| SOCKS5 | `socks5://host:port` or `socks5://user:password@host:port` in URI lists or JSON URI arrays; Xray `socks` servers/users; sing-box `socks` version 5 (or omitted); TCP, optional nonempty username/password pair | SOCKS4/4a, `socks5h`/curl DNS interpretation, UDP, TLS, empty-password auth and unsupported dial options |
+| SOCKS5 | `socks5://host:port` or `socks5://user:password@host:port` in URI lists or JSON URI arrays; Xray `socks` servers/users; sing-box `socks` version 5 (or omitted); TCP, optional nonempty username/password pair | Ambiguous `socks://`, SOCKS4/4a, `socks5h`/curl DNS interpretation, UDP, TLS, empty-password auth and unsupported dial options |
 | HTTP proxy | Explicit URI-list `http://host:port` with optional Basic pair; Xray `http` settings; sing-box `http` outbound; TCP CONNECT | Arbitrary HTTP links in Auto/JSON URI arrays, paths, extra headers, non-Basic auth and HTTP version overrides |
 | HTTPS proxy | Explicit URI-list `https://host:port` with optional Basic pair; Xray `http` with ordinary TLS stream; sing-box `http` with enabled TLS; SNI and verification mode preserved | Treating an HTTPS target tunneled over a plain HTTP proxy as HTTPS-to-proxy; custom CA/pin, ALPN and fingerprint options |
 | Engines | Both pinned Mihomo and sing-box render the supported subset | Other engine versions and variants without exact-profile validation |

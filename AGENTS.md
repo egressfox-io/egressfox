@@ -11,7 +11,7 @@ exact-generation activation while preserving BYO. M8 adds managed conditional HT
 source refresh and a protected bounded cache. There is no product CLI, rich routing
 or HA topology. The P1 product sequence is designed in
 `docs/roadmap/p1.md`; M8.5 protocol and transport compatibility is the current
-mandatory milestone. C1 is complete; C2 is next, followed by C3–C4 before M9. Its
+mandatory milestone. C1–C2 are complete; C3 is next, followed by C4 before M9. Its
 [execution plan](docs/plans/0020-m85-protocol-transport-compatibility.md) records
 the C1–C4 gates. After M12, continue
 through the accepted post-P1 architecture in
@@ -127,8 +127,8 @@ SQLite integration, envtest, and real-cluster/traffic tests. Do not claim
 unavailable checks passed.
 Complete the workflow's definition of done before handoff. Completed execution
 records are indexed in [execution plans](docs/plans/README.md); the
-[P1 roadmap](docs/roadmap/p1.md) identifies M8.5 C2 main proxy protocols as
-the next bounded implementation slice, followed by C3–C4 and then M9
+[P1 roadmap](docs/roadmap/p1.md) identifies M8.5 C3 advanced transports and
+Reality as the next bounded implementation slice, followed by C4 and then M9
 target-aware selection profiles.
 For M8.5, use the C1 [exact-profile matrix](docs/designs/engine-protocol-compatibility.md)
 before claiming support. A parsed subscription record, renderer output or native syntax check

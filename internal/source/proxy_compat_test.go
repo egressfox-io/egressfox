@@ -132,3 +132,24 @@ func TestProxyJSONOutboundsExpandAndDeduplicate(t *testing.T) {
 		}
 	}
 }
+
+func TestProxyURIAndJSONCanonicalizeIdentically(t *testing.T) {
+	t.Parallel()
+	for _, pair := range []struct{ uri, json string }{
+		{"socks5://user:p%40ss@proxy.example:1080", `[{"type":"socks","server":"proxy.example","server_port":1080,"version":"5","username":"user","password":"p@ss","network":"tcp"}]`},
+		{"http://user:p%40ss@proxy.example:8080", `[{"type":"http","server":"proxy.example","server_port":8080,"username":"user","password":"p@ss"}]`},
+		{"https://user:p%40ss@proxy.example:8443", `[{"type":"http","server":"proxy.example","server_port":8443,"username":"user","password":"p@ss","tls":{"enabled":true,"server_name":"proxy.example","insecure":false}}]`},
+	} {
+		uriSnapshot, _, err := parse(t, "proxy-uri", []byte(pair.uri), source.ParseOptions{Format: source.FormatURIList})
+		if err != nil {
+			t.Fatal(err)
+		}
+		jsonSnapshot, _, err := parse(t, "proxy-json", []byte(pair.json), source.ParseOptions{Format: source.FormatJSON})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !uriSnapshot.Records()[0].Identity().Equal(jsonSnapshot.Records()[0].Identity()) {
+			t.Fatalf("URI/JSON connection identity differs for %s", uriSnapshot.Records()[0].Configuration().Protocol())
+		}
+	}
+}

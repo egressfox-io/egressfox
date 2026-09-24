@@ -15,8 +15,10 @@ M7 extends them with exact-owned managed objects, authenticated listener readine
 both-engine traffic, failed-rollout LKG, repair, bounded generation and mode-transition
 coverage. M8 adds conditional HTTP, retry, cache migration/integrity/expiry,
 Secret rotation, source status and controlled kind refresh/recovery coverage.
-Planned M8.5 extends this with a versioned engine capability matrix and the
-complete source-to-managed-traffic path for each newly claimed combination;
+M8.5 C1 established the versioned engine capability matrix. C2 adds controlled
+SOCKS5 and HTTP(S) proxy fixtures, strict HTTPS-to-proxy verification failure,
+both-engine native/through-engine traffic, and Kubernetes 1.32 managed traffic
+for each newly claimed family. C3/C4 still require their own evidence;
 the [P1 roadmap](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
 owns its exit criterion.
 Run cluster tests explicitly; ordinary unit tests do not silently create a cluster.

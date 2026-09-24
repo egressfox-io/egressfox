@@ -75,6 +75,9 @@ func TestC2ControlledProxyTraffic(t *testing.T) {
 			}
 			t.Cleanup(func() { waitProcess(serverProcess) })
 			waitForPort(t, serverPort)
+			// The listening socket may precede route initialization in the
+			// controlled sing-box server; keep this wait inside the test fixture.
+			time.Sleep(100 * time.Millisecond)
 			var requests atomic.Int32
 			destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				requests.Add(1)
@@ -140,9 +143,18 @@ func TestC2ControlledProxyTraffic(t *testing.T) {
 					t.Cleanup(func() { waitProcess(process) })
 					waitForPort(t, clientPort)
 					before := requests.Load()
-					body := requestThroughSOCKS(t, clientPort, strings.TrimPrefix(destination.URL, "http://"))
-					if body != "c2-controlled-traffic" || requests.Load() != before+1 {
-						t.Fatal("traffic did not traverse controlled proxy")
+					destinationAddress := strings.TrimPrefix(destination.URL, "http://")
+					var requestErr error
+					readyDeadline := time.Now().Add(3 * time.Second)
+					for {
+						requestErr = attemptC2HTTPThroughSOCKS(clientPort, destinationAddress)
+						if requestErr == nil || time.Now().After(readyDeadline) {
+							break
+						}
+						time.Sleep(50 * time.Millisecond)
+					}
+					if requestErr != nil || requests.Load() != before+1 {
+						t.Fatalf("traffic did not traverse controlled proxy: %v", requestErr)
 					}
 					if variant.auth {
 						wrongPort := availablePort(t)
@@ -171,36 +183,80 @@ func TestC2ControlledProxyTraffic(t *testing.T) {
 						}
 						t.Cleanup(func() { waitProcess(wrongProcess) })
 						waitForPort(t, wrongPort)
-						dialer, err := proxy.SOCKS5("tcp", "127.0.0.1:"+strconv.Itoa(wrongPort), nil, proxy.Direct)
+						if err := attemptC2HTTPThroughSOCKS(wrongPort, strings.TrimPrefix(destination.URL, "http://")); err == nil || requests.Load() != before+1 {
+							t.Fatalf("invalid proxy credentials carried traffic: dial err=%v requests before=%d after=%d", err, before, requests.Load())
+						}
+					}
+					if variant.tls {
+						strictPort := availablePort(t)
+						strictGateway := gatewayFromShareURI(t, uri, strictPort)
+						strictCandidate, err := profile.renderer.Render(strictGateway)
 						if err != nil {
 							t.Fatal(err)
 						}
-						connection, err := dialer.Dial("tcp", strings.TrimPrefix(destination.URL, "http://"))
-						if err == nil {
-							_ = connection.SetDeadline(time.Now().Add(2 * time.Second))
-							_, err = fmt.Fprintf(connection, "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
-							if err == nil {
-								response, readErr := http.ReadResponse(bufio.NewReader(connection), nil)
-								err = readErr
-								if response != nil {
-									_ = response.Body.Close()
-									if response.StatusCode != http.StatusOK {
-										err = fmt.Errorf("upstream denied request")
-									}
-								}
-							}
+						strictValidated, err := artifact.Validate(context.Background(), strictCandidate, checker)
+						if err != nil {
+							t.Fatal(err)
 						}
-						if connection != nil {
-							_ = connection.Close()
+						strictDir := t.TempDir()
+						if err := os.Chmod(strictDir, 0o700); err != nil {
+							t.Fatal(err)
 						}
-						if err == nil || requests.Load() != before+1 {
-							t.Fatalf("invalid proxy credentials carried traffic: dial err=%v requests before=%d after=%d", err, before, requests.Load())
+						strictPath := filepath.Join(strictDir, "strict-config")
+						strictPublisher, err := publish.NewFilePublisher(strictPath)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if _, err := strictPublisher.Publish(context.Background(), strictValidated); err != nil {
+							t.Fatal(err)
+						}
+						strictProcess := exec.Command(binary, profile.arguments(strictPath, strictDir)...)
+						strictProcess.Stdout, strictProcess.Stderr = io.Discard, io.Discard
+						if err := strictProcess.Start(); err != nil {
+							t.Fatal(err)
+						}
+						t.Cleanup(func() { waitProcess(strictProcess) })
+						waitForPort(t, strictPort)
+						if err := attemptC2HTTPThroughSOCKS(strictPort, strings.TrimPrefix(destination.URL, "http://")); err == nil || requests.Load() != before+1 {
+							t.Fatal("untrusted HTTPS proxy certificate carried traffic")
 						}
 					}
 				})
 			}
 		})
 	}
+}
+
+func attemptC2HTTPThroughSOCKS(port int, destination string) error {
+	dialer, err := proxy.SOCKS5("tcp", "127.0.0.1:"+strconv.Itoa(port), nil, proxy.Direct)
+	if err != nil {
+		return err
+	}
+	connection, err := dialer.Dial("tcp", destination)
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	_ = connection.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := fmt.Fprintf(connection, "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"); err != nil {
+		return err
+	}
+	response, err := http.ReadResponse(bufio.NewReader(connection), nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("upstream denied request")
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
+	if string(body) != "c2-controlled-traffic" {
+		return fmt.Errorf("upstream response mismatch")
+	}
+	return nil
 }
 
 func c2GatewayFromSource(t *testing.T, uri string, listenerPort int, insecureProxyTLS, authenticated bool) policy.Gateway {
