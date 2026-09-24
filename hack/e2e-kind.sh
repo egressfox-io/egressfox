@@ -19,7 +19,7 @@ cleanup() {
 	status=$?
 	if [ "${KEEP_KIND_CLUSTER_ON_FAILURE:-0}" = 1 ] && [ "$status" -ne 0 ]; then
 		echo "keeping failed kind cluster $cluster for diagnostics" >&2
-		return
+		return "$status"
 	fi
   "$kind" delete cluster --name "$cluster" >/dev/null 2>&1 || true
   if [ -n "$image_archive" ]; then rm -f "$image_archive"; fi
@@ -331,24 +331,15 @@ metadata: {name: source-provider-script}
 data:
   subscription: |
     #!/bin/sh
-    IFS= read -r request_line
-    request_line=$(printf '%s' "$request_line" | tr -d '\r')
-    conditional=
-    user_agent=
-    hwid=
-    device_os=
-    provider_variant=
-    while IFS= read -r line; do
-      line=$(printf '%s' "$line" | tr -d '\r')
-      [ -n "$line" ] || break
-      case "$line" in
-        'If-None-Match: '*) conditional=${line#If-None-Match: } ;;
-        'User-Agent: '*) user_agent=${line#User-Agent: } ;;
-        'X-Hwid: '*) hwid=${line#X-Hwid: } ;;
-        'X-Device-Os: '*) device_os=${line#X-Device-Os: } ;;
-        'X-Provider-Variant: '*) provider_variant=${line#X-Provider-Variant: } ;;
-      esac
-    done
+    # BusyBox uClibc ash's read builtin crashes under the pinned 1.37 kind
+    # node. Parse the HTTP header block with awk instead.
+    headers=$(awk '{sub(/\r$/, ""); if ($0 == "") exit; print}')
+    request_line=$(printf '%s\n' "$headers" | sed -n '1p')
+    conditional=$(printf '%s\n' "$headers" | sed -n 's/^If-None-Match: //p' | sed -n '1p')
+    user_agent=$(printf '%s\n' "$headers" | sed -n 's/^User-Agent: //p' | sed -n '1p')
+    hwid=$(printf '%s\n' "$headers" | sed -n 's/^X-Hwid: //p' | sed -n '1p')
+    device_os=$(printf '%s\n' "$headers" | sed -n 's/^X-Device-Os: //p' | sed -n '1p')
+    provider_variant=$(printf '%s\n' "$headers" | sed -n 's/^X-Provider-Variant: //p' | sed -n '1p')
     printf '%s' "$user_agent" >/data/user-agent
     printf '%s' "$hwid" >/data/hwid
     printf '%s' "$device_os" >/data/device-os
