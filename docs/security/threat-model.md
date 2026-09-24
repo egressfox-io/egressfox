@@ -55,6 +55,11 @@ The M8 hardening boundary narrows `allowPrivateNetworks` to ordinary private
 destinations. Loopback requires an additional opt-in; link-local/cloud metadata,
 multicast, unspecified and reserved/control ranges remain denied after DNS
 resolution, before each actual dial, including retries and same-origin redirects.
+The review correction checks known metadata addresses before the IPv6 ULA/private
+allow branch, including `fd00:ec2::254` and the covered IPv4 metadata addresses.
+IPv4-mapped IPv6 answers use the same rule. This is a bounded deny list, not an
+exhaustive catalogue of provider metadata services; cluster egress restrictions
+remain defense in depth.
 The automatic HWID derives from a durable non-secret client identity reference,
 separate from the private HTTP cache fingerprint. Cache invalidation and expiry
 never reset subscription identity.

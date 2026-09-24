@@ -31,6 +31,16 @@ var sourceSpecialUsePrefixes = []netip.Prefix{
 	netip.MustParsePrefix("2001:db8::/32"),
 }
 
+// These known metadata destinations must be rejected before an opt-in for
+// ordinary private/ULA sources. This list is deliberately not exhaustive;
+// deployment egress policy remains the broader network boundary.
+var sourceMetadataAddresses = map[netip.Addr]struct{}{
+	netip.MustParseAddr("169.254.169.254"): {},
+	netip.MustParseAddr("169.254.170.2"):   {},
+	netip.MustParseAddr("100.100.100.200"): {},
+	netip.MustParseAddr("fd00:ec2::254"):   {},
+}
+
 type Resolver interface {
 	LookupNetIP(context.Context, string, string) ([]netip.Addr, error)
 }
@@ -296,6 +306,9 @@ func publicAddress(address netip.Addr) bool {
 
 func destinationAllowed(address netip.Addr, allowPrivate, allowLoopback bool) bool {
 	address = address.Unmap()
+	if _, metadata := sourceMetadataAddresses[address]; metadata {
+		return false
+	}
 	if !address.IsValid() || address.IsUnspecified() || address.IsMulticast() || address.IsLinkLocalUnicast() {
 		return false
 	}
