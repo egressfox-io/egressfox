@@ -106,6 +106,8 @@ jobs:
           created=$(git show -s --format=%cI HEAD)
           epoch=$(git show -s --format=%ct HEAD)
           docker buildx build --platform linux/amd64,linux/arm64 --push \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             --tag "$IMAGE:$normalized" \
             --build-arg "VERSION=$normalized" --build-arg "REVISION=$revision" \
             --build-arg "CREATED=$created" --build-arg "SOURCE_DATE_EPOCH=$epoch" \

@@ -140,6 +140,19 @@ version absent from both GitHub Releases and GHCR, a clean source tree rechecked
 in the privileged job, and a
 maintainer's approval of the protected `release` environment.
 
+The Docker Buildx path compiles on the builder's native platform and cross-compiles
+the four target binaries for each requested architecture. The host-native release
+tool runs during source preparation and license collection. Go module and build
+caches are local BuildKit cache mounts; the protected publication job also imports
+and exports `ghcr.io/egressfox-io/egressfox:buildcache` to reuse completed stages on
+clean runners. The non-publishing dry run can read that cache but never writes it.
+The cache tag is mutable build acceleration, not a release image or deployment
+identity. The immutable version tag and digest remain the publication authority.
+For constrained builders, `--build-arg GO_MAX_PROCS=1 --build-arg
+GO_BUILD_PARALLEL=1 --build-arg GO_MEMORY_LIMIT=1200MiB` restores conservative
+per-stage Go limits; the defaults are 2, 2 and 1600MiB. Multiple stages can run
+concurrently, so size the builder for their combined memory use.
+
 ## Produced artifacts
 
 The release file set contains two raw operator binaries, their SPDX JSON SBOMs, four

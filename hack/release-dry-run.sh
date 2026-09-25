@@ -169,6 +169,7 @@ if [ "${RELEASE_SKIP_IMAGE:-0}" != 1 ]; then
     "$container_cli" manifest rm "$manifest_name" >/dev/null
   else
     "$container_cli" buildx build --platform linux/amd64,linux/arm64 --output "type=oci,dest=$image_archive" \
+      --cache-from type=registry,ref=ghcr.io/egressfox-io/egressfox:buildcache \
       --build-arg "VERSION=$normalized" --build-arg "REVISION=$revision" --build-arg "CREATED=$created" \
       --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" .
   fi
