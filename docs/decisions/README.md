@@ -29,6 +29,7 @@ Implementation status belongs in the [roadmap](../roadmap/README.md).
 | [0021](0021-version-three-connection-semantics-and-capabilities.md) | M8.5 v3 connection identity and exact-profile capability gate | Accepted |
 | [0022](0022-c3-reality-and-transport-profile.md) | Bounded C3 Reality, transports and sing-box uTLS build revision | Accepted |
 | [0023](0023-c4-hysteria2-quic-network-boundary.md) | Bounded C4 Hysteria2, QUIC authorization and sing-box build revision | Accepted; traffic qualification pending |
+| [0024](0024-target-aware-profiles.md) | Named target-aware profiles over one shared pool inventory | Accepted |
 
 ## Adding a decision
 
