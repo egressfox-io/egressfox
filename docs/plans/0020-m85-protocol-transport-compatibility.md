@@ -1,6 +1,36 @@
 # M8.5 protocol and transport compatibility
 
-Status: C1–C3 complete; C4 managed traffic qualified on Kubernetes 1.32, with native host traffic and actual UDP port-hopping evidence pending. Prepared on 2026-09-24
+## Native Darwin qualification checkpoint (2026-09-25)
+
+Build both exact C4 engine profiles for the host Darwin architecture using the
+release manifest's checksum-pinned source preparation, overlays, dependency
+overrides and build tags. Cache binaries under ignored `.cache/native-engines` with
+input-bound receipts; explicit native qualification must reject missing or stale
+profiles before traffic. Run controlled Hysteria2 probes for both engines and a
+test-only per-destination-port UDP forwarding fixture. Record only observed
+traffic and port evidence. Keep Linux release and kind qualification separate.
+
+Implemented on `codex/native-darwin-engines`. `make engines-native TARGETARCH=arm64`
+prepared both checksum-pinned source trees, applied manifest overrides and the
+sing-box overlay, and built Mihomo 1.19.31 (`egressfox.mihomo/v1`, `with_gvisor`)
+and sing-box 1.14.1 (`egressfox.sing-box/v3`, `with_quic,with_utls`) with Go
+1.27.1. A second invocation reused both verified binaries. The explicit test
+target also rejected the obsolete C3 sing-box path before network traffic.
+`make test-native-hysteria2` passed both controlled through-engine Hysteria2
+observations on `darwin/arm64`. Its separate per-port UDP forwarders observed
+Mihomo datagrams on ports 51518 and 64930 (74 and 2) and sing-box datagrams on
+ports 52465 and 54001 (78 and 2), while each client's streaming HTTP request
+succeeded across the default hop interval. The fixture offers eight approved
+ports and requires two observed ports within a bounded deadline; an earlier
+two-port run correctly failed when Mihomo randomly chose the same port twice.
+Those ports were ephemeral local
+test assignments, not product defaults. The counters observe the client's actual
+destination port before test-only forwarding. This closes the host-native C4
+traffic and port-use gaps for `darwin/arm64`; the earlier kind fixture alone
+still does not identify Kubernetes Service destination ports. `darwin/amd64` was
+not built or tested, and Linux release qualification remains separate.
+
+Status: C1–C4 complete for the documented bounded profiles; full release qualification remains separate. Prepared on 2026-09-24
 on `docs/m85-protocol-transport-roadmap`. C1 branch:
 `codex/m85-c1-endpoint-capabilities`, based on `b8d5b50`.
 

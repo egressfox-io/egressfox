@@ -8,13 +8,18 @@ K8S_RELEASE_VALIDATION := $(shell $(GO) run ./tools/releasectl kubernetes --fiel
 HELM ?= helm
 DOCKER ?= docker
 IMG ?= egressfox:dev
+TARGETARCH ?= $(shell $(GO) env GOARCH)
+NATIVE_REBUILD ?= 0
+NATIVE_HOST_ARCH := $(shell $(GO) env GOARCH)
+EGRESSFOX_MIHOMO_BINARY ?= .cache/native-engines/darwin/$(NATIVE_HOST_ARCH)/mihomo
+EGRESSFOX_SINGBOX_BINARY ?= .cache/native-engines/darwin/$(NATIVE_HOST_ARCH)/egressfox-engine-s
 # Untagged builds append the source commit; a dirty tree appends .dirty.
 BUILD_VERSION ?= $(shell $(GO) run ./tools/releasectl build-version --root .)
 BUILD_REVISION ?= $(shell git rev-parse HEAD)
 BUILD_CREATED ?= $(shell git show -s --format=%cI HEAD)
 BUILD_LDFLAGS := -s -w -X github.com/egressfox-io/egressfox/internal/buildinfo.version=$(BUILD_VERSION) -X github.com/egressfox-io/egressfox/internal/buildinfo.revision=$(BUILD_REVISION) -X github.com/egressfox-io/egressfox/internal/buildinfo.created=$(BUILD_CREATED)
 
-.PHONY: help fmt fmt-check vet lint test test-envtest build build-operator build-tools generate manifests generate-check helm-check docker-build e2e-kind k8s-api-compat k8s-e2e-compat k8s-compat docs check vuln release-validate release-prepare release-prepared-check release-dry-run
+.PHONY: help fmt fmt-check vet lint test test-envtest engines-native test-native-hysteria2 build build-operator build-tools generate manifests generate-check helm-check docker-build e2e-kind k8s-api-compat k8s-e2e-compat k8s-compat docs check vuln release-validate release-prepare release-prepared-check release-dry-run
 
 help:
 	@printf '%s\n' \
@@ -22,6 +27,8 @@ help:
 	  'make fmt        Format Go source' \
 	  'make lint       Check Go formatting and run go vet' \
 	  'make test       Run tests with the race detector' \
+	  'make engines-native [TARGETARCH=arm64|amd64] Build exact manifest-pinned Darwin engines' \
+	  'make test-native-hysteria2 Verify native profiles and run controlled QUIC/port-hopping traffic' \
 	  'make test-envtest K8S_VERSION=1.32 Run API/controller tests against a pinned supported Kubernetes version' \
 	  'make generate   Regenerate Kubernetes deepcopy code and CRDs/RBAC' \
 	  'make helm-check K8S_VERSION=1.32 Lint and render the Helm chart for a pinned supported Kubernetes version' \
@@ -49,6 +56,13 @@ lint: fmt-check vet
 
 test:
 	$(GO) test -race -count=1 ./...
+
+engines-native:
+	$(GO) run ./tools/releasectl native-build --arch $(TARGETARCH) $(if $(filter 1,$(NATIVE_REBUILD)),--rebuild,)
+
+test-native-hysteria2:
+	$(GO) run ./tools/releasectl native-verify --arch $(NATIVE_HOST_ARCH) --mihomo "$(EGRESSFOX_MIHOMO_BINARY)" --sing-box "$(EGRESSFOX_SINGBOX_BINARY)"
+	EGRESSFOX_NATIVE_REQUIRED=1 EGRESSFOX_MIHOMO_BINARY="$(abspath $(EGRESSFOX_MIHOMO_BINARY))" EGRESSFOX_SINGBOX_BINARY="$(abspath $(EGRESSFOX_SINGBOX_BINARY))" $(GO) test -v ./internal/probe -run '^TestHysteria2ControlledQUICObservations$$|^TestHysteria2PortHopping$$' -count=1
 
 test-envtest:
 	@assets="$$(K8S_VERSION=$(K8S_VERSION) ./hack/setup-envtest.sh)"; KUBEBUILDER_ASSETS="$$assets" $(GO) test -race -count=1 ./internal/controller/...

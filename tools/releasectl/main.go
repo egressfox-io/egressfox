@@ -19,7 +19,7 @@ const defaultManifest = "release/manifest.json"
 
 func main() {
 	if len(os.Args) < 2 {
-		fail("usage: releasectl <validate|validate-version|build-version|release-guard|kubernetes|metadata|fetch-engine|prepare-engine-source|overrides|engine-build|fetch-sources|fetch-licenses|install-tool>")
+		fail("usage: releasectl <validate|validate-version|build-version|release-guard|kubernetes|metadata|fetch-engine|prepare-engine-source|overrides|engine-build|native-build|native-verify|fetch-sources|fetch-licenses|install-tool>")
 	}
 	var err error
 	switch os.Args[1] {
@@ -46,6 +46,10 @@ func main() {
 		err = overrides(os.Args[2:])
 	case "engine-build":
 		err = engineBuild(os.Args[2:])
+	case "native-build":
+		err = nativeBuild(os.Args[2:])
+	case "native-verify":
+		err = nativeVerify(os.Args[2:])
 	case "fetch-sources":
 		err = fetchSources(os.Args[2:])
 	case "fetch-licenses":

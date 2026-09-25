@@ -114,6 +114,32 @@ and runs each available pinned client, then requires a successful bounded HTTP
 observation through that exact one-revision path. The fixture is opt-in, loopback-only,
 uses synthetic credentials, and implements no proxy protocol in EgressFox.
 
+### Native macOS C4 engines
+
+From the repository root on macOS, `make engines-native` builds both engines for
+the host architecture. `make engines-native TARGETARCH=arm64` and
+`make engines-native TARGETARCH=amd64` select an explicit Darwin target;
+`NATIVE_REBUILD=1` bypasses the checked binary cache. The binaries and JSON
+receipts live under `.cache/native-engines/darwin/<arch>/`, and prepared source
+trees live under `.cache/native-engines/sources/`. All are ignored by Git. The
+workflow uses `release/manifest.json`, `releasectl prepare-engine-source`, its
+SHA-256 download check, reviewed sing-box overlay, dependency overrides and
+release build tags. It does not use upstream prebuilt engine binaries or Docker.
+
+`make test-native-hysteria2` first checks both receipts against the current
+manifest and build inputs, the binary digest, Mach-O platform, Go build
+information, pinned version and sing-box feature tags. It then runs the
+controlled QUIC observations and native UDP port-hopping test with absolute
+paths. Missing or stale C3 binaries fail before traffic with a rebuild command;
+the explicit target cannot pass via an opt-in skip. Ordinary `go test` keeps its
+optional native-test behavior. On `darwin/arm64`, the hop fixture listens on eight
+separate allowed UDP destination ports and counts datagrams before forwarding to one
+controlled Hysteria2 server. It keeps one authenticated, obfuscated QUIC client
+session carrying streaming HTTP across the default hop interval and fails unless
+at least two distinct ports are used. The fixture is bounded to 110 seconds per engine. This
+host-level observation does not imply Kubernetes Service-port observation or
+qualify `darwin/amd64` or Linux release images.
+
 ## Kubernetes tests
 
 Fake clients can test small code paths but do not establish API-server semantics.

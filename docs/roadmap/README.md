@@ -19,11 +19,13 @@ time-bounded cache, and its compatibility completion adds request profiles and
 bounded URI/JSON subscription decoding. There is still no product CLI,
 cross-namespace API or HA topology.
 
-**Current implementation slice: M8.5 C4 Hysteria2/QUIC; M9 follows M8.5.**
+**Current implementation state: M8.5 C1–C4 complete for documented profiles; M9 is next.**
 The authoritative [P1 product roadmap](p1.md)
 defines the seven-milestone path from managed runtime through explainability.
-M7–M8 and M8.5 C1–C3 are complete; C4 managed Kubernetes 1.32 traffic passed, while host-native traffic and UDP port-hopping evidence and later
-P1 behavior are not implemented. The [exact-profile matrix](../designs/engine-protocol-compatibility.md)
+M7–M8 and M8.5 C1–C4 are complete for their documented bounded profiles;
+later P1 behavior is not implemented. Darwin/arm64 native controlled Hysteria2
+traffic and direct UDP destination-port evidence passed both engines; this does
+not qualify other host architectures or the Linux release matrix. The [exact-profile matrix](../designs/engine-protocol-compatibility.md)
 records current support and pending combinations. A public
 alpha is a separate maintainer decision and requires the protected repository
 settings in the release guide.

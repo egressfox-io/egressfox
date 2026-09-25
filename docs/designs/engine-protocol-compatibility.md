@@ -1,6 +1,6 @@
 # M8.5 engine protocol and transport compatibility matrix
 
-Status: C1–C2 complete; C3 qualified by the maintainer; C4 managed traffic passed Kubernetes 1.32 kind, while host-native traffic and actual UDP port-hopping evidence remain pending, 2026-09-25. This is the **single
+Status: C1–C2 complete; C3 qualified by the maintainer; C4 managed traffic and Darwin/arm64 native QUIC plus actual UDP port use passed; full release qualification remains separate, 2026-09-25. This is the **single
 authoritative combination matrix** for M8.5. It distinguishes an upstream source
 feature from the **exact EgressFox build profile** and from an EgressFox
 source-to-managed-traffic claim. The [M8 subscription matrix](subscription-compatibility.md)
@@ -19,7 +19,7 @@ archives produced by the existing release tooling. The C4 build profile in
 build-tag contract](https://sing-box.sagernet.org/installation/build-from-source/)
 describes `with_quic`, `with_utls` and `with_grpc`. A source type or current
 upstream website alone is **not** a claim that this build can execute it. The
-C4 host-native traffic and actual UDP port-hopping use remain separate qualification gates.
+C4 host-native traffic and per-destination-port UDP evidence passed on Darwin/arm64; other platforms retain separate qualification gates.
 
 ## Meaning of status
 
@@ -47,7 +47,7 @@ C4 host-native traffic and actual UDP port-hopping use remain separate qualifica
 | VLESS HTTPUpgrade over TLS | WS upgrade mode | Dedicated HTTPUpgrade transport | Basic path/Host **local and managed traffic passed** both engines; Kubernetes 1.32 full kind suite passed | Mihomo `ws-opts.v2ray-http-upgrade` interoperated with the pinned sing-box server. Early data, headers and method are unqualified and rejected. VMess/Trojan remain unqualified. |
 | VLESS TCP + Reality + Vision, SNI/ALPN/client fingerprint | Supported | `with_utls` build revision 2 supports Reality/Vision | URI/Xray/sing-box JSON, native validation and **local and managed traffic passed** both engines; Kubernetes 1.32 full kind suite passed | UUID, flow, public key, private short ID, SNI, ordered ALPN and fingerprint are preserved. No TLS substitution. Ordinary TLS Vision and Reality with advanced transports remain unqualified. [Pinned sing-box Reality implementation](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/common/tls/reality_client.go) requires uTLS. |
 | VLESS XHTTP with ordinary TLS, path/Host and explicit `stream-one`, `stream-up` or `packet-up` mode | **Local traffic qualified in all three modes** | **Unsupported**: absent from pinned transport union | Mihomo-only URI/Xray input, native validation and local traffic; managed Mihomo path passed Kubernetes 1.32 kind | `auto` and advanced headers/padding/upload/download options are rejected until their connection semantics can be bounded. No WS/gRPC substitution. |
-| Hysteria2 over UDP/QUIC with TLS, password, bandwidth, optional Salamander and bounded port hopping | Source supports | `with_quic,with_utls` revision 3 source supports | **Managed Gateway traffic passed both engines in Kubernetes 1.32 kind; host-native traffic and observed use of two UDP destination ports remain pending** | UDP server/port, password, TLS/SNI, ALPN, verification mode, paired integer Mbps, Salamander password and at most 16 port entries covering at most 256 UDP ports. Probe resolves and checks every DNS answer, then pins the engine server to one authorized literal while retaining SNI and the full port set. Both engines' hop configurations use that same server address. The kind fixture maps two Service ports to one backend listener, so continued traffic after the hop interval does not prove a port change. Non-default hop interval, Gecko, realm, QUIC tuning and certificate pinning are rejected at ingestion. [Pinned Mihomo options](https://github.com/MetaCubeX/mihomo/blob/ab405bad5beeeac8b003bb01f60f134f6df54471/adapter/outbound/hysteria2.go); [pinned sing-box options](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/option/hysteria2.go). |
+| Hysteria2 over UDP/QUIC with TLS, password, bandwidth, optional Salamander and bounded port hopping | Source supports | `with_quic,with_utls` revision 3 source supports | **Managed traffic passed both engines in Kubernetes 1.32 kind; controlled QUIC and two observed UDP destination ports passed both on Darwin/arm64** | UDP server/port, password, TLS/SNI, ALPN, verification mode, paired integer Mbps, Salamander password and at most 16 port entries covering at most 256 UDP ports. Probe resolves and checks every DNS answer, then pins the engine server to one authorized literal while retaining SNI and the full port set. Both engines' hop configurations use that same server address. The kind fixture maps two Service ports to one backend listener, so continued traffic after the hop interval does not prove a port change. Non-default hop interval, Gecko, realm, QUIC tuning and certificate pinning are rejected at ingestion. [Pinned Mihomo options](https://github.com/MetaCubeX/mihomo/blob/ab405bad5beeeac8b003bb01f60f134f6df54471/adapter/outbound/hysteria2.go); [pinned sing-box options](https://github.com/SagerNet/sing-box/blob/1ac1a339cb1223e9c70eae14c44411c75033c02d/option/hysteria2.go). |
 | Hysteria2 over TCP; Reality downgraded to ordinary TLS; XHTTP replaced by WS | Invalid or incompatible | Invalid or incompatible | **Unsupported** permanently as substitutions | These do not preserve the requested wire protocol. |
 
 ## C2 qualification contract
@@ -130,8 +130,8 @@ keeps the original `ef1_`/`ef2_` bytes and protected observations intact.
 - **C4:** The build revision enables `with_quic` and keeps `with_utls`. The
   bounded typed Hysteria2 subset, UDP address pinning, renderer and test fixtures
   are implemented. Managed traffic passed both engines in the Kubernetes 1.32 kind
-  suite. Explicit host-native controlled QUIC traffic and observed use of two UDP
-  destination ports remain required qualification evidence. Realm is unsupported. No custom
+  suite. Controlled QUIC and two distinct UDP destination ports were observed
+  for both engines on Darwin/arm64 with test-only pre-forwarding counters. Realm is unsupported. No custom
   QUIC client exists in EgressFox.
 
 Each new combination must pass subscription → model → identity/dedup → exact

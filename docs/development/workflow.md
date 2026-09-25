@@ -30,6 +30,8 @@ VERSION=v0.1.0-dev.1 make release-dry-run
 | `make fmt` | Format tracked and non-ignored new Go files with gofmt |
 | `make lint` | Non-mutating formatting check and `go vet ./...` |
 | `make test` | `go test -race -count=1 ./...`; covers repository tooling and all current Go domains |
+| `make engines-native [TARGETARCH=arm64\|amd64]` | Build the exact manifest-pinned Mihomo and sing-box profiles natively on macOS into ignored `.cache/native-engines` with input-bound receipts; the default architecture is the host |
+| `make test-native-hysteria2` | Require both current host-native profiles, then run controlled Hysteria2 QUIC and observed UDP port-hopping traffic; missing or stale binaries fail |
 | `make build` | Builds the operator with bounded Git-derived version/revision metadata and the repository tooling |
 | `make docs` | Offline repository-local Markdown file/heading-link checks |
 | `make check` | Lint, tests, build, docs, and unstaged/staged whitespace checks |

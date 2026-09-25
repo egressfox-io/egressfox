@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,8 +127,12 @@ func TestRealityVisionControlledObservations(t *testing.T) {
 func TestHysteria2ControlledQUICObservations(t *testing.T) {
 	serverBinary := os.Getenv("EGRESSFOX_SINGBOX_BINARY")
 	if serverBinary == "" {
+		if os.Getenv("EGRESSFOX_NATIVE_REQUIRED") == "1" {
+			t.Fatal("C4 sing-box binary is required; run make engines-native")
+		}
 		t.Skip("set EGRESSFOX_SINGBOX_BINARY to the with_quic,with_utls build")
 	}
+	requireHysteria2ServerProfile(t, serverBinary)
 	work := t.TempDir()
 	certificate, key := writeCertificate(t, work)
 	port := availablePort(t)
@@ -187,6 +192,9 @@ func TestHysteria2ControlledQUICObservations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			binary := os.Getenv(test.env)
 			if binary == "" {
+				if os.Getenv("EGRESSFOX_NATIVE_REQUIRED") == "1" {
+					t.Fatalf("%s binary is required; run make engines-native", test.name)
+				}
 				t.Skipf("set %s", test.env)
 			}
 			checker, err := artifact.NewNativeChecker(test.profile, binary, 10*time.Second)
@@ -199,9 +207,17 @@ func TestHysteria2ControlledQUICObservations(t *testing.T) {
 			}
 			result, err := executor.Execute(context.Background(), snapshot.Records()[0], target)
 			if err != nil || result.Outcome() != observation.OutcomeSuccess {
-				t.Fatalf("Hysteria2 UDP probe: %v", err)
+				t.Fatalf("Hysteria2 UDP probe outcome=%v error=%v", result.Outcome(), err)
 			}
 		})
+	}
+}
+
+func requireHysteria2ServerProfile(t *testing.T, binary string) {
+	t.Helper()
+	output, err := exec.Command(binary, "version").CombinedOutput()
+	if err != nil || !strings.Contains(string(output), "compatibility version "+artifact.SingBox1141.Version) || !strings.Contains(string(output), "Tags: with_quic,with_utls") {
+		t.Fatal("Hysteria2 fixture requires the current sing-box C4 with_quic,with_utls build; run make engines-native")
 	}
 }
 
