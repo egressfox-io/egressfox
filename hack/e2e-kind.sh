@@ -7,6 +7,15 @@ case "$parallelism" in
   *) echo "EGRESSFOX_E2E_PARALLELISM must be an integer from 1 to 5 (got '$parallelism')" >&2; exit 2 ;;
 esac
 
+jobs=${EGRESSFOX_E2E_SCENARIOS-'lifecycle http-refresh protocols advanced-transports hysteria2 profiles'}
+[ -n "$jobs" ] || { echo 'EGRESSFOX_E2E_SCENARIOS must name at least one scenario' >&2; exit 2; }
+for job in $jobs; do
+  case "$job" in
+    lifecycle|http-refresh|protocols|advanced-transports|hysteria2|profiles) ;;
+    *) echo "unknown E2E scenario: $job" >&2; exit 2 ;;
+  esac
+done
+
 kind=$(./hack/setup-kind.sh)
 go_command=${GO:-go}
 kubernetes_minor=${K8S_VERSION:-$($go_command run ./tools/releasectl kubernetes --field minimum-supported)}
@@ -21,7 +30,6 @@ image_archive=""
 log_dir=${EGRESSFOX_E2E_LOG_DIR:-dist/e2e-logs/$(date +%Y%m%d-%H%M%S)-$$}
 suite_started=$(date +%s)
 run_id=$(date +%s)-$$
-jobs='lifecycle http-refresh protocols advanced-transports hysteria2'
 started_jobs=""
 all_pids=""
 failed=0

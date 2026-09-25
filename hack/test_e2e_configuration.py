@@ -27,6 +27,16 @@ class ParallelismConfigurationTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("EGRESSFOX_E2E_PARALLELISM must be an integer from 1 to 5", result.stderr)
 
+    def test_invalid_scenario_fails_before_kind_setup(self):
+        environment = os.environ.copy()
+        environment["EGRESSFOX_E2E_SCENARIOS"] = "profiles nonexistent"
+        result = subprocess.run(
+            ["sh", "./hack/e2e-kind.sh"], cwd=ROOT, env=environment,
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unknown E2E scenario: nonexistent", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

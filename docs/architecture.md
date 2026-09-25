@@ -1,7 +1,9 @@
 # Architecture and domain language
 
-Status: M1–M8 core and Kubernetes behavior implemented; P1 M8.5–M12 designed; the
-standalone/runtime/publication architecture is accepted future direction. [ADRs](decisions/README.md)
+Status: M1–M8 core and Kubernetes behavior implemented; M8.5 qualified for its
+documented profiles; M9 implementation prepared pending maintainer qualification;
+M10–M12 designed. The standalone/runtime/publication architecture is accepted
+future direction. [ADRs](decisions/README.md)
 record durable boundaries; detailed designs distinguish shipped behavior from
 requirements for later work.
 

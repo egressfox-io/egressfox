@@ -371,3 +371,7 @@ namespace/cluster RBAC, BYO regression, both managed engines, authentication,
 controlled traffic, exact-generation rollout failure/LKG and recovery, bounded
 generations, owned-resource repair, operator restart, mode transitions and a
 controlled HTTP subscription with conditional/no-op, fallback, recovery and expiry.
+The M9 scenario is selectable for a focused preliminary run with
+`EGRESSFOX_E2E_SCENARIOS=profiles K8S_VERSION=1.32 make e2e-kind`; the ordinary
+suite includes it and can run four namespace scenarios concurrently with
+`EGRESSFOX_E2E_PARALLELISM=4`.

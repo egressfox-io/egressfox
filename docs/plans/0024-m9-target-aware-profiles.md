@@ -1,6 +1,6 @@
 # M9 target-aware profiles
 
-Status: in progress. Date: 2026-09-25. Branch: `codex/m9-target-aware-profiles`.
+Status: implementation prepared; maintainer qualification pending. Date: 2026-09-25. Branch: `codex/m9-target-aware-profiles`.
 Baseline: `e1a6469`.
 
 ## Objective and boundaries
@@ -17,17 +17,28 @@ selection, activation, source cache and engine capability.
 
 ## Checkpoints
 
-- [ ] Named API, generated CRDs, validation, documentation and compatibility tests.
-- [ ] Profile-specific evidence, bounded scheduling, selection and publication tests.
-- [ ] Status, envtest and controlled parallel kind scenario.
-- [ ] Lightweight verification, reviewed commits and clean handoff.
+- [x] Named API, generated CRDs, validation, documentation and compatibility tests.
+- [x] Profile-specific evidence, bounded scheduling, selection and publication guard tests.
+- [x] Status, envtest assertions and controlled parallel kind scenario prepared.
+- [x] Lightweight verification, reviewed commits and clean handoff.
+- [ ] Maintainer full checks, envtest, kind traffic and vulnerability qualification.
 
 ## Progress and evidence
 
-Branch created from a clean `e1a6469` checkout. No expensive validation is to be
-run in this task.
+Branch created from a clean `e1a6469` checkout. Q15 was committed as `81e305b`.
+Focused Go profile/selection/reconcile/operator/controller tests, a repository-wide
+compile-only `go test ./... -run '^$'`, `make generate-check`, `make docs`,
+`git diff --check`, `sh -n` and the E2E configuration test passed.
+The full envtest suite, kind, native traffic, race suite, Docker and vulnerability
+scan were intentionally not run under the maintainer's instruction.
 
 ## Resume and handoff
 
-Implement the API and adapter against the existing M4/M5 packages. Record exact
-lightweight checks and unfinished qualification here.
+The maintainer should run the M9 focused tests and full qualification commands in
+the handoff. The demand-driven scheduler stores probe quotas and cursors in the
+single operator process; durable SQLite observations and Gateway selection state
+recover normally. A process restart opens a new bounded quota window. Profile
+incarnation changes after an observed removal; updates too rapid for the controller
+to observe as separate resource states cannot be distinguished from an in-place
+edit. The kind scenario uses synthetic target CGI responses and remains unverified
+until the maintainer executes it. Do not begin M10 in this task.
