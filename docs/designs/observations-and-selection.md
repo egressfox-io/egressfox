@@ -149,6 +149,11 @@ failure cooldown. Missing, insufficient, stale, unreliable, failed, cooldown and
 recovery cases have separate safe reason codes. Unknown revisions require probes;
 they are not selected with a fabricated zero score. M4 can probe the complete
 admitted inventory independently, so selection is not required for exploration.
+The operator's bounded 64-job batch filters by the Gateway's exact engine profile
+before filling capacity. Incompatible records remain in shared inventory and
+produce no negative health observation. The round-robin cursor advances through
+the inspected inventory so an eligible record beyond an incompatible prefix can
+be scheduled in the same reconciliation.
 
 Future static source/country/ASN/tag policy restrictions also belong before ranking.
 Hard policy restrictions cannot be traded for a higher score. Untrusted metadata

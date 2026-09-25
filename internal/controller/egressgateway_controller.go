@@ -135,6 +135,12 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 		}
 	}
 	if pipelineErr != nil || runtimeErr != nil {
+		var coded interface{ Code() string }
+		if errors.As(pipelineErr, &coded) && coded.Code() == "snapshot_obsolete" {
+			// Rebuild inventory once from current inputs; subsequent empty/expired
+			// inventory follows the ordinary bounded refresh schedule.
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
 		return ctrl.Result{RequeueAfter: requeueAfter(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
 	}
 	return ctrl.Result{RequeueAfter: requeueAfter(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil

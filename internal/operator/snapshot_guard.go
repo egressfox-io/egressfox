@@ -3,6 +3,7 @@ package operator
 import (
 	"context"
 	"errors"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -10,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	egressv1alpha1 "github.com/egressfox-io/egressfox/api/v1alpha1"
+	"github.com/egressfox-io/egressfox/internal/endpoint"
 	"github.com/egressfox-io/egressfox/internal/state"
 )
 
@@ -26,11 +28,32 @@ type SnapshotGuard struct {
 	secrets       map[types.NamespacedName]ResourceRevision
 	cache         *state.Store
 	cacheVersions map[string]CacheVersion
+	now           func() time.Time
 }
 
 func (g *SnapshotGuard) BindCache(store *state.Store, versions map[string]CacheVersion) {
 	g.cache = store
 	g.cacheVersions = versions
+	if g.now == nil {
+		g.now = time.Now
+	}
+}
+
+// BindSelected limits expiry checks to HTTP sources that supplied a selected
+// record. Revision checks still cover the complete inventory snapshot.
+func (g *SnapshotGuard) BindSelected(records []endpoint.Record) {
+	selected := make(map[string]bool)
+	for _, record := range records {
+		for _, provenance := range record.Provenance() {
+			selected[provenance.SourceID().String()] = true
+		}
+	}
+	for key, version := range g.cacheVersions {
+		if !selected[version.SourceID] {
+			version.ExpiresAt = time.Time{}
+			g.cacheVersions[key] = version
+		}
+	}
 }
 
 type objectRevision struct {
@@ -79,6 +102,9 @@ func (g *SnapshotGuard) Check(ctx context.Context) error {
 		}
 	}
 	for key, expected := range g.cacheVersions {
+		if !expected.ExpiresAt.IsZero() && !g.now().Before(expected.ExpiresAt) {
+			return ErrSnapshotObsolete
+		}
 		actual, validatedAt, found, err := g.cache.SourceCacheVersion(ctx, key)
 		if err != nil || found != expected.Present || found && (actual != expected.Digest || !validatedAt.Equal(expected.ValidatedAt)) {
 			return ErrSnapshotObsolete

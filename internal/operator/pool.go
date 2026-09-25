@@ -48,6 +48,9 @@ type CacheVersion struct {
 	Digest      [32]byte
 	ValidatedAt time.Time
 	Present     bool
+	SourceID    string
+	// ExpiresAt is set only after this cache entry contributed to inventory.
+	ExpiresAt time.Time
 }
 
 type SourceState struct {
@@ -102,7 +105,7 @@ func BuildPoolWithCache(ctx context.Context, reader client.Reader, pool *egressv
 				result.Sources = append(result.Sources, SourceState{ID: desired.ID, State: "Unavailable", Reason: "CacheMissing"})
 				continue
 			}
-			result.CacheVersions[config.Key] = CacheVersion{Digest: sha256.Sum256(entry.Body), ValidatedAt: entry.ValidatedAt, Present: true}
+			result.CacheVersions[config.Key] = CacheVersion{Digest: sha256.Sum256(entry.Body), ValidatedAt: entry.ValidatedAt, Present: true, SourceID: config.SourceID.String()}
 			maxStale := maxSourceStale(desired.HTTP.MaxStale)
 			if now.Before(entry.ValidatedAt.Add(-5 * time.Minute)) {
 				result.Sources = append(result.Sources, SourceState{ID: desired.ID, State: "Unavailable", Reason: "CacheClockInvalid"})
@@ -137,6 +140,11 @@ func BuildPoolWithCache(ctx context.Context, reader client.Reader, pool *egressv
 			result.Rejected += report.Rejected()
 			result.Unsupported += report.Unsupported
 			expires := entry.ValidatedAt.Add(maxStale)
+			if snapshot.Len() > 0 {
+				version := result.CacheVersions[config.Key]
+				version.ExpiresAt = expires
+				result.CacheVersions[config.Key] = version
+			}
 			if result.NextCacheExpiry.IsZero() || expires.Before(result.NextCacheExpiry) {
 				result.NextCacheExpiry = expires
 			}

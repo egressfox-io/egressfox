@@ -1,12 +1,12 @@
 # M8.5 protocol and transport compatibility
 
-Status: C1–C3 complete; C4 implementation ready for maintainer qualification. Prepared on 2026-09-24
+Status: C1–C3 complete; C4 managed traffic qualified on Kubernetes 1.32, with native host traffic and actual UDP port-hopping evidence pending. Prepared on 2026-09-24
 on `docs/m85-protocol-transport-roadmap`. C1 branch:
 `codex/m85-c1-endpoint-capabilities`, based on `b8d5b50`.
 
 ## C4 implementation record
 
-Status: implementation on `codex/m85-c4-hysteria2-quic`; maintainer qualification pending.
+Status: implementation on `codex/m85-c4-hysteria2-quic`; managed traffic qualified, remaining C4 evidence below.
 The existing ef3 Hysteria2 password, bandwidth, Salamander and TLS fields are
 reused. A bounded port set is added only to Hysteria2 ef3 encodings that use it;
 earlier ef3 bytes remain unchanged. URI and sing-box JSON ingestion reject unknown
@@ -57,7 +57,15 @@ as a bare number in `server_ports`, while this pinned sing-box build requires
 entries passed native check. The sing-box renderer now expands only singleton
 entries to that form; the existing renderer test reproduces the defect before
 the correction and passes afterward. Full managed Gateway traffic and C4
-qualification remain pending the maintainer's next kind run.
+qualification remained pending that run.
+
+### Final review correction and qualification record
+
+The maintainer subsequently completed `EGRESSFOX_E2E_PARALLELISM=4 K8S_VERSION=1.32 make e2e-kind` successfully. All five isolated scenarios passed: lifecycle, HTTP refresh, main protocols, advanced transports and Hysteria2. Both managed Hysteria2 Gateways served application traffic through authenticated SOCKS Services and reported successful Gateway Conditions. The C3 scenarios included Reality/Vision and supported Mihomo XHTTP modes. This run does not establish which UDP Service port was used: both exposed ports map to one backend listener. Traffic before and after the default hop interval proves continued usability, not actual port switching. A test-only per-Service-port observation mechanism remains necessary to qualify hopping itself. Host-level controlled QUIC traffic and full multi-platform release qualification are separate pending gates.
+
+The final review found and corrected three bounded issues. Probe authorization now rejects known metadata addresses and reserved/control destinations even when private endpoint or target access is enabled; ordinary ULA and authorized loopback remain usable. The same authorization path pins TCP and Hysteria2 UDP destinations before engine execution. The publication guard now retains each admitted HTTP source's original expiration deadline and rejects a selected artifact once a contributing cache entry expires, while retaining existing LKG and receipt-bound state. An obsolete snapshot receives one short bounded reconciliation; an already expired entry is excluded on rebuild. Probe batching now checks the exact engine profile before taking up to 64 jobs, preserving incompatible endpoints in shared inventory without recording false health failures. Focused synthetic tests cover these corrections. The HTTP and probe classifiers remain separate because their loopback permissions differ; both enforce the same metadata and special-use denials.
+
+Native Hysteria2 traffic is opt-in. Run `EGRESSFOX_MIHOMO_BINARY=/absolute/path/to/pinned-mihomo EGRESSFOX_SINGBOX_BINARY=/absolute/path/to/pinned-sing-box go test -v ./internal/probe -run '^TestHysteria2ControlledQUICObservations$' -count=1`; missing variables produce visible `SKIP` lines. No native pass is claimed from a skipped invocation.
 
 The [P1 M8.5 roadmap](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
 owns the mandatory families, transport/security scope and milestone exit contract.

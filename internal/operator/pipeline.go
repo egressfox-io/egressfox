@@ -133,7 +133,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_scheduler")
 	}
-	jobs := p.nextJobs(gateway.UID, poolResult.Inventory.Records(), target)
+	jobs := p.nextJobs(gateway.UID, poolResult.Inventory.Records(), target, profile)
 	results, _, err := scheduler.Run(ctx, jobs)
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_schedule")
@@ -188,6 +188,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 		return GatewayOutcome{}, pipelineFailure("snapshot_guard")
 	}
 	guard.BindCache(p.store, poolResult.CacheVersions)
+	guard.now = p.now
 	var publisher reconcile.Publisher
 	var generationPublisher *GenerationPublisher
 	if IsManaged(gateway) {
@@ -206,6 +207,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	result, err := useCase.Reconcile(ctx, reconcile.Request{
 		Scope: "k8s_" + string(gateway.UID), Inventory: poolResult.Inventory, Context: selectionContext,
 		Selection: selectionPolicy, Listener: listener, Renderer: renderer, Checker: checker, EvaluatedAt: now,
+		BeforeApply: guard.BindSelected,
 	})
 	if err != nil {
 		var staged interface{ Stage() string }
@@ -310,22 +312,25 @@ func (p *Pipeline) target(ctx context.Context, pool *egressv1alpha1.ProxyPool) (
 	return target, name, revision, nil
 }
 
-func (p *Pipeline) nextJobs(uid types.UID, records []endpoint.Record, target observation.HTTPTarget) []probe.Job {
+func (p *Pipeline) nextJobs(uid types.UID, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile) []probe.Job {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	start := p.cursors[uid]
 	if start >= len(records) {
 		start = 0
 	}
-	count := len(records)
-	if count > maxProbeBatch {
-		count = maxProbeBatch
+	jobs := make([]probe.Job, 0, min(len(records), maxProbeBatch))
+	scanned := 0
+	for scanned < len(records) && len(jobs) < maxProbeBatch {
+		record := records[(start+scanned)%len(records)]
+		if engine.CheckEndpoint(profile, record.Configuration()) == nil {
+			jobs = append(jobs, probe.Job{Record: record, Target: target})
+		}
+		scanned++
 	}
-	jobs := make([]probe.Job, 0, count)
-	for offset := range count {
-		jobs = append(jobs, probe.Job{Record: records[(start+offset)%len(records)], Target: target})
+	if len(records) > 0 {
+		p.cursors[uid] = (start + scanned) % len(records)
 	}
-	p.cursors[uid] = (start + count) % len(records)
 	return jobs
 }
 

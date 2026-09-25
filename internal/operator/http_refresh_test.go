@@ -97,6 +97,11 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	if err != nil || result.Inventory.Len() != 1 || len(result.SourceRevisions) != 2 {
 		t.Fatalf("restart = %+v, %v", result, err)
 	}
+	for _, version := range result.CacheVersions {
+		if !version.ExpiresAt.Equal(now.Add(24*time.Hour)) || version.SourceID == "" {
+			t.Fatalf("cache deadline was not captured from validation time: %+v", version)
+		}
+	}
 	mode.Store(1)
 	if changed, err := operatoradapter.RefreshHTTP(ctx, reader, store, pool, pool.Spec.Sources[0], now.Add(time.Hour)); err != nil || changed {
 		t.Fatalf("304 = %v, %v", changed, err)
@@ -112,6 +117,11 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	result, err = operatoradapter.BuildPoolWithCache(ctx, reader, pool, store, now.Add(25*time.Hour))
 	if err != nil || result.Inventory.Len() != 0 || result.Sources[0].State != "Expired" {
 		t.Fatalf("exact expiry = %+v, %v", result.Sources, err)
+	}
+	for _, version := range result.CacheVersions {
+		if !version.ExpiresAt.IsZero() {
+			t.Fatal("expired cache remains a publication contributor")
+		}
 	}
 	mode.Store(3)
 	if _, err := operatoradapter.RefreshHTTP(ctx, reader, store, pool, pool.Spec.Sources[0], now.Add(3*time.Hour)); err == nil {

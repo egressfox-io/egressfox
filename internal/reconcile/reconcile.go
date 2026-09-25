@@ -42,6 +42,7 @@ type Request struct {
 	Renderer    engine.Renderer
 	Checker     artifact.Checker
 	EvaluatedAt time.Time
+	BeforeApply func([]endpoint.Record)
 }
 
 type Result struct {
@@ -104,6 +105,9 @@ func (reconciler *Reconciler) Reconcile(ctx context.Context, request Request) (R
 	}
 	if len(decision.Selected) == 0 {
 		return Result{Decision: decision, RetainedLKG: exists}, nil
+	}
+	if request.BeforeApply != nil {
+		request.BeforeApply(decision.Selected)
 	}
 	return Apply(ctx, reconciler.decisions, reconciler.publisher, request, decision)
 }
