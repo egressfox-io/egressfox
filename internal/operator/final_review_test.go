@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -152,10 +153,6 @@ func TestNextJobsSkipsIncompatibleWithoutUsingBatch(t *testing.T) {
 	credential, _ := endpoint.NewVLESSCredential("11111111-1111-4111-8111-111111111111")
 	tls, _ := endpoint.NewTLS("front.example.com", false)
 	xhttp, _ := endpoint.NewXHTTPTransport("/xhttp", "front.example.com", "stream-one")
-	incompatible, err := endpoint.NewExtendedConfiguration(endpoint.ProtocolVLESS, address, credential, xhttp, tls, endpoint.SecurityOptions{}, endpoint.FlowNone, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	compatible, err := endpoint.NewConfiguration(endpoint.ProtocolVLESS, address, credential, endpoint.NewTCPTransport(), tls)
 	if err != nil {
 		t.Fatal(err)
@@ -172,7 +169,12 @@ func TestNextJobsSkipsIncompatibleWithoutUsingBatch(t *testing.T) {
 	}
 	records := make([]endpoint.Record, 0, 102)
 	for i := 0; i < 100; i++ {
-		records = append(records, makeRecord(incompatible, "xhttp"))
+		uniqueAddress, _ := endpoint.NewAddress("edge.example.com", 1000+i)
+		unique, err := endpoint.NewExtendedConfiguration(endpoint.ProtocolVLESS, uniqueAddress, credential, xhttp, tls, endpoint.SecurityOptions{}, endpoint.FlowNone, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, makeRecord(unique, fmt.Sprintf("xhttp-%d", i)))
 	}
 	records = append(records, makeRecord(compatible, "tcp"))
 	targetID, _ := observation.NewTargetID("target")
