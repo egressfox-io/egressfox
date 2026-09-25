@@ -25,6 +25,26 @@ packet-level port traces remain outside this fixture. The
 maintainer will run the native, controlled QUIC, kind, Docker and release gates;
 none are claimed passed in this record.
 
+### C4 kind E2E admission correction
+
+The maintainer's Kubernetes 1.32 kind run reached the C4 fixture, rolled out its
+Hysteria2 server, then timed out waiting for ProxyPool `c4-hysteria2` to become
+Ready. The failed cluster was no longer available for status or log inspection.
+A focused local test reproduced the earlier failure: managed HTTP refresh
+returned `source_rejected` for the fixture-shaped Hysteria2 URI. The operator's
+shared source admission list omitted Hysteria2, so the valid record was filtered;
+with partial admission disabled, refresh could not cache a snapshot or supply
+the ProxyPool inventory. This occurs before probing, selection or Gateway
+activation. The correction adds Hysteria2 to that list without changing TLS,
+UDP authorization or endpoint semantics. The new focused HTTP refresh and
+cached-inventory regression failed before the correction and passed after it.
+The maintainer's earlier unverbose controlled QUIC probe `PASS` is not native
+traffic evidence by itself: that test skips when its sing-box binary variable
+is unset, and individual client cases skip without their engine variables.
+The variables were unset in this diagnostic environment. A new Kubernetes
+1.32 kind E2E run and explicit native traffic evidence remain pending; C4 is
+not yet fully qualified.
+
 The [P1 M8.5 roadmap](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
 owns the mandatory families, transport/security scope and milestone exit contract.
 The [subscription compatibility matrix](../designs/subscription-compatibility.md)

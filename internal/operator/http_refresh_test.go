@@ -228,6 +228,46 @@ func TestManagedHTTPRefreshFallbackRotationAndExpiry(t *testing.T) {
 	}
 }
 
+func TestManagedHTTPHysteria2SourceAdmission(t *testing.T) {
+	body := "hy2://synthetic-auth@127.0.0.1:8461,8462?sni=proxy-server&insecure=1&obfs=salamander&obfs-password=synthetic-obfs&upmbps=20&downmbps=40\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	pool := &egressv1alpha1.ProxyPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "hysteria2", Namespace: "egress", UID: types.UID("11111111-2222-3333-4444-555555555555"), Generation: 1},
+		Spec: egressv1alpha1.ProxyPoolSpec{
+			AllowInsecureTLS: true,
+			Sources: []egressv1alpha1.SubscriptionSource{{
+				ID: "controlled", Format: egressv1alpha1.SourceFormatURIList,
+				HTTP: &egressv1alpha1.HTTPSource{URLSecretRef: egressv1alpha1.SecretKeyReference{Name: "url", Key: "url"}, AllowHTTP: true, AllowLoopback: true},
+			}},
+		},
+	}
+	urlSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "url", Namespace: "egress"}, Data: map[string][]byte{"url": []byte(server.URL)}}
+	reader := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(pool, urlSecret).Build()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.Open(filepath.Join(dir, "cache.db"), state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now()
+	changed, err := operatoradapter.RefreshHTTP(context.Background(), reader, store, pool, pool.Spec.Sources[0], now)
+	if err != nil || !changed {
+		t.Fatalf("Hysteria2 refresh: changed=%t err=%v", changed, err)
+	}
+	result, err := operatoradapter.BuildPoolWithCache(context.Background(), reader, pool, store, now)
+	if err != nil || result.Accepted != 1 || result.Inventory.Len() != 1 || len(result.Sources) != 1 || result.Sources[0].State != "Fresh" {
+		t.Fatalf("Hysteria2 inventory: accepted=%d endpoints=%d sources=%d err=%v", result.Accepted, result.Inventory.Len(), len(result.Sources), err)
+	}
+}
+
 func TestHTTP304WithoutCacheFailsAfterOneUnconditionalRetry(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

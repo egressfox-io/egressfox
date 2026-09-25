@@ -218,7 +218,7 @@ func parseSource(payload source.Payload, desired egressv1alpha1.SubscriptionSour
 	if !ok {
 		return source.Snapshot{}, source.Report{}, poolFailure("source_format")
 	}
-	return source.Parse(payload, source.ParseOptions{Format: format, Limits: source.DefaultLimits(), Admission: source.Admission{AllowPartial: desired.AllowPartial, AllowedProtocol: []endpoint.Protocol{endpoint.ProtocolVLESS, endpoint.ProtocolTrojan, endpoint.ProtocolVMess, endpoint.ProtocolShadowsocks, endpoint.ProtocolSOCKS5, endpoint.ProtocolHTTPProxy}, DenyInsecureTLS: !pool.Spec.AllowInsecureTLS}})
+	return source.Parse(payload, source.ParseOptions{Format: format, Limits: source.DefaultLimits(), Admission: source.Admission{AllowPartial: desired.AllowPartial, AllowedProtocol: []endpoint.Protocol{endpoint.ProtocolVLESS, endpoint.ProtocolTrojan, endpoint.ProtocolVMess, endpoint.ProtocolShadowsocks, endpoint.ProtocolSOCKS5, endpoint.ProtocolHTTPProxy, endpoint.ProtocolHysteria2}, DenyInsecureTLS: !pool.Spec.AllowInsecureTLS}})
 }
 
 func maxSourceStale(value *metav1.Duration) time.Duration {
