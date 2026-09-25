@@ -23,6 +23,26 @@ the [P1 roadmap](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
 owns its exit criterion.
 Run cluster tests explicitly; ordinary unit tests do not silently create a cluster.
 
+The kind E2E runner uses one cluster and five independent namespace-scoped scenarios.
+It runs four scenarios concurrently by default. Set
+`EGRESSFOX_E2E_PARALLELISM` to an integer from 1 to 5 to bound simultaneous
+scenario workers. For example:
+
+```sh
+EGRESSFOX_E2E_PARALLELISM=4 make e2e-kind
+EGRESSFOX_E2E_PARALLELISM=1 make e2e-kind
+```
+
+The second command runs the complete suite sequentially. CI uses 4 unless the
+repository variable `EGRESSFOX_E2E_PARALLELISM` overrides it. Each run writes
+per-scenario logs and elapsed seconds under `dist/e2e-logs/`; CI uploads these
+logs even on failure. `KEEP_KIND_CLUSTER_ON_FAILURE=1` retains a failed cluster
+and namespace for inspection. CRDs and the image are installed once by the parent;
+each scenario owns its Helm release, operator, fixtures and cleanup. The lifecycle
+scenario keeps its rollout, mode-transition, Helm upgrade/uninstall and CRD-retention
+assertions sequential within its own namespace; HTTP refresh and outage/recovery
+also remain ordered within one provider namespace.
+
 ## Layers and gates
 
 | Layer | Purpose and representative cases | Introduce |

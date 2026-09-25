@@ -28,6 +28,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0020](0020-m85-protocol-transport-compatibility.md) | C1–C2 complete; C3–C4 planned | M8.5 compatibility implementation and qualification |
 | [0021](0021-m8-review-corrections.md) | Complete | M8 metadata destination and cache-expiry scheduling corrections |
 | [0022](0022-docker-build-cache.md) | Complete | Docker build caching, stage isolation and architecture correctness |
+| [0023](0023-parallel-kubernetes-e2e.md) | Implementation complete; cluster validation pending | Parallel kind E2E scenario isolation and scheduling |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.
