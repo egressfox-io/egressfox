@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -67,5 +68,15 @@ func TestResolveProfilePreservesDefaultAndIsolatesNamedTargets(t *testing.T) {
 	pool.Spec.Profiles = make([]egressv1alpha1.TargetProfile, 9)
 	if _, _, err := ResolveProfile(pool, "default"); err == nil {
 		t.Fatal("unbounded profile count accepted")
+	}
+}
+
+func TestPipelineRejectsMissingProfileBeforeSourceAcquisition(t *testing.T) {
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "test"}}
+	gateway := &egressv1alpha1.EgressGateway{ObjectMeta: metav1.ObjectMeta{Name: "gateway", Namespace: "test"}, Spec: egressv1alpha1.EgressGatewaySpec{PoolRef: egressv1alpha1.LocalReference{Name: "pool"}, ProfileRef: "missing"}}
+	_, err := (&Pipeline{}).Run(context.Background(), gateway, pool)
+	var coded interface{ Code() string }
+	if !errors.As(err, &coded) || coded.Code() != "profile_missing" {
+		t.Fatalf("missing profile error = %v", err)
 	}
 }

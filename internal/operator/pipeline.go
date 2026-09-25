@@ -144,6 +144,11 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if gateway == nil || pool == nil || gateway.Namespace != pool.Namespace || gateway.Spec.PoolRef.Name != pool.Name {
 		return GatewayOutcome{}, pipelineFailure("reference")
 	}
+	profileName := gateway.Spec.ProfileRef
+	probeSpec, selectionSpec, err := ResolveProfile(pool, profileName)
+	if err != nil {
+		return GatewayOutcome{}, err
+	}
 	poolResult, err := BuildPoolWithCache(ctx, p.reader, pool, p.store, p.now())
 	if err != nil {
 		var coded interface{ Code() string }
@@ -154,11 +159,6 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	}
 	if poolResult.Inventory.Len() == 0 {
 		return GatewayOutcome{}, pipelineFailure("inventory_empty")
-	}
-	profileName := gateway.Spec.ProfileRef
-	probeSpec, selectionSpec, err := ResolveProfile(pool, profileName)
-	if err != nil {
-		return GatewayOutcome{}, err
 	}
 	profile, renderer, binary, ok := p.engine(gateway.Spec.Engine)
 	if !ok {
