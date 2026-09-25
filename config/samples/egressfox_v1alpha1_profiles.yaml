@@ -1,0 +1,51 @@
+# Optional M9 example; not included in the sample kustomization.
+# Replace all synthetic Secret values before use.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: profile-targets
+stringData:
+  default: https://default.example.test/health
+  alpha: https://alpha.example.test/health
+  beta: https://beta.example.test/health
+---
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata:
+  name: shared-profile-inventory
+spec:
+  sources:
+    - id: provider
+      secretRef: {name: sample-subscription, key: nodes}
+      format: URIList
+  probe:
+    targetSecretRef: {name: profile-targets, key: default}
+  profiles:
+    - name: alpha
+      probe:
+        targetSecretRef: {name: profile-targets, key: alpha}
+      selection: {strategy: Adaptive, topN: 1}
+    - name: beta
+      probe:
+        targetSecretRef: {name: profile-targets, key: beta}
+      selection: {strategy: LowestLatency, topN: 1}
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata:
+  name: alpha-gateway
+spec:
+  poolRef: {name: shared-profile-inventory}
+  profileRef: alpha
+  engine: Mihomo
+  runtime: {managed: {}}
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata:
+  name: beta-gateway
+spec:
+  poolRef: {name: shared-profile-inventory}
+  profileRef: beta
+  engine: SingBox
+  runtime: {managed: {}}

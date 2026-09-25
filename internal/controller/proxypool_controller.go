@@ -50,6 +50,7 @@ func (r *ProxyPoolReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 	observedAt := now()
 	before := pool.DeepCopy().Status
+	pool.Status.Profiles = profileStatuses(pool)
 	var result operatoradapter.PoolResult
 	var err error
 	if r.Store != nil {
@@ -149,6 +150,23 @@ func (r *ProxyPoolReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	return ctrl.Result{RequeueAfter: cacheAwareRequeue(requeueAfter(durationValue(pool.Spec.RefreshInterval), pool.UID), result.NextCacheExpiry, observedAt)}, nil
 }
 
+func profileStatuses(pool *egressv1alpha1.ProxyPool) []egressv1alpha1.ProfileStatus {
+	previous := make(map[string]int64, len(pool.Status.Profiles))
+	for _, status := range pool.Status.Profiles {
+		previous[status.Name] = status.FirstObservedGeneration
+	}
+	result := make([]egressv1alpha1.ProfileStatus, 0, len(pool.Spec.Profiles))
+	for _, profile := range pool.Spec.Profiles {
+		epoch := previous[profile.Name]
+		if epoch <= 0 {
+			epoch = pool.Generation
+		}
+		result = append(result, egressv1alpha1.ProfileStatus{Name: profile.Name, FirstObservedGeneration: epoch})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
 func sourceStatus(sourceState operatoradapter.SourceState) egressv1alpha1.SourceStatus {
 	status := egressv1alpha1.SourceStatus{ID: sourceState.ID, State: sourceState.State, Reason: sourceState.Reason}
 	if sourceState.LastSuccess != nil {
@@ -218,6 +236,9 @@ func (r *ProxyPoolReconciler) SetupWithManager(manager ctrl.Manager) error {
 			}
 		}
 		values = append(values, pool.Spec.Probe.TargetSecretRef.Name)
+		for _, profile := range pool.Spec.Profiles {
+			values = append(values, profile.Probe.TargetSecretRef.Name)
+		}
 		return unique(values)
 	}); err != nil {
 		return err

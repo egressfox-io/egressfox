@@ -155,6 +155,17 @@ produce no negative health observation. The round-robin cursor advances through
 the inspected inventory so an eligible record beyond an incompatible prefix can
 be scheduled in the same reconciliation.
 
+M9 named profiles use the same complete evidence key with a target ID derived from
+the pool and named-profile incarnation. A target URL, expected status, timeout or
+private-target permission change changes the confidential target revision. Legacy
+default target IDs and endpoint identities remain stable. Each Gateway retains a
+separate receipt-bound M5 decision context; switching profiles resets its anti-churn
+state. Demand-driven Gateway evaluations reuse the shared source cache and
+inventory, while the operator limits each named profile/engine to eight probes per
+refresh window, the legacy default/engine to 64, and concurrent probes to four.
+The resulting ceiling is 256 admitted jobs per pool refresh window across eight
+named profiles and both engines. Unsupported endpoints do not consume the batch.
+
 Future static source/country/ASN/tag policy restrictions also belong before ranking.
 Hard policy restrictions cannot be traded for a higher score. Untrusted metadata
 must retain provenance.

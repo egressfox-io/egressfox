@@ -45,6 +45,57 @@ HTTP/private source destinations, private probe destinations and insecure endpoi
 TLS choices are separate. Parser, record, byte, probe and scheduling bounds remain
 in force for both runtime modes.
 
+## Target-aware profiles
+
+One pool can define up to eight additional named profiles over the same admitted
+source inventory. The existing `spec.probe` and `spec.selection` are always the
+`default` profile. A Gateway without `profileRef` keeps its previous target and
+selection behavior; `profileRef: default` is equivalent. Named profiles provide
+complete `probe` and `selection` values and never inherit default settings.
+
+```yaml
+apiVersion: egressfox.io/v1alpha1
+kind: ProxyPool
+metadata: {name: shared}
+spec:
+  sources:
+    - id: provider
+      secretRef: {name: subscription, key: nodes}
+      format: URIList
+  probe:
+    targetSecretRef: {name: probe-targets, key: default-url}
+  profiles:
+    - name: api-a
+      probe:
+        targetSecretRef: {name: probe-targets, key: api-a-url}
+      selection: {strategy: Adaptive, topN: 1}
+    - name: api-b
+      probe:
+        targetSecretRef: {name: probe-targets, key: api-b-url}
+      selection: {strategy: LowestLatency, topN: 2}
+---
+apiVersion: egressfox.io/v1alpha1
+kind: EgressGateway
+metadata: {name: api-a}
+spec:
+  poolRef: {name: shared}
+  profileRef: api-a
+  engine: Mihomo
+  runtime: {managed: {}}
+```
+
+The target keys remain in same-namespace Secrets and pass the existing independent
+target authorization rules. Names are unique lowercase labels; `default` is
+reserved. A missing or removed name leaves the Gateway's prior published and
+active generation intact while `SelectionReady` reports the failure. Pool status
+shows bounded profile incarnations; each Gateway status shows its resolved profile,
+eligible and selected counts, and the existing publication and runtime Conditions.
+Target-specific evidence is isolated by profile incarnation, target revision,
+connection revision and exact engine. The operator admits at most eight jobs per
+named profile and engine per refresh window, 64 for the default profile and engine,
+and four concurrent probes process-wide. Changes to an unrelated profile do not
+change an equal validated artifact or restart a healthy Gateway.
+
 ## Managed HTTP sources
 
 Keep the full URL in a Secret even when it appears public: subscription paths and

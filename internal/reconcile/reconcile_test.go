@@ -115,6 +115,70 @@ func TestStandaloneLoopBothRenderersRestartAndNoOp(t *testing.T) {
 	}
 }
 
+func TestPlanSeparatesNamedTargetEvidenceOverSharedInventory(t *testing.T) {
+	dir := privateDirectory(t)
+	store, err := state.Open(filepath.Join(dir, "profile-history.db"), state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	inventory := testInventory(t, "first-secret", "second-secret")
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	vantage, _ := observation.NewVantageID("standalone")
+	contextFor := func(name, url string, profile artifact.Profile) selection.Context {
+		id, _ := observation.NewTargetID(name)
+		target, err := observation.NewHTTPTarget(id, url, 200, time.Second, observation.HTTPOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := selection.NewContext(target.Ref(), vantage, observation.KindHTTPGet, profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	alpha := contextFor("alpha", "https://example.com/a", artifact.Mihomo11931)
+	beta := contextFor("beta", "https://example.com/b", artifact.Mihomo11931)
+	records := inventory.Records()
+	for _, entry := range []struct {
+		record  endpoint.Record
+		context selection.Context
+	}{{records[0], alpha}, {records[1], beta}} {
+		connection, _ := observation.NewConnectionRef(entry.record.Identity())
+		key, _ := observation.NewKey(connection, entry.context.Target, entry.context.Vantage, entry.context.Kind, entry.context.Profile)
+		for i := 0; i < 3; i++ {
+			completed := now.Add(time.Duration(i-2) * time.Second)
+			value, err := observation.New(observation.Params{Key: key, StartedAt: completed.Add(-20 * time.Millisecond), CompletedAt: completed, Duration: 20 * time.Millisecond, Outcome: observation.OutcomeSuccess, StatusCode: 200})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Append(context.Background(), value, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for _, entry := range []struct {
+		name     string
+		context  selection.Context
+		expected endpoint.Record
+	}{{"alpha", alpha, records[0]}, {"beta", beta, records[1]}} {
+		request := testRequest(t, inventory, entry.context, mihomo.Renderer{}, now, checker{})
+		request.Scope = entry.name
+		request.Selection = selection.DefaultPolicy(selection.StrategyStatic)
+		decision, err := reconcile.Plan(context.Background(), store, request, nil)
+		if err != nil || len(decision.Selected) != 1 || !decision.Selected[0].Identity().Equal(entry.expected.Identity()) {
+			t.Fatalf("%s decision=%s err=%v", entry.name, decision, err)
+		}
+	}
+	mutated := contextFor("alpha", "https://example.com/changed", artifact.Mihomo11931)
+	request := testRequest(t, inventory, mutated, mihomo.Renderer{}, now, checker{})
+	request.Selection = selection.DefaultPolicy(selection.StrategyStatic)
+	decision, err := reconcile.Plan(context.Background(), store, request, nil)
+	if err != nil || len(decision.Selected) != 0 {
+		t.Fatalf("target mutation reused evidence: %s %v", decision, err)
+	}
+}
+
 func TestValidationAndNoEligiblePreserveLastKnownGood(t *testing.T) {
 	directory := privateDirectory(t)
 	store, err := state.Open(filepath.Join(directory, "state.db"), state.DefaultRetention())

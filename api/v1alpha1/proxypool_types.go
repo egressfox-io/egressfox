@@ -170,6 +170,18 @@ type SelectionSpec struct {
 	TopN int32 `json:"topN,omitempty"`
 }
 
+// TargetProfile independently probes and selects from the pool's shared inventory.
+// It never inherits the top-level default probe or selection settings.
+type TargetProfile struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9-]*[a-z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule="self != 'default'",message="default is reserved for the top-level probe and selection"
+	Name      string        `json:"name"`
+	Probe     ProbeSpec     `json:"probe"`
+	Selection SelectionSpec `json:"selection,omitempty"`
+}
+
 // ProxyPoolSpec defines source admission, probe authorization and selection intent.
 type ProxyPoolSpec struct {
 	// +kubebuilder:validation:MinItems=1
@@ -179,6 +191,13 @@ type ProxyPoolSpec struct {
 	Sources   []SubscriptionSource `json:"sources"`
 	Probe     ProbeSpec            `json:"probe"`
 	Selection SelectionSpec        `json:"selection,omitempty"`
+	// Profiles are additional complete target-aware selection contexts. The
+	// required top-level probe and optional selection remain the default profile.
+	// +kubebuilder:validation:MaxItems=8
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	Profiles []TargetProfile `json:"profiles,omitempty"`
 	// AllowInsecureTLS admits endpoint records that disable certificate verification.
 	// +optional
 	AllowInsecureTLS bool `json:"allowInsecureTLS,omitempty"`
@@ -200,9 +219,20 @@ type ProxyPoolStatus struct {
 	// +listType=map
 	// +listMapKey=id
 	Sources []SourceStatus `json:"sources,omitempty"`
+	// Profiles records bounded named-profile incarnations and configured state.
+	// It contains no target URL, endpoint identifier or observation history.
+	// +listType=map
+	// +listMapKey=name
+	Profiles []ProfileStatus `json:"profiles,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type ProfileStatus struct {
+	Name string `json:"name"`
+	// FirstObservedGeneration changes after an observed removal and recreation.
+	FirstObservedGeneration int64 `json:"firstObservedGeneration"`
 }
 
 type SourceStatus struct {

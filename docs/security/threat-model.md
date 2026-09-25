@@ -82,6 +82,11 @@ deadline of each selected HTTP source alongside its cache revision and Kubernete
 input revisions. An expired candidate retains the previous artifact and active
 generation; a bounded reconciliation rebuilds inventory from currently eligible
 sources. Unselected HTTP cache expiry cannot by itself reject a selected artifact.
+M9 named profiles retain the same endpoint and independent target authorization
+checks. Every profile uses a Secret-backed target, a separate target/evidence
+context and bounded probe quota; adding a profile does not grant another profile
+private-network access. The operator's shared probe slots bound concurrent
+through-engine processes. Full managed traffic qualification remains pending.
 
 ## Assets, actors, and trust boundaries
 

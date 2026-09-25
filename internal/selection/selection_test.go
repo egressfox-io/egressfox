@@ -47,6 +47,53 @@ func TestStrategiesUseCommonEligibilityAndConfidence(t *testing.T) {
 	}
 }
 
+func TestSharedInventorySelectsIndependentlyByTargetProfile(t *testing.T) {
+	vantage, _ := observation.NewVantageID("host-a")
+	contextFor := func(name string, profile artifact.Profile) selection.Context {
+		id, _ := observation.NewTargetID(name)
+		target, err := observation.NewHTTPTarget(id, "https://example.com/health", 200, time.Second, observation.HTTPOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := selection.NewContext(target.Ref(), vantage, observation.KindHTTPGet, profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	alpha := contextFor("alpha", artifact.Mihomo11931)
+	beta := contextFor("beta", artifact.Mihomo11931)
+	first := testCandidate(t, alpha, 1, "first-secret", 3, 3, 20*time.Millisecond, 3, 0, true)
+	second := testCandidate(t, beta, 2, "second-secret", 3, 3, 20*time.Millisecond, 3, 0, true)
+	policy := selection.DefaultPolicy(selection.StrategyStatic)
+	alphaDecision, err := selection.Select("gateway-alpha", alpha, policy, []selection.Candidate{first, {Record: second.Record}}, nil, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	betaDecision, err := selection.Select("gateway-beta", beta, policy, []selection.Candidate{{Record: first.Record}, second}, nil, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(alphaDecision.Selected) != 1 || len(betaDecision.Selected) != 1 || !alphaDecision.Selected[0].Identity().Equal(first.Record.Identity()) || !betaDecision.Selected[0].Identity().Equal(second.Record.Identity()) {
+		t.Fatal("target-specific selections were merged")
+	}
+	wrong, err := selection.Select("gateway-alpha", alpha, policy, []selection.Candidate{second}, nil, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wrong.Selected) != 0 {
+		t.Fatal("cross-target evidence was accepted")
+	}
+	otherEngine := contextFor("beta", artifact.SingBox1141)
+	wrongEngine, err := selection.Select("gateway-beta-singbox", otherEngine, policy, []selection.Candidate{second}, nil, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wrongEngine.Selected) != 0 {
+		t.Fatal("cross-engine evidence was accepted")
+	}
+}
+
 func TestPolicyValidationRejectsInvalidBounds(t *testing.T) {
 	tests := []struct {
 		name   string

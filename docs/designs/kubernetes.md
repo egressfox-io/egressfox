@@ -242,11 +242,16 @@ Managed-to-BYO removes only exact-owned managed children after BYO publication;
 BYO-to-managed retains the old owned output until managed activation. Downgrade
 requires returning objects to BYO before installing an M6 operator.
 
-M9 evolves `ProxyPool` toward bounded named probe/selection profiles over one source
-inventory while preserving the current fields as a legacy/default profile. A single
-inventory can be evaluated under more than one target context. M10 adds one
+M9 adds at most eight named `ProxyPool.spec.profiles` entries, each with a complete
+`probe` and `selection`, over one source inventory. The required top-level `probe`
+and optional `selection` remain the reserved `default` profile. Gateway
+`profileRef` selects a name from its same-namespace pool; omission and `default`
+preserve legacy behavior. Missing names fail closed. Pool status holds bounded
+profile incarnations, and Gateway status identifies the chosen profile alongside
+its existing selection and publication Conditions. A single inventory can be
+evaluated under more than one target context. M10 adds one
 `EgressPolicy` per Gateway for routing intent and candidate composition; a policy
-has no workload selector. Q15/Q16 own exact migration and schema choices. External
+has no workload selector. ADR 0024 resolves Q15; Q16 owns routing schema. External
 `EgressOutput` is a post-P1 publication resource, not required for managed activation.
 Cross-namespace grants, operator HA and transparent attachment are not P1.
 

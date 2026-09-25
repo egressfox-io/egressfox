@@ -65,6 +65,51 @@ func (p fakePipeline) Run(context.Context, *egressv1alpha1.EgressGateway, *egres
 	return p.outcome, p.err
 }
 
+type resolvingProfilePipeline struct{}
+
+func (resolvingProfilePipeline) Run(_ context.Context, gateway *egressv1alpha1.EgressGateway, pool *egressv1alpha1.ProxyPool) (operatoradapter.GatewayOutcome, error) {
+	if _, _, err := operatoradapter.ResolveProfile(pool, gateway.Spec.ProfileRef); err != nil {
+		return operatoradapter.GatewayOutcome{}, err
+	}
+	return operatoradapter.GatewayOutcome{Eligible: 1, Selected: 1, Published: true}, nil
+}
+
+func TestGatewayProfileReferenceAndRemovedProfileStatus(t *testing.T) {
+	scheme := controllerScheme(t)
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Profiles: []egressv1alpha1.TargetProfile{{Name: "alpha", Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}}}}}}
+	gateway := &egressv1alpha1.EgressGateway{ObjectMeta: metav1.ObjectMeta{Name: "gateway", Namespace: "egress"}, Spec: egressv1alpha1.EgressGatewaySpec{PoolRef: egressv1alpha1.LocalReference{Name: "pool"}, ProfileRef: "alpha", Runtime: &egressv1alpha1.GatewayRuntimeSpec{Managed: &egressv1alpha1.ManagedRuntimeSpec{}}}, Status: egressv1alpha1.EgressGatewayStatus{ActiveGeneration: "healthy-old"}}
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gateway).WithObjects(pool, gateway).Build()
+	reconciler := &controller.EgressGatewayReconciler{Client: kubeClient, Scheme: scheme, Pipeline: resolvingProfilePipeline{}, Runtime: fakeRuntime{outcome: operatoradapter.RuntimeOutcome{ActiveGeneration: "healthy-old", RuntimeReady: true}}}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "egress", Name: "gateway"}}
+	if _, err := reconciler.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	current := &egressv1alpha1.EgressGateway{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(gateway), current); err != nil {
+		t.Fatal(err)
+	}
+	if current.Status.Profile != "alpha" || !conditionTrue(current.Status.Conditions, controller.ConditionSelectionReady) {
+		t.Fatalf("named profile status: %#v", current.Status)
+	}
+	p := &egressv1alpha1.ProxyPool{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(pool), p); err != nil {
+		t.Fatal(err)
+	}
+	p.Spec.Profiles = nil
+	if err := kubeClient.Update(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconciler.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(gateway), current); err != nil {
+		t.Fatal(err)
+	}
+	if conditionTrue(current.Status.Conditions, controller.ConditionSelectionReady) || current.Status.Profile != "alpha" || current.Status.ActiveGeneration != "healthy-old" {
+		t.Fatalf("removed profile replaced LKG: %#v", current.Status)
+	}
+}
+
 func TestGatewayReconcileSeparatesDesiredActivationFromLKGReadiness(t *testing.T) {
 	scheme := controllerScheme(t)
 	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress"}}

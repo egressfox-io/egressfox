@@ -9,6 +9,10 @@ available separately and is not applied by `kubectl apply -k`. It shows the
 same-namespace URL and Authorization Secret references, conditional refresh and
 bounded fallback. Replace its placeholder values before applying it explicitly.
 
+[The target-aware profile example](egressfox_v1alpha1_profiles.yaml) is likewise
+separate. It uses one subscription inventory, two named target profiles and two
+managed Gateways. Its target URLs are placeholders and are not traffic tests.
+
 The Secret values are intentionally fake. `example.test` is reserved for examples,
 so the sample will not become Ready until both Secret values are replaced through
 your normal secret-management workflow:

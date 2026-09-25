@@ -61,6 +61,13 @@ type GatewayRuntimeSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.runtime) || !has(self.listener)",message="listener is BYO-only and must be omitted for managed mode"
 type EgressGatewaySpec struct {
 	PoolRef LocalReference `json:"poolRef"`
+	// ProfileRef selects one named profile in PoolRef. Omission or "default"
+	// preserves the historical top-level probe and selection behavior.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9-]*[a-z0-9])?$`
+	// +optional
+	ProfileRef string `json:"profileRef,omitempty"`
 	// +kubebuilder:validation:Enum=Mihomo;SingBox
 	Engine Engine `json:"engine"`
 	// Listener is BYO-only. Managed mode owns a fixed authenticated Pod listener.
@@ -77,10 +84,13 @@ type EgressGatewaySpec struct {
 
 // EgressGatewayStatus never reports credentials, endpoint IDs or artifact digests.
 type EgressGatewayStatus struct {
-	ObservedGeneration int64        `json:"observedGeneration,omitempty"`
-	EligibleEndpoints  int32        `json:"eligibleEndpoints,omitempty"`
-	SelectedEndpoints  int32        `json:"selectedEndpoints,omitempty"`
-	LastPublishedTime  *metav1.Time `json:"lastPublishedTime,omitempty"`
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Profile is the profile selected for the most recent reconciliation.
+	// It is "default" when profileRef is omitted.
+	Profile           string       `json:"profile,omitempty"`
+	EligibleEndpoints int32        `json:"eligibleEndpoints,omitempty"`
+	SelectedEndpoints int32        `json:"selectedEndpoints,omitempty"`
+	LastPublishedTime *metav1.Time `json:"lastPublishedTime,omitempty"`
 	// PublishedGeneration and ActiveGeneration are opaque, random Kubernetes
 	// object names. They are not content or credential digests.
 	PublishedGeneration  string `json:"publishedGeneration,omitempty"`

@@ -66,6 +66,10 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 		now = r.Now
 	}
 	before := gateway.DeepCopy().Status
+	gateway.Status.Profile = gateway.Spec.ProfileRef
+	if gateway.Status.Profile == "" {
+		gateway.Status.Profile = "default"
+	}
 	err := r.Get(ctx, types.NamespacedName{Namespace: gateway.Namespace, Name: gateway.Spec.PoolRef.Name}, pool)
 	var outcome operatoradapter.GatewayOutcome
 	if err == nil && r.Pipeline != nil {
@@ -233,6 +237,10 @@ func pipelineCondition(err error) (string, string) {
 		return "SourceUnavailable", "a referenced source or probe target is unavailable"
 	case "source_rejected", "snapshot_rejected", "source_format", "source_limits", "source_id", "target_invalid", "inventory_empty":
 		return "SourceRejected", "the current source snapshot could not be admitted"
+	case "profile_missing", "profile_pending":
+		return "ProfileNotFound", "the referenced profile is not present in the pool"
+	case "profile_invalid":
+		return "ProfileInvalid", "the pool profile definitions or reference are invalid"
 	case "probe_executor", "probe_scheduler", "probe_schedule":
 		return "ProbeFailed", "bounded probe execution could not complete"
 	case "selection", "selection_context":

@@ -2,7 +2,11 @@ package operator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -26,6 +30,7 @@ import (
 )
 
 const maxProbeBatch = 64
+const namedProbeBatch = 8
 
 var ErrPipeline = errors.New("operator pipeline failed")
 
@@ -51,16 +56,54 @@ type PipelineConfig struct {
 // Pipeline composes existing M1-M5 services. Its only Kubernetes concerns are
 // bounded Secret reads and the owned Secret publisher.
 type Pipeline struct {
-	client        client.Client
-	reader        client.Reader
-	scheme        *runtime.Scheme
-	store         *state.Store
-	mihomoBinary  string
-	singBoxBinary string
-	managed       *ManagedRuntime
-	now           func() time.Time
-	mu            sync.Mutex
-	cursors       map[types.UID]int
+	client          client.Client
+	reader          client.Reader
+	scheme          *runtime.Scheme
+	store           *state.Store
+	mihomoBinary    string
+	singBoxBinary   string
+	managed         *ManagedRuntime
+	now             func() time.Time
+	mu              sync.Mutex
+	cursors         map[types.UID]int
+	namedCursors    map[profileCursorKey]int
+	namedCursorSeen map[profileCursorKey]time.Time
+	probeBudget     map[probeBudgetKey]probeBudgetState
+	probeSlots      chan struct{}
+}
+
+type probeBudgetKey struct {
+	pool   types.UID
+	name   string
+	engine artifact.Profile
+}
+
+type profileCursorKey struct {
+	gateway  types.UID
+	name     string
+	engine   artifact.Profile
+	target   string
+	revision [sha256.Size]byte
+}
+
+type probeBudgetState struct {
+	until time.Time
+	used  int
+}
+
+type limitedRunner struct {
+	inner probe.Runner
+	slots chan struct{}
+}
+
+func (r limitedRunner) Execute(ctx context.Context, record endpoint.Record, target observation.HTTPTarget) (observation.Observation, error) {
+	select {
+	case r.slots <- struct{}{}:
+		defer func() { <-r.slots }()
+		return r.inner.Execute(ctx, record, target)
+	case <-ctx.Done():
+		return observation.Observation{}, ctx.Err()
+	}
 }
 
 type GatewayOutcome struct {
@@ -92,7 +135,7 @@ func NewPipeline(config PipelineConfig) (*Pipeline, error) {
 			return nil, pipelineFailure("managed_runtime")
 		}
 	}
-	return &Pipeline{client: config.Client, reader: reader, scheme: config.Scheme, store: config.Store, mihomoBinary: config.MihomoBinary, singBoxBinary: config.SingBoxBinary, managed: managed, now: now, cursors: map[types.UID]int{}}, nil
+	return &Pipeline{client: config.Client, reader: reader, scheme: config.Scheme, store: config.Store, mihomoBinary: config.MihomoBinary, singBoxBinary: config.SingBoxBinary, managed: managed, now: now, cursors: map[types.UID]int{}, namedCursors: map[profileCursorKey]int{}, namedCursorSeen: map[profileCursorKey]time.Time{}, probeBudget: map[probeBudgetKey]probeBudgetState{}, probeSlots: make(chan struct{}, 4)}, nil
 }
 
 func (p *Pipeline) ManagedRuntime() *ManagedRuntime { return p.managed }
@@ -112,6 +155,11 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if poolResult.Inventory.Len() == 0 {
 		return GatewayOutcome{}, pipelineFailure("inventory_empty")
 	}
+	profileName := gateway.Spec.ProfileRef
+	probeSpec, selectionSpec, err := ResolveProfile(pool, profileName)
+	if err != nil {
+		return GatewayOutcome{}, err
+	}
 	profile, renderer, binary, ok := p.engine(gateway.Spec.Engine)
 	if !ok {
 		return GatewayOutcome{}, pipelineFailure("engine")
@@ -120,20 +168,20 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("checker")
 	}
-	target, targetName, targetRevision, err := p.target(ctx, pool)
+	target, targetName, targetRevision, err := p.target(ctx, pool, profileName, probeSpec)
 	if err != nil {
 		return GatewayOutcome{}, err
 	}
 	vantage, _ := observation.NewVantageID("k8s/operator")
-	executor, err := probe.NewExecutor(probe.Config{Renderer: renderer, Checker: checker, Binary: binary, Vantage: vantage, StartupTimeout: 10 * time.Second, AllowPrivateEndpoints: pool.Spec.Probe.AllowPrivateEndpoints})
+	executor, err := probe.NewExecutor(probe.Config{Renderer: renderer, Checker: checker, Binary: binary, Vantage: vantage, StartupTimeout: 10 * time.Second, AllowPrivateEndpoints: probeSpec.AllowPrivateEndpoints})
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_executor")
 	}
-	scheduler, err := probe.NewScheduler(executor, probe.DefaultScheduleConfig())
+	scheduler, err := probe.NewScheduler(limitedRunner{inner: executor, slots: p.probeSlots}, probe.DefaultScheduleConfig())
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_scheduler")
 	}
-	jobs := p.nextJobs(gateway.UID, poolResult.Inventory.Records(), target, profile)
+	jobs := p.budgetedJobs(pool.UID, gateway.UID, profileName, profile, poolResult.Inventory.Records(), target, refreshDuration(pool.Spec.RefreshInterval), p.now())
 	results, _, err := scheduler.Run(ctx, jobs)
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_schedule")
@@ -150,9 +198,9 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("selection_context")
 	}
-	selectionPolicy := selection.DefaultPolicy(selectionStrategy(pool.Spec.Selection.Strategy))
-	if pool.Spec.Selection.TopN > 0 {
-		selectionPolicy.TopN = int(pool.Spec.Selection.TopN)
+	selectionPolicy := selection.DefaultPolicy(selectionStrategy(selectionSpec.Strategy))
+	if selectionSpec.TopN > 0 {
+		selectionPolicy.TopN = int(selectionSpec.TopN)
 	}
 	inputRevisions := poolResult.SourceRevisions
 	inputRevisions[targetName] = targetRevision
@@ -278,9 +326,9 @@ func (p *Pipeline) engine(value egressv1alpha1.Engine) (artifact.Profile, engine
 	}
 }
 
-func (p *Pipeline) target(ctx context.Context, pool *egressv1alpha1.ProxyPool) (observation.HTTPTarget, types.NamespacedName, ResourceRevision, error) {
+func (p *Pipeline) target(ctx context.Context, pool *egressv1alpha1.ProxyPool, profileName string, spec egressv1alpha1.ProbeSpec) (observation.HTTPTarget, types.NamespacedName, ResourceRevision, error) {
 	secret := &corev1.Secret{}
-	ref := pool.Spec.Probe.TargetSecretRef
+	ref := spec.TargetSecretRef
 	name := types.NamespacedName{Namespace: pool.Namespace, Name: ref.Name}
 	if err := p.reader.Get(ctx, name, secret); err != nil {
 		return observation.HTTPTarget{}, types.NamespacedName{}, ResourceRevision{}, pipelineFailure("target_unavailable")
@@ -290,22 +338,44 @@ func (p *Pipeline) target(ctx context.Context, pool *egressv1alpha1.ProxyPool) (
 	if !ok {
 		return observation.HTTPTarget{}, types.NamespacedName{}, ResourceRevision{}, pipelineFailure("target_key_missing")
 	}
-	id, err := observation.NewTargetID("k8s-" + string(pool.UID) + "-probe")
+	idSuffix := "probe"
+	if profileName != "" && profileName != "default" {
+		if pool.Status.ObservedGeneration != pool.Generation {
+			return observation.HTTPTarget{}, types.NamespacedName{}, ResourceRevision{}, pipelineFailure("profile_pending")
+		}
+		epoch := int64(0)
+		for _, status := range pool.Status.Profiles {
+			if status.Name == profileName {
+				epoch = status.FirstObservedGeneration
+				break
+			}
+		}
+		if epoch <= 0 {
+			return observation.HTTPTarget{}, types.NamespacedName{}, ResourceRevision{}, pipelineFailure("profile_pending")
+		}
+		sum := sha256.Sum256([]byte(profileName + "/" + strconv.FormatInt(epoch, 10)))
+		idSuffix = "profile-" + hex.EncodeToString(sum[:12])
+	}
+	id, err := observation.NewTargetID("k8s-" + string(pool.UID) + "-" + idSuffix)
 	if err != nil {
 		return observation.HTTPTarget{}, types.NamespacedName{}, ResourceRevision{}, pipelineFailure("target_id")
 	}
 	timeout := time.Duration(0)
-	if pool.Spec.Probe.Timeout != nil {
-		timeout = pool.Spec.Probe.Timeout.Duration
+	if spec.Timeout != nil {
+		timeout = spec.Timeout.Duration
 	}
 	if timeout == 0 {
 		timeout = 5 * time.Second
 	}
-	expected := int(pool.Spec.Probe.ExpectedStatus)
+	expected := int(spec.ExpectedStatus)
 	if expected == 0 {
 		expected = 204
 	}
-	target, err := observation.NewHTTPTarget(id, string(raw), expected, timeout, observation.HTTPOptions{AllowHTTP: pool.Spec.Probe.AllowHTTP, AllowPrivate: pool.Spec.Probe.AllowPrivateTargets})
+	options := observation.HTTPOptions{AllowHTTP: spec.AllowHTTP, AllowPrivate: spec.AllowPrivateTargets}
+	if profileName != "" && profileName != "default" {
+		options.RevisionSalt = fmt.Sprintf("m9-probe-permissions/http=%t/private-target=%t/private-endpoint=%t", spec.AllowHTTP, spec.AllowPrivateTargets, spec.AllowPrivateEndpoints)
+	}
+	target, err := observation.NewHTTPTarget(id, string(raw), expected, timeout, options)
 	if err != nil {
 		return observation.HTTPTarget{}, types.NamespacedName{}, ResourceRevision{}, pipelineFailure("target_invalid")
 	}
@@ -315,13 +385,85 @@ func (p *Pipeline) target(ctx context.Context, pool *egressv1alpha1.ProxyPool) (
 func (p *Pipeline) nextJobs(uid types.UID, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile) []probe.Job {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	start := p.cursors[uid]
+	return p.nextJobsLocked(uid, records, target, profile, maxProbeBatch)
+}
+
+// budgetedJobs gives every named profile and exact engine its own fixed share
+// of a pool's refresh window. Repeated Gateways using the same context share
+// observations and cannot multiply the profile's probe allowance.
+func (p *Pipeline) budgetedJobs(poolUID, gatewayUID types.UID, name string, profile artifact.Profile, records []endpoint.Record, target observation.HTTPTarget, interval time.Duration, now time.Time) []probe.Job {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.probeBudget == nil {
+		p.probeBudget = map[probeBudgetKey]probeBudgetState{}
+	}
+	if name == "" {
+		name = "default"
+	}
+	limit := namedProbeBatch
+	if name == "default" {
+		limit = maxProbeBatch
+	}
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	key := probeBudgetKey{pool: poolUID, name: name, engine: profile}
+	state := p.probeBudget[key]
+	if !now.Before(state.until) {
+		state = probeBudgetState{until: now.Add(interval)}
+	}
+	available := limit - state.used
+	if available <= 0 {
+		return nil
+	}
+	var jobs []probe.Job
+	if name == "default" {
+		jobs = p.nextJobsLocked(gatewayUID, records, target, profile, available)
+	} else {
+		if p.namedCursors == nil {
+			p.namedCursors = map[profileCursorKey]int{}
+		}
+		if p.namedCursorSeen == nil {
+			p.namedCursorSeen = map[profileCursorKey]time.Time{}
+		}
+		revisionBytes, _ := target.Revision().RevealForPersistence()
+		var revision [sha256.Size]byte
+		copy(revision[:], revisionBytes)
+		cursorKey := profileCursorKey{gateway: gatewayUID, name: name, engine: profile, target: target.ID().String(), revision: revision}
+		var next int
+		jobs, next = nextProbeBatch(records, target, profile, p.namedCursors[cursorKey], available)
+		p.namedCursors[cursorKey] = next
+		p.namedCursorSeen[cursorKey] = now
+	}
+	state.used += len(jobs)
+	p.probeBudget[key] = state
+	for oldKey, old := range p.probeBudget {
+		if !now.Before(old.until) {
+			delete(p.probeBudget, oldKey)
+		}
+	}
+	for oldKey, seen := range p.namedCursorSeen {
+		if now.Sub(seen) > 24*time.Hour {
+			delete(p.namedCursorSeen, oldKey)
+			delete(p.namedCursors, oldKey)
+		}
+	}
+	return jobs
+}
+
+func (p *Pipeline) nextJobsLocked(uid types.UID, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, limit int) []probe.Job {
+	jobs, next := nextProbeBatch(records, target, profile, p.cursors[uid], limit)
+	p.cursors[uid] = next
+	return jobs
+}
+
+func nextProbeBatch(records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, start, limit int) ([]probe.Job, int) {
 	if start >= len(records) {
 		start = 0
 	}
-	jobs := make([]probe.Job, 0, min(len(records), maxProbeBatch))
+	jobs := make([]probe.Job, 0, min(len(records), limit))
 	scanned := 0
-	for scanned < len(records) && len(jobs) < maxProbeBatch {
+	for scanned < len(records) && len(jobs) < limit {
 		record := records[(start+scanned)%len(records)]
 		if engine.CheckEndpoint(profile, record.Configuration()) == nil {
 			jobs = append(jobs, probe.Job{Record: record, Target: target})
@@ -329,9 +471,9 @@ func (p *Pipeline) nextJobs(uid types.UID, records []endpoint.Record, target obs
 		scanned++
 	}
 	if len(records) > 0 {
-		p.cursors[uid] = (start + scanned) % len(records)
+		return jobs, (start + scanned) % len(records)
 	}
-	return jobs
+	return jobs, 0
 }
 
 func selectionStrategy(value egressv1alpha1.SelectionStrategy) selection.Strategy {

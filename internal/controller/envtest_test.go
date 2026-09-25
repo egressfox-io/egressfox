@@ -3,6 +3,7 @@ package controller_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -97,12 +98,46 @@ func TestEnvtestAPIDefaultsStatusAndOwnedSecret(t *testing.T) {
 		pool.Spec.Probe.Timeout == nil || pool.Spec.Probe.Timeout.Duration != 5*time.Second || pool.Spec.RefreshInterval == nil || pool.Spec.RefreshInterval.Duration != 5*time.Minute {
 		t.Fatalf("API defaults not applied: %#v", pool.Spec)
 	}
+	named := pool.DeepCopy()
+	named.Name, named.UID, named.ResourceVersion = "named-pool", "", ""
+	named.Spec.Profiles = []egressv1alpha1.TargetProfile{{Name: "alpha", Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target-alpha", Key: "url"}}}, {Name: "beta", Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target-beta", Key: "url"}}}}
+	if err := kubeClient.Create(ctx, named); err != nil {
+		t.Fatalf("named profiles rejected: %v", err)
+	}
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(named), named); err != nil || len(named.Spec.Profiles) != 2 || named.Spec.Profiles[0].Selection.TopN != 1 {
+		t.Fatalf("named profile defaults missing: %v", err)
+	}
+	invalidNamed := named.DeepCopy()
+	invalidNamed.Name, invalidNamed.UID, invalidNamed.ResourceVersion = "duplicate-profiles", "", ""
+	invalidNamed.Spec.Profiles[1].Name = "alpha"
+	if err := kubeClient.Create(ctx, invalidNamed); err == nil {
+		t.Fatal("API admitted duplicate profile names")
+	}
+	invalidNamed.Name, invalidNamed.ResourceVersion = "reserved-profile", ""
+	invalidNamed.Spec.Profiles[1].Name = "default"
+	if err := kubeClient.Create(ctx, invalidNamed); err == nil {
+		t.Fatal("API admitted reserved profile name")
+	}
+	invalidNamed.Name, invalidNamed.ResourceVersion = "too-many-profiles", ""
+	invalidNamed.Spec.Profiles = make([]egressv1alpha1.TargetProfile, 9)
+	for i := range invalidNamed.Spec.Profiles {
+		invalidNamed.Spec.Profiles[i] = egressv1alpha1.TargetProfile{Name: fmt.Sprintf("profile-%d", i), Probe: pool.Spec.Probe}
+	}
+	if err := kubeClient.Create(ctx, invalidNamed); err == nil {
+		t.Fatal("API admitted more than eight named profiles")
+	}
 	reconciler := &controller.ProxyPoolReconciler{Client: kubeClient, Scheme: scheme, Now: func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) }}
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "egress", Name: "pool"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := kubeClient.Get(ctx, types.NamespacedName{Namespace: "egress", Name: "pool"}, pool); err != nil || pool.Status.AcceptedEndpoints != 1 {
 		t.Fatalf("status subresource not updated: %#v, %v", pool.Status, err)
+	}
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(named)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(named), named); err != nil || len(named.Status.Profiles) != 2 || named.Status.Profiles[0].Name != "alpha" || named.Status.Profiles[0].FirstObservedGeneration <= 0 {
+		t.Fatalf("bounded profile status missing: %#v, %v", named.Status.Profiles, err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("If-None-Match") == `"v1"` {

@@ -88,6 +88,14 @@ spec:
                 required:
                 - name
                 type: object
+              profileRef:
+                description: |-
+                  ProfileRef selects one named profile in PoolRef. Omission or "default"
+                  preserves the historical top-level probe and selection behavior.
+                maxLength: 63
+                minLength: 1
+                pattern: ^[a-z]([a-z0-9-]*[a-z0-9])?$
+                type: string
               runtime:
                 description: Runtime omitted means BYO for backward compatibility.
                 properties:
@@ -186,6 +194,11 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              profile:
+                description: |-
+                  Profile is the profile selected for the most recent reconciliation.
+                  It is "default" when profileRef is omitted.
+                type: string
               publishedGeneration:
                 description: |-
                   PublishedGeneration and ActiveGeneration are opaque, random Kubernetes

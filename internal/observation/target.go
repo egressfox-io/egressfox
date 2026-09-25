@@ -85,8 +85,11 @@ func (revision TargetRevision) Format(state fmt.State, _ rune) {
 }
 
 type HTTPOptions struct {
-	AllowHTTP        bool
-	AllowPrivate     bool
+	AllowHTTP    bool
+	AllowPrivate bool
+	// RevisionSalt separates adapter-specific probe authorization semantics.
+	// Empty preserves the legacy target revision exactly.
+	RevisionSalt     string
 	MaxResponseBytes int64
 }
 
@@ -144,7 +147,7 @@ func NewHTTPTarget(id TargetID, rawURL string, expectedStatus int, timeout time.
 	if maxBytes < 1 || maxBytes > MaxResponseBytes {
 		return HTTPTarget{}, errors.New("invalid HTTP probe response bound")
 	}
-	revisionValue := targetDigest(parsed.String(), expectedStatus, timeout, maxBytes)
+	revisionValue := targetDigest(parsed.String(), expectedStatus, timeout, maxBytes, options.RevisionSalt)
 	return HTTPTarget{
 		id: id, revision: TargetRevision{value: &revisionValue}, requestURL: parsed,
 		expectedStatus: expectedStatus, timeout: timeout, maxResponseBytes: maxBytes,
@@ -168,7 +171,7 @@ func (HTTPTarget) MarshalJSON() ([]byte, error) {
 	return nil, errors.New("HTTP probe target JSON serialization is disabled")
 }
 
-func targetDigest(canonicalURL string, expectedStatus int, timeout time.Duration, maxBytes int64) [sha256.Size]byte {
+func targetDigest(canonicalURL string, expectedStatus int, timeout time.Duration, maxBytes int64, salt string) [sha256.Size]byte {
 	hash := sha256.New()
 	_, _ = hash.Write([]byte("egressfox.target/http-get/v1"))
 	writeTargetString(hash, canonicalURL)
@@ -179,6 +182,9 @@ func targetDigest(canonicalURL string, expectedStatus int, timeout time.Duration
 	_, _ = hash.Write(value[:])
 	binary.BigEndian.PutUint64(value[:], uint64(maxBytes))
 	_, _ = hash.Write(value[:])
+	if salt != "" {
+		writeTargetString(hash, salt)
+	}
 	var result [sha256.Size]byte
 	copy(result[:], hash.Sum(nil))
 	return result

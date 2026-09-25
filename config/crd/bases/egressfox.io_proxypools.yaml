@@ -95,6 +95,88 @@ spec:
                 required:
                 - targetSecretRef
                 type: object
+              profiles:
+                description: |-
+                  Profiles are additional complete target-aware selection contexts. The
+                  required top-level probe and optional selection remain the default profile.
+                items:
+                  description: |-
+                    TargetProfile independently probes and selects from the pool's shared inventory.
+                    It never inherits the top-level default probe or selection settings.
+                  properties:
+                    name:
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z]([a-z0-9-]*[a-z0-9])?$
+                      type: string
+                      x-kubernetes-validations:
+                      - message: default is reserved for the top-level probe and selection
+                        rule: self != 'default'
+                    probe:
+                      properties:
+                        allowHTTP:
+                          type: boolean
+                        allowPrivateEndpoints:
+                          type: boolean
+                        allowPrivateTargets:
+                          type: boolean
+                        expectedStatus:
+                          default: 204
+                          format: int32
+                          maximum: 599
+                          minimum: 100
+                          type: integer
+                        targetSecretRef:
+                          description: SecretKeyReference selects one key from a Secret
+                            in the resource namespace.
+                          properties:
+                            key:
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                            name:
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                          required:
+                          - key
+                          - name
+                          type: object
+                        timeout:
+                          default: 5s
+                          type: string
+                          x-kubernetes-validations:
+                          - message: timeout must be between 100ms and 2m
+                            rule: duration(self) >= duration('100ms') && duration(self)
+                              <= duration('2m')
+                      required:
+                      - targetSecretRef
+                      type: object
+                    selection:
+                      properties:
+                        strategy:
+                          default: Adaptive
+                          enum:
+                          - Static
+                          - LowestLatency
+                          - Adaptive
+                          type: string
+                        topN:
+                          default: 1
+                          format: int32
+                          maximum: 10000
+                          minimum: 1
+                          type: integer
+                      type: object
+                  required:
+                  - name
+                  - probe
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               refreshInterval:
                 default: 5m
                 type: string
@@ -384,6 +466,27 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              profiles:
+                description: |-
+                  Profiles records bounded named-profile incarnations and configured state.
+                  It contains no target URL, endpoint identifier or observation history.
+                items:
+                  properties:
+                    firstObservedGeneration:
+                      description: FirstObservedGeneration changes after an observed
+                        removal and recreation.
+                      format: int64
+                      type: integer
+                    name:
+                      type: string
+                  required:
+                  - firstObservedGeneration
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               rejectedRecords:
                 format: int32
                 type: integer
