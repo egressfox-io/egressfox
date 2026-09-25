@@ -47,7 +47,7 @@ func TestHysteria2RenderersPreserveConnectionOptions(t *testing.T) {
 		fields   []string
 	}{
 		{artifact.Mihomo11931, mihomo.Renderer{}, []string{"type: hysteria2", "ports: 443-444,8443", "obfs-password: obfs-canary", "sni: front.example.com"}},
-		{artifact.SingBox1141, singbox.Renderer{}, []string{`"type": "hysteria2"`, `"server_ports": [`, `"443:444"`, `"password": "obfs-canary"`, `"server_name": "front.example.com"`}},
+		{artifact.SingBox1141, singbox.Renderer{}, []string{`"type": "hysteria2"`, `"server_ports": [`, `"443:444"`, `"8443:8443"`, `"password": "obfs-canary"`, `"server_name": "front.example.com"`}},
 	} {
 		if err := engine.CheckEndpoint(variant.profile, snapshot.Records()[0].Configuration()); err != nil {
 			t.Fatal(err)

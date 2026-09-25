@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/egressfox-io/egressfox/internal/artifact"
 	"github.com/egressfox-io/egressfox/internal/endpoint"
@@ -173,7 +174,13 @@ func (r Renderer) renderOutbound(item engine.NamedRecord) (outbound, error) {
 		result.Password = configuration.Credential().Reveal()
 		result.Network = ""
 		if options, ok := configuration.Hysteria2(); ok {
-			result.ServerPorts = options.PortRanges()
+			// sing-box server_ports requires start:end even for a single port.
+			for _, portRange := range options.PortRanges() {
+				if !strings.Contains(portRange, ":") {
+					portRange += ":" + portRange
+				}
+				result.ServerPorts = append(result.ServerPorts, portRange)
+			}
 			if len(result.ServerPorts) != 0 {
 				result.ServerPort = 0
 			}

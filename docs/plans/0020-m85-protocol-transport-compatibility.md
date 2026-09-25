@@ -45,6 +45,20 @@ The variables were unset in this diagnostic environment. A new Kubernetes
 1.32 kind E2E run and explicit native traffic evidence remain pending; C4 is
 not yet fully qualified.
 
+The next Kubernetes 1.32 kind run (`20260925-051026-66206`) admitted the
+Hysteria2 ProxyPool and activated the Mihomo Gateway, then timed out waiting
+for the sing-box Gateway. Its captured resource snapshot shows sing-box was
+unpublished and had no managed runtime Pod. The cluster was removed by the
+E2E harness after failure, so Gateway Conditions were unavailable. A native
+check in the already built E2E image reproduced the sing-box rejection:
+`bad port range: 8461`. The renderer emitted each singleton Hysteria2 port
+as a bare number in `server_ports`, while this pinned sing-box build requires
+`start:end` for every entry. The equivalent `8461:8461` and `8462:8462`
+entries passed native check. The sing-box renderer now expands only singleton
+entries to that form; the existing renderer test reproduces the defect before
+the correction and passes afterward. Full managed Gateway traffic and C4
+qualification remain pending the maintainer's next kind run.
+
 The [P1 M8.5 roadmap](../roadmap/p1.md#m85--protocol-and-transport-compatibility)
 owns the mandatory families, transport/security scope and milestone exit contract.
 The [subscription compatibility matrix](../designs/subscription-compatibility.md)
