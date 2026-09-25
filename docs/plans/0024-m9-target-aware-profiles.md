@@ -32,13 +32,22 @@ compile-only `go test ./... -run '^$'`, `make generate-check`, `make docs`,
 The full envtest suite, kind, native traffic, race suite, Docker and vulnerability
 scan were intentionally not run under the maintainer's instruction.
 
+Maintainer qualification on 2026-09-25 passed focused Go tests, `make check`,
+Kubernetes 1.32 envtest, the 1.32/1.34/1.37 API compatibility matrix and
+`make vuln` (zero reachable vulnerabilities). Both focused and full kind runs
+stopped in `profiles` immediately after Helm install: the shared fixture read
+`operator_deployment` before the new scenario initialized it. The scenario now
+sets that deployment name and cleans up its generated certificate directory,
+matching the existing scenarios. Controlled profile traffic remains unqualified
+until the maintainer reruns kind.
+
 ## Resume and handoff
 
-The maintainer should run the M9 focused tests and full qualification commands in
-the handoff. The demand-driven scheduler stores probe quotas and cursors in the
+The maintainer should rerun the focused and full kind scenarios after this fixture
+fix. The demand-driven scheduler stores probe quotas and cursors in the
 single operator process; durable SQLite observations and Gateway selection state
 recover normally. A process restart opens a new bounded quota window. Profile
 incarnation changes after an observed removal; updates too rapid for the controller
 to observe as separate resource states cannot be distinguished from an in-place
-edit. The kind scenario uses synthetic target CGI responses and remains unverified
-until the maintainer executes it. Do not begin M10 in this task.
+edit. The kind scenario uses synthetic target CGI responses; traffic assertions
+remain unverified until a rerun reaches them. Do not begin M10 in this task.

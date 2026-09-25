@@ -6,6 +6,14 @@ release=$2
 image=$3
 image_repository=${image%:*}
 image_tag=${image##*:}
+operator_deployment="${release}-egressfox"
+cert_dir=""
+cleanup() {
+  status=$?
+  if [ -n "$cert_dir" ]; then rm -rf "$cert_dir"; fi
+  return "$status"
+}
+trap cleanup EXIT
 
 helm upgrade --install "$release" charts/egressfox --namespace "$namespace" --create-namespace --skip-crds \
   --set-string image.repository="$image_repository" --set-string image.tag="$image_tag" --set image.pullPolicy=Never --wait --timeout 3m
