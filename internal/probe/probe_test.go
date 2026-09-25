@@ -51,8 +51,16 @@ func TestAuthorizeTargetValidatesEveryResolution(t *testing.T) {
 		{name: "deterministic order", addresses: []netip.Addr{netip.MustParseAddr("8.8.8.9"), public}, want: public},
 		{name: "mixed resolution denied", addresses: []netip.Addr{public, private}, wantCode: "target_address_denied"},
 		{name: "private explicitly allowed", addresses: []netip.Addr{private}, allowPrivate: true, want: private},
+		{name: "IPv6 ULA denied", addresses: []netip.Addr{netip.MustParseAddr("fd12::1")}, wantCode: "target_address_denied"},
+		{name: "IPv6 ULA allowed", addresses: []netip.Addr{netip.MustParseAddr("fd12::1")}, allowPrivate: true, want: netip.MustParseAddr("fd12::1")},
+		{name: "IPv6 metadata denied with private opt-in", addresses: []netip.Addr{netip.MustParseAddr("fd00:ec2::254")}, allowPrivate: true, wantCode: "target_address_denied"},
+		{name: "IPv4 metadata denied with private opt-in", addresses: []netip.Addr{netip.MustParseAddr("169.254.169.254")}, allowPrivate: true, wantCode: "target_address_denied"},
+		{name: "mapped metadata denied", addresses: []netip.Addr{netip.MustParseAddr("::ffff:100.100.100.200")}, allowPrivate: true, wantCode: "target_address_denied"},
+		{name: "loopback allowed by existing private opt-in", addresses: []netip.Addr{netip.MustParseAddr("127.0.0.1")}, allowPrivate: true, want: netip.MustParseAddr("127.0.0.1")},
+		{name: "multicast denied", addresses: []netip.Addr{netip.MustParseAddr("ff02::1")}, allowPrivate: true, wantCode: "target_address_denied"},
+		{name: "unspecified denied", addresses: []netip.Addr{netip.MustParseAddr("::")}, allowPrivate: true, wantCode: "target_address_denied"},
 		{name: "shared space denied", addresses: []netip.Addr{netip.MustParseAddr("100.64.0.1")}, wantCode: "target_address_denied"},
-		{name: "shared space explicitly allowed", addresses: []netip.Addr{netip.MustParseAddr("100.64.0.1")}, allowPrivate: true, want: netip.MustParseAddr("100.64.0.1")},
+		{name: "shared space denied with private opt-in", addresses: []netip.Addr{netip.MustParseAddr("100.64.0.1")}, allowPrivate: true, wantCode: "target_address_denied"},
 		{name: "link local always denied", addresses: []netip.Addr{netip.MustParseAddr("169.254.1.1")}, allowPrivate: true, wantCode: "target_address_denied"},
 		{name: "empty", wantCode: "target_resolution_empty"},
 	}
@@ -132,9 +140,10 @@ func TestAuthorizeHysteria2PinsUDPHostAndPreservesSNIAndPorts(t *testing.T) {
 	for _, test := range []struct {
 		address string
 		allowed bool
-	}{{"8.8.8.8", true}, {"::ffff:127.0.0.1", false}, {"169.254.169.254", false}, {"2606:4700:4700::1111", true}} {
+		private bool
+	}{{"8.8.8.8", true, false}, {"::ffff:127.0.0.1", false, false}, {"169.254.169.254", false, true}, {"2606:4700:4700::1111", true, false}, {"fd00:ec2::254", false, true}, {"fd12::1", true, true}, {"::ffff:100.100.100.200", false, true}} {
 		resolver := &fixedResolver{addresses: []netip.Addr{netip.MustParseAddr(test.address)}}
-		executor := &Executor{resolver: resolver}
+		executor := &Executor{resolver: resolver, allowPrivateEndpoints: test.private}
 		pinned, err := executor.authorizeEndpoint(context.Background(), record)
 		if !test.allowed {
 			if !errors.Is(err, ErrExecution) {

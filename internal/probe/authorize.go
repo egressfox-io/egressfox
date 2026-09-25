@@ -29,6 +29,18 @@ var sharedOrControlPrefixes = [...]netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("192.0.0.0/24"),
 	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
+
+var metadataAddresses = map[netip.Addr]struct{}{
+	netip.MustParseAddr("169.254.169.254"): {},
+	netip.MustParseAddr("169.254.170.2"):   {},
+	netip.MustParseAddr("100.100.100.200"): {},
+	netip.MustParseAddr("fd00:ec2::254"):   {},
 }
 
 func authorizeTarget(ctx context.Context, resolver Resolver, target observation.HTTPTarget) (authorizedTarget, error) {
@@ -65,11 +77,15 @@ func authorizeHost(ctx context.Context, resolver Resolver, host string, allowPri
 }
 
 func authorizedAddress(address netip.Addr, allowPrivate bool) bool {
-	if !address.IsValid() || address.Zone() != "" || address.IsUnspecified() || address.IsMulticast() ||
-		address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() {
+	address = address.Unmap()
+	if _, metadata := metadataAddresses[address]; metadata {
 		return false
 	}
-	if !allowPrivate && (address.IsPrivate() || address.IsLoopback() || isSharedOrControlAddress(address)) {
+	if !address.IsValid() || address.Zone() != "" || address.IsUnspecified() || address.IsMulticast() ||
+		address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || isSharedOrControlAddress(address) {
+		return false
+	}
+	if !allowPrivate && (address.IsPrivate() || address.IsLoopback()) {
 		return false
 	}
 	return true

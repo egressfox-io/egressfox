@@ -68,9 +68,20 @@ allow branch, including `fd00:ec2::254` and the covered IPv4 metadata addresses.
 IPv4-mapped IPv6 answers use the same rule. This is a bounded deny list, not an
 exhaustive catalogue of provider metadata services; cluster egress restrictions
 remain defense in depth.
+Through-engine probe authorization applies the same metadata, link-local and
+reserved/control denials to every resolved endpoint and target address, including
+IPv4-mapped IPv6. Its existing `allowPrivateEndpoints` and `allowPrivateTargets`
+permissions remain separate and each also authorizes controlled loopback fixtures.
+For Hysteria2 the authorized literal replaces only the execution host; the full
+bounded UDP port set stays on that address and TLS SNI is retained.
 The automatic HWID derives from a durable non-secret client identity reference,
 separate from the private HTTP cache fingerprint. Cache invalidation and expiry
 never reset subscription identity.
+Before publishing a new artifact, the snapshot guard checks the original expiry
+deadline of each selected HTTP source alongside its cache revision and Kubernetes
+input revisions. An expired candidate retains the previous artifact and active
+generation; a bounded reconciliation rebuilds inventory from currently eligible
+sources. Unselected HTTP cache expiry cannot by itself reject a selected artifact.
 
 ## Assets, actors, and trust boundaries
 
