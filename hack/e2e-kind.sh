@@ -92,6 +92,7 @@ run_job() {
   if [ "$result" -ne 0 ]; then
     echo "scenario $job failed; collecting namespace diagnostics" >&2
     kubectl -n "$namespace" get pods,deployments,services,proxypools,egressgateways -o wide >"$log_dir/$job.resources.log" 2>&1 || true
+    kubectl -n "$namespace" get proxypools,egressgateways -o jsonpath='{range .items[*]}{.kind}{"/"}{.metadata.name}{" profile="}{.status.profile}{" selected="}{.status.selectedEndpoints}{" conditions="}{.status.conditions}{"\n"}{end}' >"$log_dir/$job.status.log" 2>&1 || true
     kubectl -n "$namespace" describe pods >"$log_dir/$job.pods.log" 2>&1 || true
     kubectl -n "$namespace" logs "deployment/${release}-egressfox" --all-containers --tail=500 >"$log_dir/$job.operator.log" 2>&1 || true
   fi

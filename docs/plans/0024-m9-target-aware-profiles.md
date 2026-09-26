@@ -41,6 +41,15 @@ sets that deployment name and cleans up its generated certificate directory,
 matching the existing scenarios. Controlled profile traffic remains unqualified
 until the maintainer reruns kind.
 
+The next focused kind run reached the managed Gateways: the pool admitted two
+endpoints and the default Gateway activated, while both named Gateways remained
+unready after five minutes. The saved diagnostics omitted Gateway Conditions and
+probe outcomes, so the cause is not proven. The controlled CGI target compared
+`REMOTE_ADDR` to IPv4 Pod addresses while BusyBox `httpd -p 8080` may accept
+IPv4 through an IPv6 listener. The fixture now binds explicitly to IPv4 and
+the kind runner captures resource Conditions on failure. Named profile traffic
+still requires a maintainer rerun before qualification.
+
 ## Resume and handoff
 
 The maintainer should rerun the focused and full kind scenarios after this fixture
