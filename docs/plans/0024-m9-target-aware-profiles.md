@@ -21,7 +21,9 @@ selection, activation, source cache and engine capability.
 - [x] Profile-specific evidence, bounded scheduling, selection and publication guard tests.
 - [x] Status, envtest assertions and controlled parallel kind scenario prepared.
 - [x] Lightweight verification, reviewed commits and clean handoff.
-- [ ] Maintainer full checks, envtest, kind traffic and vulnerability qualification.
+- [x] Maintainer focused Go tests, `make check`, 1.32 envtest, API compatibility,
+  vulnerability scan and controlled profile kind traffic.
+- [ ] Full kind suite and remaining native/release qualification.
 
 ## Progress and evidence
 
@@ -48,15 +50,23 @@ probe outcomes, so the cause is not proven. The controlled CGI target compared
 `REMOTE_ADDR` to IPv4 Pod addresses while BusyBox `httpd -p 8080` may accept
 IPv4 through an IPv6 listener. The fixture now binds explicitly to IPv4 and
 the kind runner captures resource Conditions on failure. Named profile traffic
-still requires a maintainer rerun before qualification.
+required a maintainer rerun before qualification.
+
+On 2026-09-28 the maintainer's focused `profiles` kind run passed in 106 seconds
+(`dist/e2e-logs/20260928-172349-33110`). Its log reached Ready for the alpha,
+beta and default Gateways, and the script completed its config, authenticated
+SOCKS traffic and unrelated-profile generation assertions. This confirms the
+controlled profile scenario after the IPv4 fixture change. Only the `profiles`
+scenario appears in that log directory; the full kind suite and native checks
+remain unqualified.
 
 ## Resume and handoff
 
-The maintainer should rerun the focused and full kind scenarios after this fixture
-fix. The demand-driven scheduler stores probe quotas and cursors in the
-single operator process; durable SQLite observations and Gateway selection state
-recover normally. A process restart opens a new bounded quota window. Profile
-incarnation changes after an observed removal; updates too rapid for the controller
-to observe as separate resource states cannot be distinguished from an in-place
-edit. The kind scenario uses synthetic target CGI responses; traffic assertions
-remain unverified until a rerun reaches them. Do not begin M10 in this task.
+The maintainer should run the full kind suite and any remaining native/release
+checks before marking M9 fully qualified. The demand-driven scheduler stores
+probe quotas and cursors in the single operator process; durable SQLite
+observations and Gateway selection state recover normally. A process restart
+opens a new bounded quota window. Profile incarnation changes after an observed
+removal; updates too rapid for the controller to observe as separate resource
+states cannot be distinguished from an in-place edit. The kind scenario uses
+synthetic target CGI responses. Do not begin M10 in this task.
