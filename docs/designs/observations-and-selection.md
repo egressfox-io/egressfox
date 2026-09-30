@@ -161,10 +161,12 @@ private-target permission change changes the confidential target revision. Legac
 default target IDs and endpoint identities remain stable. Each Gateway retains a
 separate receipt-bound M5 decision context; switching profiles resets its anti-churn
 state. Demand-driven Gateway evaluations reuse the shared source cache and
-inventory, while the operator limits each named profile/engine to eight probes per
-refresh window, the legacy default/engine to 64, and concurrent probes to four.
-The resulting ceiling is 256 admitted jobs per pool refresh window across eight
-named profiles and both engines. Unsupported endpoints do not consume the batch.
+inventory. Probe budget, cursor and a bounded working set of up to eight responsive
+endpoints belong to the shared probe context (pool, engine, target ID, target
+revision), not to a Gateway. A named context admits at most 30 jobs per window, the
+legacy default/engine 64, and concurrent probes stay at four; the ceiling is 608
+jobs per pool window across eight named profiles and both engines. Unsupported
+endpoints do not consume the batch. M5 evidence requirements are unchanged.
 
 Future static source/country/ASN/tag policy restrictions also belong before ranking.
 Hard policy restrictions cannot be traded for a higher score. Untrusted metadata

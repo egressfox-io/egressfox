@@ -1,6 +1,6 @@
 # M9 target-aware profiles
 
-Status: implementation prepared; maintainer qualification pending. Date: 2026-09-25. Branch: `codex/m9-target-aware-profiles`.
+Status: implemented; focused maintainer qualification passed, post-review fixes and full qualification pending. Date: 2026-09-25. Branch: `codex/m9-target-aware-profiles`.
 Baseline: `e1a6469`.
 
 ## Objective and boundaries
@@ -23,6 +23,10 @@ selection, activation, source cache and engine capability.
 - [x] Lightweight verification, reviewed commits and clean handoff.
 - [x] Maintainer focused Go tests, `make check`, 1.32 envtest, API compatibility,
   vulnerability scan and controlled profile kind traffic.
+- [x] Post-implementation review fixes (2026-09-30): named-profile evidence
+  accumulation, probe-context-scoped budget/cursor/working set, failed-profile
+  Gateway status and documentation reconciliation. Tests prepared; maintainer
+  re-validation pending.
 - [ ] Full kind suite and remaining native/release qualification.
 
 ## Progress and evidence
@@ -64,7 +68,8 @@ remain unqualified.
 
 The maintainer should run the full kind suite and any remaining native/release
 checks before marking M9 fully qualified. The demand-driven scheduler stores
-probe quotas and cursors in the single operator process; durable SQLite
+probe budgets, cursors and working sets per probe context in the single operator
+process; durable SQLite
 observations and Gateway selection state recover normally. A process restart
 opens a new bounded quota window. Profile incarnation changes after an observed
 removal; updates too rapid for the controller to observe as separate resource
