@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -30,7 +31,15 @@ import (
 )
 
 const maxProbeBatch = 64
-const namedProbeBatch = 8
+
+// Named profiles keep a bounded working set of endpoints that answered the
+// profile target and re-probe it every window so M5 evidence accumulates on
+// the same endpoints, while a small deterministic cursor explores the rest.
+const (
+	namedWorkingSet = 8
+	namedExploreMin = 2
+	probeStateTTL   = 24 * time.Hour
+)
 
 var ErrPipeline = errors.New("operator pipeline failed")
 
@@ -56,39 +65,50 @@ type PipelineConfig struct {
 // Pipeline composes existing M1-M5 services. Its only Kubernetes concerns are
 // bounded Secret reads and the owned Secret publisher.
 type Pipeline struct {
-	client          client.Client
-	reader          client.Reader
-	scheme          *runtime.Scheme
-	store           *state.Store
-	mihomoBinary    string
-	singBoxBinary   string
-	managed         *ManagedRuntime
-	now             func() time.Time
-	mu              sync.Mutex
-	cursors         map[types.UID]int
-	namedCursors    map[profileCursorKey]int
-	namedCursorSeen map[profileCursorKey]time.Time
-	probeBudget     map[probeBudgetKey]probeBudgetState
-	probeSlots      chan struct{}
+	client        client.Client
+	reader        client.Reader
+	scheme        *runtime.Scheme
+	store         *state.Store
+	mihomoBinary  string
+	singBoxBinary string
+	managed       *ManagedRuntime
+	now           func() time.Time
+	mu            sync.Mutex
+	cursors       map[types.UID]int
+	probes        map[probeContextKey]*probeState
+	probeSlots    chan struct{}
 }
 
-type probeBudgetKey struct {
-	pool   types.UID
-	name   string
-	engine artifact.Profile
-}
-
-type profileCursorKey struct {
-	gateway  types.UID
+// probeContextKey identifies shared probe/evidence state. It follows the
+// observation dimensions: pool, exact engine profile, target ID and target
+// revision. For named profiles the target ID already encodes the profile name
+// and its incarnation (FirstObservedGeneration), so a removed and recreated
+// profile never inherits old budget, cursor or working set. Gateways are
+// deliberately not part of the key; selection state stays Gateway-scoped.
+type probeContextKey struct {
+	pool     types.UID
 	name     string
 	engine   artifact.Profile
 	target   string
 	revision [sha256.Size]byte
 }
 
-type probeBudgetState struct {
-	until time.Time
-	used  int
+func newProbeContextKey(pool types.UID, name string, profile artifact.Profile, target observation.HTTPTarget) probeContextKey {
+	if name == "" {
+		name = "default"
+	}
+	revisionBytes, _ := target.Revision().RevealForPersistence()
+	key := probeContextKey{pool: pool, name: name, engine: profile, target: target.ID().String()}
+	copy(key.revision[:], revisionBytes)
+	return key
+}
+
+type probeState struct {
+	until   time.Time
+	used    int
+	cursor  int
+	working []string
+	seen    time.Time
 }
 
 type limitedRunner struct {
@@ -135,7 +155,7 @@ func NewPipeline(config PipelineConfig) (*Pipeline, error) {
 			return nil, pipelineFailure("managed_runtime")
 		}
 	}
-	return &Pipeline{client: config.Client, reader: reader, scheme: config.Scheme, store: config.Store, mihomoBinary: config.MihomoBinary, singBoxBinary: config.SingBoxBinary, managed: managed, now: now, cursors: map[types.UID]int{}, namedCursors: map[profileCursorKey]int{}, namedCursorSeen: map[profileCursorKey]time.Time{}, probeBudget: map[probeBudgetKey]probeBudgetState{}, probeSlots: make(chan struct{}, 4)}, nil
+	return &Pipeline{client: config.Client, reader: reader, scheme: config.Scheme, store: config.Store, mihomoBinary: config.MihomoBinary, singBoxBinary: config.SingBoxBinary, managed: managed, now: now, cursors: map[types.UID]int{}, probes: map[probeContextKey]*probeState{}, probeSlots: make(chan struct{}, 4)}, nil
 }
 
 func (p *Pipeline) ManagedRuntime() *ManagedRuntime { return p.managed }
@@ -181,11 +201,13 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_scheduler")
 	}
-	jobs := p.budgetedJobs(pool.UID, gateway.UID, profileName, profile, poolResult.Inventory.Records(), target, refreshDuration(pool.Spec.RefreshInterval), p.now())
+	probeKey := newProbeContextKey(pool.UID, profileName, profile, target)
+	jobs := p.budgetedJobs(probeKey, gateway.UID, poolResult.Inventory.Records(), target, profile, refreshDuration(pool.Spec.RefreshInterval), p.now())
 	results, _, err := scheduler.Run(ctx, jobs)
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_schedule")
 	}
+	p.recordProbeResults(probeKey, jobs, results)
 	now := p.now().UTC()
 	for _, result := range results {
 		if result.Err == nil {
@@ -388,76 +410,137 @@ func (p *Pipeline) nextJobs(uid types.UID, records []endpoint.Record, target obs
 	return p.nextJobsLocked(uid, records, target, profile, maxProbeBatch)
 }
 
-// budgetedJobs gives every named profile and exact engine its own fixed share
-// of a pool's refresh window. Repeated Gateways using the same context share
-// observations and cannot multiply the profile's probe allowance.
-func (p *Pipeline) budgetedJobs(poolUID, gatewayUID types.UID, name string, profile artifact.Profile, records []endpoint.Record, target observation.HTTPTarget, interval time.Duration, now time.Time) []probe.Job {
+// budgetedJobs returns the probe jobs for one probe context. Budget, cursor
+// and working set belong to the context, so equivalent Gateways share them and
+// a changed target or recreated profile starts fresh. The legacy default
+// profile keeps its 64-job round robin with the per-Gateway cursor.
+func (p *Pipeline) budgetedJobs(key probeContextKey, gatewayUID types.UID, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, interval time.Duration, now time.Time) []probe.Job {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.probeBudget == nil {
-		p.probeBudget = map[probeBudgetKey]probeBudgetState{}
+	if p.probes == nil {
+		p.probes = map[probeContextKey]*probeState{}
 	}
-	if name == "" {
-		name = "default"
-	}
-	limit := namedProbeBatch
-	if name == "default" {
-		limit = maxProbeBatch
+	if p.cursors == nil {
+		p.cursors = map[types.UID]int{}
 	}
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
-	key := probeBudgetKey{pool: poolUID, name: name, engine: profile}
-	state := p.probeBudget[key]
-	if !now.Before(state.until) {
-		state = probeBudgetState{until: now.Add(interval)}
+	evidence := selection.DefaultPolicy(selection.StrategyAdaptive)
+	isDefault := key.name == "default"
+	window := interval
+	if !isDefault {
+		// A long source refresh must not stretch the probe budget window.
+		window = min(interval, evidence.Freshness)
 	}
-	available := limit - state.used
-	if available <= 0 {
+	state := p.probes[key]
+	if state == nil {
+		state = &probeState{}
+		p.probes[key] = state
+	}
+	if !now.Before(state.until) {
+		state.until = now.Add(window)
+		state.used = 0
+	}
+	state.seen = now
+	defer p.expireProbeStatesLocked(now)
+	if isDefault {
+		available := maxProbeBatch - state.used
+		if available <= 0 {
+			return nil
+		}
+		jobs := p.nextJobsLocked(gatewayUID, records, target, profile, available)
+		state.used += len(jobs)
+		return jobs
+	}
+	if state.used > 0 {
 		return nil
 	}
+	compatible := make(map[string]endpoint.Record, len(records))
+	for _, record := range records {
+		if engine.CheckEndpoint(profile, record.Configuration()) == nil {
+			compatible[record.ID().String()] = record
+		}
+	}
+	working := make([]endpoint.Record, 0, len(state.working))
+	state.working = slices.DeleteFunc(state.working, func(id string) bool {
+		record, ok := compatible[id]
+		if ok {
+			working = append(working, record)
+		}
+		return !ok
+	})
+	skip := make(map[string]bool, len(working))
+	for _, id := range state.working {
+		skip[id] = true
+	}
+	explore, next := nextProbeBatch(records, target, profile, state.cursor, max(namedExploreMin, namedWorkingSet-len(working)), skip)
+	state.cursor = next
+	// One pass per window is enough when successive windows fit MinSamples into
+	// the evidence window; otherwise burst so a long refresh interval still
+	// qualifies endpoints. Newly explored endpoints always burst.
+	workingPasses := 1
+	if time.Duration(evidence.MinSamples-1)*interval >= evidence.EvidenceWindow {
+		workingPasses = evidence.MinSamples
+	}
 	var jobs []probe.Job
-	if name == "default" {
-		jobs = p.nextJobsLocked(gatewayUID, records, target, profile, available)
-	} else {
-		if p.namedCursors == nil {
-			p.namedCursors = map[profileCursorKey]int{}
+	for pass := range evidence.MinSamples {
+		if pass < workingPasses {
+			for _, record := range working {
+				jobs = append(jobs, probe.Job{Record: record, Target: target})
+			}
 		}
-		if p.namedCursorSeen == nil {
-			p.namedCursorSeen = map[profileCursorKey]time.Time{}
-		}
-		revisionBytes, _ := target.Revision().RevealForPersistence()
-		var revision [sha256.Size]byte
-		copy(revision[:], revisionBytes)
-		cursorKey := profileCursorKey{gateway: gatewayUID, name: name, engine: profile, target: target.ID().String(), revision: revision}
-		var next int
-		jobs, next = nextProbeBatch(records, target, profile, p.namedCursors[cursorKey], available)
-		p.namedCursors[cursorKey] = next
-		p.namedCursorSeen[cursorKey] = now
+		jobs = append(jobs, explore...)
 	}
-	state.used += len(jobs)
-	p.probeBudget[key] = state
-	for oldKey, old := range p.probeBudget {
-		if !now.Before(old.until) {
-			delete(p.probeBudget, oldKey)
-		}
-	}
-	for oldKey, seen := range p.namedCursorSeen {
-		if now.Sub(seen) > 24*time.Hour {
-			delete(p.namedCursorSeen, oldKey)
-			delete(p.namedCursors, oldKey)
-		}
-	}
+	state.used = len(jobs)
 	return jobs
 }
 
+// recordProbeResults promotes endpoints that answered to the context's bounded
+// working set and drops those that failed. Infrastructure errors carry no
+// endpoint verdict and are ignored.
+func (p *Pipeline) recordProbeResults(key probeContextKey, jobs []probe.Job, results []probe.Result) {
+	if key.name == "default" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	state := p.probes[key]
+	if state == nil {
+		return
+	}
+	for index, result := range results {
+		if index >= len(jobs) || result.Err != nil {
+			continue
+		}
+		id := jobs[index].Record.ID().String()
+		position := slices.Index(state.working, id)
+		switch {
+		case !result.Observation.Successful():
+			if position >= 0 {
+				state.working = slices.Delete(state.working, position, position+1)
+			}
+		case position < 0 && len(state.working) < namedWorkingSet:
+			state.working = append(state.working, id)
+		}
+	}
+}
+
+func (p *Pipeline) expireProbeStatesLocked(now time.Time) {
+	for key, state := range p.probes {
+		if now.Sub(state.seen) > probeStateTTL {
+			delete(p.probes, key)
+		}
+	}
+}
+
 func (p *Pipeline) nextJobsLocked(uid types.UID, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, limit int) []probe.Job {
-	jobs, next := nextProbeBatch(records, target, profile, p.cursors[uid], limit)
+	jobs, next := nextProbeBatch(records, target, profile, p.cursors[uid], limit, nil)
 	p.cursors[uid] = next
 	return jobs
 }
 
-func nextProbeBatch(records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, start, limit int) ([]probe.Job, int) {
+func nextProbeBatch(records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, start, limit int, skip map[string]bool) ([]probe.Job, int) {
 	if start >= len(records) {
 		start = 0
 	}
@@ -465,7 +548,7 @@ func nextProbeBatch(records []endpoint.Record, target observation.HTTPTarget, pr
 	scanned := 0
 	for scanned < len(records) && len(jobs) < limit {
 		record := records[(start+scanned)%len(records)]
-		if engine.CheckEndpoint(profile, record.Configuration()) == nil {
+		if !skip[record.ID().String()] && engine.CheckEndpoint(profile, record.Configuration()) == nil {
 			jobs = append(jobs, probe.Job{Record: record, Target: target})
 		}
 		scanned++

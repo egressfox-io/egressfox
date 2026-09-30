@@ -98,6 +98,11 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 		if apierrors.IsNotFound(pipelineErr) {
 			reason, message = "PoolNotFound", "the referenced pool does not exist"
 		}
+		// The counts describe the current desired profile's selection. When it
+		// cannot be evaluated they must not keep numbers from a previous
+		// profile or generation; ActiveGeneration/PublishedGeneration remain.
+		gateway.Status.EligibleEndpoints = 0
+		gateway.Status.SelectedEndpoints = 0
 		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionFalse, reason, "selection for the current desired generation is unavailable", gateway.Generation, now()))
 		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionFalse, reason, message, gateway.Generation, now()))
 		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionPublished, metav1.ConditionFalse, reason, "the previous owned configuration, if any, was retained", gateway.Generation, now()))

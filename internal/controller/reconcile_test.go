@@ -202,3 +202,47 @@ func conditionTrue(conditions []metav1.Condition, kind string) bool {
 	}
 	return false
 }
+
+func TestGatewayFailedProfileDoesNotKeepPreviousCounts(t *testing.T) {
+	scheme := controllerScheme(t)
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress"}, Spec: egressv1alpha1.ProxyPoolSpec{Profiles: []egressv1alpha1.TargetProfile{{Name: "alpha", Probe: egressv1alpha1.ProbeSpec{TargetSecretRef: egressv1alpha1.SecretKeyReference{Name: "target", Key: "url"}}}}}}
+	gateway := &egressv1alpha1.EgressGateway{ObjectMeta: metav1.ObjectMeta{Name: "gateway", Namespace: "egress"}, Spec: egressv1alpha1.EgressGatewaySpec{PoolRef: egressv1alpha1.LocalReference{Name: "pool"}, ProfileRef: "alpha", Runtime: &egressv1alpha1.GatewayRuntimeSpec{Managed: &egressv1alpha1.ManagedRuntimeSpec{}}}, Status: egressv1alpha1.EgressGatewayStatus{}}
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gateway).WithObjects(pool, gateway).Build()
+	reconciler := &controller.EgressGatewayReconciler{Client: kubeClient, Scheme: scheme, Pipeline: resolvingProfilePipeline{}, Runtime: fakeRuntime{outcome: operatoradapter.RuntimeOutcome{ActiveGeneration: "healthy-old", RuntimeReady: true}}}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "egress", Name: "gateway"}}
+	current := &egressv1alpha1.EgressGateway{}
+	reconcile := func() {
+		t.Helper()
+		if _, err := reconciler.Reconcile(context.Background(), request); err != nil {
+			t.Fatal(err)
+		}
+		if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(gateway), current); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reconcile()
+	if current.Status.Profile != "alpha" || current.Status.EligibleEndpoints != 1 || current.Status.SelectedEndpoints != 1 {
+		t.Fatalf("healthy profile status: %#v", current.Status)
+	}
+	// Switch to a profile that does not exist: the desired profile is reported
+	// with no counts, while the last-known-good generations are preserved.
+	current.Status.PublishedGeneration = "published-old"
+	if err := kubeClient.Status().Update(context.Background(), current); err != nil {
+		t.Fatal(err)
+	}
+	current.Spec.ProfileRef = "missing"
+	if err := kubeClient.Update(context.Background(), current); err != nil {
+		t.Fatal(err)
+	}
+	reconcile()
+	status := current.Status
+	if status.Profile != "missing" || status.EligibleEndpoints != 0 || status.SelectedEndpoints != 0 {
+		t.Fatalf("failed profile shows stale counts: %#v", status)
+	}
+	if conditionTrue(status.Conditions, controller.ConditionSelectionReady) || conditionTrue(status.Conditions, controller.ConditionReady) {
+		t.Fatalf("failed profile reported ready: %#v", status.Conditions)
+	}
+	if status.ActiveGeneration != "healthy-old" || status.PublishedGeneration != "published-old" {
+		t.Fatalf("LKG generations were not preserved: %#v", status)
+	}
+}
