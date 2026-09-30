@@ -82,7 +82,10 @@ spec:
         - name: http
           image: busybox:1.37.0-uclibc@sha256:8d7b1636e974e0adfd8d945955fca609304f0a56c18799dfd032d6e661382d84
           # CGI compares REMOTE_ADDR with IPv4 Pod IPs; bind IPv4 explicitly.
-          command: [/bin/sh, -c, 'mkdir -p /www/cgi-bin; cp /script/check /www/cgi-bin/check; chmod 755 /www/cgi-bin/check; exec /bin/busybox httpd -f -p 0.0.0.0:8080 -h /www']
+          # busybox httpd drops CGI connections when RLIMIT_NOFILE is near
+          # 2^30, which containers inherit once a systemd 257 kind node has
+          # raised fs.nr_open on the shared container VM; cap the soft limit.
+          command: [/bin/sh, -c, 'ulimit -n 65536; mkdir -p /www/cgi-bin; cp /script/check /www/cgi-bin/check; chmod 755 /www/cgi-bin/check; exec /bin/busybox httpd -f -p 0.0.0.0:8080 -h /www']
           env:
             - {name: PRIMARY_PROXY_IP, value: "$primary_pod_ip"}
             - {name: SECONDARY_PROXY_IP, value: "$secondary_pod_ip"}
