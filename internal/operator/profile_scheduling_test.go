@@ -178,13 +178,14 @@ func TestNamedProfileQualifiesWorkingSetOnLargeInventory(t *testing.T) {
 				for _, job := range h.window("gateway") {
 					probed[job.Record.ID().String()] = true
 				}
+				// Evaluate at the time of the window, before the clock advances.
+				if h.eligible() == 0 {
+					t.Fatal("eligibility lost while exploring")
+				}
 				h.now = h.now.Add(interval)
 			}
 			if len(probed) != len(records) {
 				t.Fatalf("explored %d of %d endpoints", len(probed), len(records))
-			}
-			if h.eligible() == 0 {
-				t.Fatal("eligibility lost while exploring")
 			}
 		})
 	}
