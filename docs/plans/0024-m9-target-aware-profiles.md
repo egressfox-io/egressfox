@@ -37,9 +37,13 @@ selection, activation, source cache and engine capability.
   reservation with constrained re-planning, exploration-first rounds with a
   bounded exploration time and maintenance last, released failed rounds, and
   `topN`/overload `SelectionReady` reasons. Focused tests written; not executed.
+- [x] Reservation lifecycle fixes (2026-10-01, after review of `e8553d6`): demand
+  for M5-rejected endpoints no longer reserves capacity, and writes without a
+  confirmed receipt and committed checkpoint are held as uncertain demand until
+  the actual receipt is read. Focused tests written; not executed.
 - [ ] Maintainer requalification of the final scheduler hardening, including the
   full kind suite and remaining native/release checks. Validation started on
-  `bb0777b` does not qualify the follow-up commits.
+  `bb0777b` or `e8553d6` does not qualify the follow-up commits.
 
 ## Progress and evidence
 
@@ -104,6 +108,17 @@ time-bounded exploration phase and demanded members last, reports overload, and
 keeps the requested `topN` for status reasons. Its tests are in
 `internal/operator/profile_scheduling_test.go`,
 `internal/controller/reconcile_test.go` and `internal/reconcile/reconcile_test.go`.
+
+A review of `e8553d6` confirmed two lifecycle defects. Published demand stayed
+protected after M5 rejected its endpoints, so two Gateways holding the same full
+failed cohort refused each other's replacements indefinitely while both kept
+reconciling. And any error after the external write restored the previous demand,
+so an output that already carried the new endpoints could lose their
+maintenance. `reconcile.Result` now reports the external publication state
+(none, uncertain, written, confirmed) separately from the error and from the
+durable checkpoint commit; the operator holds such writes as uncertain demand and
+resolves them from the actual receipt. Publisher create/update errors are marked
+uncertain.
 
 ## Resume and handoff
 

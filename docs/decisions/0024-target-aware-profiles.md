@@ -39,16 +39,31 @@ revision, exact engine profile and receipt-bound selection state already exist.
   member; only a member whose latest M5 explanation is a failure streak or
   unreliability yields its slot to a newly answering endpoint. Members also leave
   when they disappear from the inventory or stop being exact-engine compatible.
-- Each Gateway's published selection is its committed demand in the context.
-  Before rendering, a non-empty decision is reserved: the union of the other
-  Gateways' maintained demand and the new selection must fit the cohort. A
-  reservation becomes committed demand, whose endpoints join the cohort and are
-  never displaced, only after that exact selection is published; a refused,
-  failed or obsolete publication restores the previous demand. When the preferred
-  decision does not fit, the reconciler plans once more with evidence withheld
-  from endpoints outside the cohort, so M5 chooses among maintained endpoints;
-  committed demand is always in the cohort, so that decision fits unless another
-  reservation is in flight, in which case the last-known-good remains. Demand
+- Each Gateway has scheduling demand in the context: the selection it last
+  published there. Retaining a published last-known-good is separate from
+  protecting its probe capacity: demand protects an endpoint only while M5 has
+  not rejected it for its failure streak or unreliability. Missing or withheld
+  evidence, probe deferral, infrastructure errors and another Gateway's cooldown
+  are not rejections, and one failed observation never reaches one. A rejected
+  endpoint stays in the published output until its Gateway publishes a
+  replacement, but yields its cohort slot to an answering endpoint and is then
+  observed again only when exploration reaches it.
+- Before rendering, a non-empty decision is reserved: the union of every
+  protected demand and the new selection must fit the cohort. When it does not,
+  the reconciler plans once more with evidence withheld from endpoints outside
+  the cohort, so M5 chooses among maintained endpoints; if even that is refused,
+  the last-known-good remains. A failure before any external write releases the
+  reservation. A confirmed publication with a committed checkpoint makes it the
+  Gateway's demand. A write that happened or may have happened without that
+  confirmation (an ambiguous publisher error, a failed receipt read-back, or a
+  failed checkpoint commit) is held as uncertain demand: the previous and the
+  attempted selections both stay protected, the attempted endpoints are
+  admitted (taking the Gateway's previous-only slots if the cohort is full), and
+  nothing is rolled back externally. The Gateway's next reconciliation reads the
+  actual published receipt before reserving again: the intended receipt promotes
+  the attempt, another receipt drops it, and an unreadable receipt keeps both,
+  while the store's receipt-bound checkpoint recovery decides M5 state
+  independently. Status reports `PublicationUnconfirmed` meanwhile. Demand
   expires one evidence window after the Gateway last reconciled in the context
   and is dropped as soon as it reconciles in another. Anti-flap state stays in
   the Gateway's receipt-bound M5 state.
@@ -58,7 +73,9 @@ revision, exact engine profile and receipt-bound selection state already exist.
   through the `SelectionReady` reason: `ProbeCapacityLimited` for the cap,
   `ProbeCapacityShared` for a decision constrained by other Gateways' demand,
   `InsufficientEligibleEndpoints` for missing evidence, and
-  `ProbeCapacityExceeded` when no maintainable decision could be reserved.
+  `ProbeCapacityExceeded` when no maintainable decision could be reserved. While
+  healthy protected demand fills the cohort, a better endpoint outside it is not
+  adopted by any Gateway until some protected endpoint is released.
 - A round runs exploration first and maintenance last, with demanded members at
   the end, so maintenance evidence is the newest at evaluation. New exploration
   probes start only within half of `Freshness` after the round starts; later

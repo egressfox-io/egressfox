@@ -106,7 +106,11 @@ Gateways' selections, so maintained endpoints were chosen),
 `InsufficientEligibleEndpoints` (too few endpoints with current evidence) or
 `ProbeRoundOverloaded` (maintenance probes outlasted the five-minute freshness
 period). `ProbeCapacityExceeded` keeps the previous configuration when no
-maintainable selection could be reserved. Changes to an unrelated profile do not
+maintainable selection could be reserved. Endpoints of a published selection
+that M5 has rejected keep serving until a replacement is published but no longer
+hold probe capacity. `PublicationUnconfirmed` means the output may already carry
+the new artifact while its receipt or decision checkpoint was not confirmed; the
+next reconciliation resolves it from the actual published receipt. Changes to an unrelated profile do not
 change an equal validated artifact or restart a healthy Gateway.
 
 ## Managed HTTP sources
