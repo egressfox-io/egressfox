@@ -245,7 +245,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	// Settle an earlier uncertain write from the actual current output before
 	// the round, so the round maintains the output that is really current.
 	p.resolveUncertain(probeKey, gateway.UID, p.currentOutput(ctx, gateway))
-	if round, due := p.budgetedJobs(probeKey, poolResult.Inventory.Records(), target, profile, p.now()); due {
+	if round, due := p.budgetedJobs(probeKey, poolResult.Inventory.Records(), target, profile, p.now(), refreshDuration(pool.Spec.RefreshInterval)); due {
 		executed, err := p.runRound(ctx, limitedRunner{inner: executor, slots: p.probeSlots}, probe.DefaultScheduleConfig(), round)
 		if err != nil {
 			p.abandonRound(round)
@@ -589,9 +589,12 @@ type roundResult struct {
 // round and one exploration position, and a changed target, engine profile or
 // recreated profile starts fresh. A Gateway reconciling inside the current
 // window gets no round and evaluates the evidence the last round produced.
-// Maintenance lists demanded (selected) members last so they are observed
-// closest to evaluation.
-func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, now time.Time) (probeRound, bool) {
+// The window is the evidence cadence, or the pool's shorter refresh interval:
+// a pool that refreshes often also retries a round that produced no usable
+// evidence (for example while a target is still starting) that soon, as
+// before the cadence existed. Maintenance lists demanded (selected) members
+// last so they are observed closest to evaluation.
+func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, now time.Time, refresh time.Duration) (probeRound, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.probes == nil {
@@ -608,7 +611,11 @@ func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, 
 	if now.Before(state.until) {
 		return probeRound{}, false
 	}
-	state.until = now.Add(probeCadence(policy))
+	window := probeCadence(policy)
+	if refresh > 0 {
+		window = min(window, refresh)
+	}
+	state.until = now.Add(window)
 	state.round++
 	round := probeRound{key: key, id: state.round, cursor: state.cursor}
 	// Members leave the cohort only when they disappear from the inventory or

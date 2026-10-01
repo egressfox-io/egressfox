@@ -118,6 +118,9 @@ type probeHarness struct {
 	// managed models generation publication: the current output is the
 	// generation the status records, which a failed operation does not move.
 	managed bool
+	// refresh is the pool refresh interval passed to the scheduler; zero
+	// leaves the round window at the evidence cadence.
+	refresh time.Duration
 	// writes records every publisher write with a changed artifact.
 	writes      map[types.UID][][]string
 	refused     map[types.UID]bool
@@ -229,7 +232,7 @@ func (h *probeHarness) reconcile(gateway types.UID) []probe.Job {
 		delete(h.attempted, gateway)
 	}
 	var executed []probe.Job
-	if round, due := h.pipeline.budgetedJobs(key, h.records, h.target, h.profile, h.now); due {
+	if round, due := h.pipeline.budgetedJobs(key, h.records, h.target, h.profile, h.now, h.refresh); due {
 		if jobs := len(round.explore) + len(round.maintain); jobs > roundBudget(key) {
 			h.t.Fatalf("round of %d jobs exceeds budget %d", jobs, roundBudget(key))
 		}
@@ -730,10 +733,10 @@ func TestProbeContextFollowsProfileIncarnation(t *testing.T) {
 	if oldKey == newKey {
 		t.Fatal("recreated profile shares the old probe context")
 	}
-	if roundJobs(pipeline.budgetedJobs(oldKey, records, old, artifact.Mihomo11931, now)) == 0 {
+	if roundJobs(pipeline.budgetedJobs(oldKey, records, old, artifact.Mihomo11931, now, 0)) == 0 {
 		t.Fatal("old context empty")
 	}
-	if roundJobs(pipeline.budgetedJobs(newKey, records, recreated, artifact.Mihomo11931, now)) == 0 {
+	if roundJobs(pipeline.budgetedJobs(newKey, records, recreated, artifact.Mihomo11931, now, 0)) == 0 {
 		t.Fatal("recreated profile inherited the old round")
 	}
 	if len(pipeline.probes[newKey].cohort) != 0 || pipeline.probes[newKey].cursor == 0 {
@@ -750,17 +753,17 @@ func TestEngineContextsAreIndependent(t *testing.T) {
 			now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 			mihomoKey := newProbeContextKey("pool", name, artifact.Mihomo11931, target)
 			singKey := newProbeContextKey("pool", name, artifact.SingBox1141, target)
-			if roundJobs(pipeline.budgetedJobs(mihomoKey, records, target, artifact.Mihomo11931, now)) == 0 {
+			if roundJobs(pipeline.budgetedJobs(mihomoKey, records, target, artifact.Mihomo11931, now, 0)) == 0 {
 				t.Fatal("mihomo empty")
 			}
-			if roundJobs(pipeline.budgetedJobs(mihomoKey, records, target, artifact.Mihomo11931, now)) != 0 {
+			if roundJobs(pipeline.budgetedJobs(mihomoKey, records, target, artifact.Mihomo11931, now, 0)) != 0 {
 				t.Fatal("mihomo round repeated")
 			}
-			if roundJobs(pipeline.budgetedJobs(singKey, records, target, artifact.SingBox1141, now)) == 0 {
+			if roundJobs(pipeline.budgetedJobs(singKey, records, target, artifact.SingBox1141, now, 0)) == 0 {
 				t.Fatal("sing-box starved by mihomo context")
 			}
 			otherPool := newProbeContextKey("other-pool", name, artifact.Mihomo11931, target)
-			if roundJobs(pipeline.budgetedJobs(otherPool, records, target, artifact.Mihomo11931, now)) == 0 {
+			if roundJobs(pipeline.budgetedJobs(otherPool, records, target, artifact.Mihomo11931, now, 0)) == 0 {
 				t.Fatal("another pool shares the context")
 			}
 		})
@@ -1446,7 +1449,7 @@ func TestSlowMaintenanceIsReportedAndSelectionProbedLast(t *testing.T) {
 	if !overloaded || len(selected) != 1 {
 		t.Fatalf("overloaded=%t selected=%d", overloaded, len(selected))
 	}
-	round, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now)
+	round, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now, h.refresh)
 	if !due || round.maintain[len(round.maintain)-1].Record.ID().String() != selected[0] {
 		t.Fatal("selected endpoint is not probed last")
 	}
@@ -1457,22 +1460,22 @@ func TestSlowMaintenanceIsReportedAndSelectionProbedLast(t *testing.T) {
 // exploration position is not lost.
 func TestAbandonedRoundIsRetried(t *testing.T) {
 	h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, 100, 0))
-	first, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now)
+	first, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now, h.refresh)
 	if !due {
 		t.Fatal("first round not due")
 	}
 	h.pipeline.abandonRound(first)
-	retry, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now)
+	retry, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now, h.refresh)
 	if !due || retry.id == first.id || !slices.Equal(slices.Sorted(maps.Keys(jobIDs(retry.explore))), slices.Sorted(maps.Keys(jobIDs(first.explore)))) {
 		t.Fatal("abandoned round was not retried from the same position")
 	}
 	h.pipeline.completeRound(retry, false)
-	if _, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now); due {
+	if _, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now, h.refresh); due {
 		t.Fatal("completed round repeated within its window")
 	}
 	// Abandoning a superseded round does not reopen the current one.
 	h.pipeline.abandonRound(first)
-	if _, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now); due {
+	if _, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now, h.refresh); due {
 		t.Fatal("stale abandonment reopened the current round")
 	}
 }
@@ -1486,5 +1489,63 @@ func TestMaintainableTopNKeepsRequestBelowCapacity(t *testing.T) {
 				t.Fatalf("%s: maintainableTopN(%d)=%d want %d", name, requested, got, want)
 			}
 		}
+	}
+}
+
+// A pool whose refresh interval is shorter than the evidence cadence retries
+// a round that produced no usable evidence within that interval, for example
+// while its proxy or probe target is still starting, instead of waiting a full
+// cadence; a long refresh interval keeps the cadence. Shared contexts still run
+// one round per window.
+func TestShortRefreshIntervalBoundsRoundWindow(t *testing.T) {
+	for _, name := range []string{"default", "alpha"} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, name, artifact.Mihomo11931, testRecords(t, 10, 0))
+			h.refresh = 30 * time.Second
+			// Probes are refused quickly, as by a proxy that is not yet listening.
+			h.healthy = func(int) bool { return false }
+			h.failCost = func(int) time.Duration { return 100 * time.Millisecond }
+			start := h.now
+			if len(h.reconcile("gateway")) == 0 {
+				t.Fatal("first round empty")
+			}
+			if len(h.selected["gateway"]) != 0 {
+				t.Fatal("failed probes produced a selection")
+			}
+			// The fixture becomes ready. The next reconciliation after one
+			// refresh interval runs a new round; M5 still counts the earlier
+			// failures, so publication follows once successes outweigh them,
+			// well inside one evidence cadence.
+			h.healthy = func(int) bool { return true }
+			if len(h.reconcile("gateway")) != 0 {
+				t.Fatal("round repeated inside its window")
+			}
+			h.now = start.Add(h.refresh + time.Second)
+			if len(h.reconcile("gateway")) == 0 {
+				t.Fatal("short refresh interval did not retry the round")
+			}
+			for len(h.selected["gateway"]) == 0 && h.now.Sub(start) < EvidenceCadence() {
+				h.now = h.now.Add(h.refresh + time.Second)
+				if len(h.reconcile("gateway")) == 0 {
+					t.Fatal("a due round did not run")
+				}
+			}
+			if len(h.selected["gateway"]) == 0 {
+				t.Fatal("no publication within one evidence cadence of the fixture becoming ready")
+			}
+			// A refresh interval longer than the cadence keeps the cadence.
+			long := newHarness(t, name, artifact.Mihomo11931, testRecords(t, 10, 0))
+			long.refresh = 24 * time.Hour
+			longStart := long.now
+			long.reconcile("gateway")
+			long.now = longStart.Add(EvidenceCadence() - time.Second)
+			if len(long.reconcile("gateway")) != 0 {
+				t.Fatal("round repeated inside the evidence cadence")
+			}
+			long.now = longStart.Add(EvidenceCadence() + time.Second)
+			if len(long.reconcile("gateway")) == 0 {
+				t.Fatal("long refresh interval delayed the round beyond the cadence")
+			}
+		})
 	}
 }
