@@ -46,9 +46,14 @@ selection, activation, source cache and engine capability.
   held writes never displace the current output, and the actual current output
   (BYO Secret or managed status generation) is read before the next round.
   Focused tests written; not executed.
-- [ ] Maintainer requalification of the final scheduler hardening, including the
-  full kind suite and remaining native/release checks. Validation started on
-  `bb0777b`, `e8553d6` or `bd7a0ab` does not qualify the follow-up commits.
+- [x] Final pre-qualification pass (2026-10-01, after review of `fc71726`): the
+  missing `checkOutputMaintained` test helper is defined over completed probes,
+  and an evicted M5-rejected endpoint leaves every Gateway's demand. Static
+  review only; nothing compiled or executed.
+- [ ] Maintainer requalification of the final scheduler hardening at the final
+  branch HEAD, including the full kind suite and remaining native/release
+  checks. PASS results from any earlier commit (including `bb0777b`, `e8553d6`,
+  `bd7a0ab` and `fc71726`) do not qualify later code.
 
 ## Progress and evidence
 
@@ -138,10 +143,17 @@ round.
 
 The maintainer should requalify the final scheduler hardening, including the full
 kind suite and remaining native/release checks, before marking M9 fully qualified.
+Publication of `v0.1.0-dev.2` additionally needs a fresh GitHub Release and GHCR
+preflight; earlier read-only checks are not evidence for the release run.
 The demand-driven scheduler stores round windows, cursors, cohorts and Gateway
-selection pins per probe context in the single operator process; durable SQLite
+demand per probe context in the single operator process; durable SQLite
 observations and Gateway selection state recover normally. A process restart
-begins a new round immediately. Profile incarnation changes after an observed
+begins a new round immediately with empty cohorts and demand, so an incumbent
+not reached by the first round after an outage longer than `Freshness` can be
+replaced once. Gateway reconciliations run serially in the controller; a
+second concurrent caller would read the previous round's evidence while a
+round is in flight. A Gateway whose healthy output fills its profile's cohort
+cannot move to an endpoint outside it until a protected endpoint is released. Profile incarnation changes after an observed
 removal; updates too rapid for the controller to observe as separate resource
 states cannot be distinguished from an in-place edit. The kind scenario uses
 synthetic target CGI responses. Do not begin M10 in this task.

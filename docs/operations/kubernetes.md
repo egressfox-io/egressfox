@@ -117,7 +117,11 @@ while its receipt or decision checkpoint was not confirmed; both selections stay
 probed until the next reconciliation reads the current output. For a managed
 Gateway that is the generation recorded in `status.publishedGeneration`; a newer
 generation Secret alone is not active. Changes to an unrelated profile do not
-change an equal validated artifact or restart a healthy Gateway.
+change an equal validated artifact or restart a healthy Gateway. Probe
+scheduling state lives in the operator's memory: after an operator restart a
+selection is protected again at its Gateway's next successful publication, so
+an outage longer than five minutes can cause one replacement of an incumbent
+that the first probe round did not reach.
 
 ## Managed HTTP sources
 

@@ -90,6 +90,24 @@ revision, exact engine profile and receipt-bound selection state already exist.
   healthy protected demand, including a Gateway's own current output, leaves no
   room for its transition, a better endpoint outside the cohort is not adopted
   until some protected endpoint is released.
+- The evidence cadence derives from the M5 evidence policy, not the source refresh
+  interval: at most `Freshness`, and short enough that MinSamples rounds fit the
+  evidence window even when every requeue carries the controller's maximum stable
+  10% jitter (five minutes at the current defaults). Gateways requeue at the
+  shorter of the cadence and the pool refresh interval. Gateway reconciliation
+  reads only the admitted cache or Secret snapshot, so the refresh interval alone
+  governs subscription acquisition and no profile starts a separate refresher. With
+  eight named profiles, both engines and the default profile the pool ceiling is
+  608 jobs per cadence, and the operator shares four probe slots across Gateway
+  reconciliations. Gateway reconciliations run serially, so a round completes
+  before another Gateway reads its evidence; a concurrent caller would read the
+  previous round's. Probe state is in-memory: an unused context expires after 24
+  hours, and a restart begins with empty cohorts and demand while durable
+  observations and Gateway selection state are unaffected. After a restart a
+  published selection is protected again at the Gateway's first successful
+  publication; until then its endpoints are probed only if exploration reaches
+  them, so an outage longer than `Freshness` can make M5 replace an incumbent
+  once.
 - A round runs exploration first and maintenance last, with demanded members at
   the end, so maintenance evidence is the newest at evaluation. New exploration
   probes start only within half of `Freshness` after the round starts; later
