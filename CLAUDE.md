@@ -81,7 +81,7 @@ If an additional issue is real but not necessary for the current task, report it
 
 Preserve the central EgressFox invariant:
 
-> EgressFox decides what configuration should exist.  
+> EgressFox decides what configuration should exist.\
 > Mihomo or sing-box decides how traffic flows through it.
 
 Never implement proxy/data-plane protocols inside EgressFox.
