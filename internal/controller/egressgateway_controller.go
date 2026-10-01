@@ -261,7 +261,7 @@ func selectionShortfall(outcome operatoradapter.GatewayOutcome) (string, string)
 	case outcome.ProbeOverloaded:
 		return "ProbeRoundOverloaded", "the latest maintenance probes outlasted the freshness period; some evidence was stale at evaluation"
 	case outcome.SharedCapacityLimited:
-		return "ProbeCapacityShared", "the preferred selection did not fit the probe cohort shared with other Gateways; the best maintained endpoints were selected"
+		return "ProbeCapacityShared", "the preferred selection could not be maintained together with the current output and other Gateways' selections; the best maintained endpoints were selected"
 	case outcome.Selected >= outcome.RequestedTopN:
 		return "SelectionReady", "the bounded selection is ready"
 	case outcome.EffectiveTopN < outcome.RequestedTopN && outcome.Selected >= outcome.EffectiveTopN:

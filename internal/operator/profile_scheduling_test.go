@@ -115,9 +115,14 @@ type probeHarness struct {
 	// receiptUnreadable makes a Gateway's receipt read fail, so its
 	// reconciliation stops before planning, as Reconcile does.
 	receiptUnreadable map[types.UID]bool
-	refused           map[types.UID]bool
-	constrained       map[types.UID]bool
-	overloaded        bool
+	// managed models generation publication: the current output is the
+	// generation the status records, which a failed operation does not move.
+	managed bool
+	// writes records every publisher write with a changed artifact.
+	writes      map[types.UID][][]string
+	refused     map[types.UID]bool
+	constrained map[types.UID]bool
+	overloaded  bool
 }
 
 func newHarness(t *testing.T, name string, profile artifact.Profile, records []endpoint.Record) *probeHarness {
@@ -136,7 +141,7 @@ func newHarness(t *testing.T, name string, profile artifact.Profile, records []e
 		constrained: map[types.UID]bool{},
 	}
 	h.staged, h.stagedOutput, h.attempted = map[types.UID]*selection.State{}, map[types.UID][]string{}, map[types.UID][]string{}
-	h.receiptUnreadable = map[types.UID]bool{}
+	h.receiptUnreadable, h.writes = map[types.UID]bool{}, map[types.UID][][]string{}
 	h.pipeline = &Pipeline{now: func() time.Time { return h.now }}
 	h.index = make(map[string]int, len(records))
 	for i, record := range records {
@@ -210,6 +215,19 @@ var sequentialProbes = probe.ScheduleConfig{Concurrency: 1, Queue: 256, PerEndpo
 func (h *probeHarness) reconcile(gateway types.UID) []probe.Job {
 	h.t.Helper()
 	key := h.key()
+	// Like Run, settle an unresolved write from the actual current output
+	// before the round, so the round maintains the output that is current.
+	resolved := false
+	h.pipeline.resolveUncertain(key, gateway, func(artifact.Receipt) (bool, error) {
+		if h.receiptUnreadable[gateway] {
+			return false, errors.New("synthetic receipt read failure")
+		}
+		resolved = true
+		return h.attempted[gateway] != nil && slices.Equal(h.selected[gateway], h.attempted[gateway]), nil
+	})
+	if resolved {
+		delete(h.attempted, gateway)
+	}
 	var executed []probe.Job
 	if round, due := h.pipeline.budgetedJobs(key, h.records, h.target, h.profile, h.now); due {
 		if jobs := len(round.explore) + len(round.maintain); jobs > roundBudget(key) {
@@ -235,12 +253,10 @@ func (h *probeHarness) reconcile(gateway types.UID) []probe.Job {
 	h.pipeline.touchDemand(key, gateway, h.now)
 	h.refused[gateway], h.constrained[gateway] = false, false
 	if h.receiptUnreadable[gateway] {
+		// Reconcile reads the current receipt first and stops here.
 		return executed
 	}
-	h.pipeline.resolveUncertain(key, gateway, func(artifact.Receipt) (bool, error) {
-		return h.attempted[gateway] != nil && slices.Equal(h.selected[gateway], h.attempted[gateway]), nil
-	})
-	delete(h.attempted, gateway)
+	// The store promotes a staged checkpoint only when its output is current.
 	if staged := h.staged[gateway]; staged != nil && slices.Equal(h.selected[gateway], h.stagedOutput[gateway]) {
 		h.states[gateway] = staged
 	}
@@ -268,7 +284,16 @@ func (h *probeHarness) reconcile(gateway types.UID) []probe.Job {
 		ids = append(ids, record.ID().String())
 	}
 	next := decision.Next
-	switch mode := h.publish[gateway]; mode {
+	mode := h.publish[gateway]
+	changed := !slices.Equal(slices.Sorted(slices.Values(ids)), slices.Sorted(slices.Values(h.selected[gateway])))
+	if mode != publishBefore && !changed {
+		// Equal validated bytes: the publisher writes nothing and succeeds.
+		mode = publishOK
+	}
+	if mode != publishBefore && changed {
+		h.writes[gateway] = append(h.writes[gateway], ids)
+	}
+	switch mode {
 	case publishBefore:
 		h.pipeline.releaseSelection(reservation)
 	case publishOK:
@@ -276,10 +301,12 @@ func (h *probeHarness) reconcile(gateway types.UID) []probe.Job {
 		h.pipeline.commitSelection(reservation)
 		h.states[gateway] = &next
 	default:
-		// The checkpoint is staged before the write; the write itself
-		// happens unless the uncertain failure lost it.
+		// The checkpoint is staged before the write. A BYO write that took
+		// effect replaces the output Secret. A managed write only creates a
+		// generation Secret: on this error path the Gateway's status does not
+		// record it, so the current generation does not change.
 		h.staged[gateway], h.stagedOutput[gateway] = &next, ids
-		if mode != publishUncertainLost {
+		if mode != publishUncertainLost && !h.managed {
 			h.selected[gateway] = ids
 		}
 		h.attempted[gateway] = ids
@@ -818,8 +845,7 @@ func (h *probeHarness) checkDemandInvariant() {
 			h.t.Fatalf("pending reservation of %s survived its reconciliation", gateway)
 		}
 		for _, id := range append(slices.Clone(demand.selected), demand.uncertain...) {
-			// An uncertain write may take its previous-only slots.
-			if state.rejected[id] || (demand.uncertain != nil && !slices.Contains(demand.uncertain, id)) {
+			if state.rejected[id] {
 				continue
 			}
 			union[id] = true
@@ -862,15 +888,18 @@ func sharedHarness(t *testing.T, name string, extra int) (*probeHarness, int, fu
 	return h, capacity, step
 }
 
-// Both Gateways publish the full cohort. An outside endpoint becomes clearly
-// faster while every cohort member stays healthy and protected: neither
-// Gateway may publish it unmaintained, so both choose among maintained
-// endpoints without churn. Once one Gateway's demand expires, the other
-// adopts the challenger.
-func TestSharedCohortConstrainsSelectionThatDoesNotFit(t *testing.T) {
+// Both Gateways publish the full cohort and an outside endpoint becomes
+// clearly faster while every member stays healthy. Maintaining both the
+// current output and the attempted one would exceed the cohort, so the
+// transition is refused before any write: no publisher write happens even
+// though every write would fail ambiguously, the outputs stay unchanged and
+// maintained, and each Gateway chooses among maintained endpoints. Expired
+// demand of a stopped Gateway is released, but a Gateway's own full output
+// still leaves no transition headroom.
+func TestInfeasibleTransitionIsRefusedBeforeWrite(t *testing.T) {
 	for _, name := range []string{"alpha", "default"} {
 		t.Run(name, func(t *testing.T) {
-			h, capacity, step := sharedHarness(t, name, 12)
+			h, capacity, _ := sharedHarness(t, name, 12)
 			challenger := capacity + 6
 			h.healthy = func(i int) bool { return i < capacity || i == challenger }
 			h.latency = func(i int) time.Duration {
@@ -879,33 +908,46 @@ func TestSharedCohortConstrainsSelectionThatDoesNotFit(t *testing.T) {
 				}
 				return 400 * time.Millisecond
 			}
+			gateways := []types.UID{"gateway-a", "gateway-b"}
 			before := map[types.UID][]string{}
-			for _, gateway := range []types.UID{"gateway-a", "gateway-b"} {
+			for _, gateway := range gateways {
 				before[gateway] = slices.Sorted(slices.Values(h.selected[gateway]))
+				h.publish[gateway] = publishUncertainLost
 			}
-			constrained := false
-			for range 8 {
-				step("gateway-a", "gateway-b")
-				for _, gateway := range []types.UID{"gateway-a", "gateway-b"} {
+			round := func(active []types.UID) bool {
+				constrained := true
+				for _, gateway := range active {
+					executed := h.reconcile(gateway)
+					if gateway == active[0] {
+						h.checkOutputMaintained(gateway, executed)
+					}
+					constrained = constrained && h.constrained[gateway]
+				}
+				h.checkDemandInvariant()
+				for _, gateway := range gateways {
+					if len(h.writes[gateway]) != 0 || h.state().demand[gateway].uncertain != nil {
+						t.Fatalf("%s attempted a write the cohort could not maintain", gateway)
+					}
 					if !slices.Equal(before[gateway], slices.Sorted(slices.Values(h.selected[gateway]))) {
-						t.Fatalf("%s published an endpoint the shared cohort cannot maintain", gateway)
+						t.Fatalf("%s output changed", gateway)
 					}
 				}
-				constrained = constrained || (h.constrained["gateway-a"] && h.constrained["gateway-b"])
+				h.now = h.now.Add(maxRequeueSpacing())
+				return constrained
 			}
-			if !constrained {
-				t.Fatal("the challenger never needed a constrained decision; scenario is too weak")
+			refused := false
+			for range 8 {
+				refused = round(gateways) || refused
+			}
+			if !refused {
+				t.Fatal("the challenger never needed a refusal; scenario is too weak")
 			}
 			bLast := h.now.Add(-maxRequeueSpacing())
-			adopted := false
 			for range 16 {
-				step("gateway-a")
-				if h.now.Add(-maxRequeueSpacing()).Sub(bLast) > evidencePolicy().EvidenceWindow && slices.Contains(h.selected["gateway-a"], h.id(challenger)) {
-					adopted = true
-				}
+				round(gateways[:1])
 			}
-			if !adopted {
-				t.Fatal("expired demand did not release shared capacity")
+			if h.now.Sub(bLast) <= evidencePolicy().EvidenceWindow {
+				t.Fatal("scenario did not outlast the evidence window")
 			}
 			if _, ok := h.state().demand["gateway-b"]; ok {
 				t.Fatal("expired Gateway demand still held")
@@ -1024,116 +1066,231 @@ func TestTransientSharedFailureKeepsProtection(t *testing.T) {
 	}
 }
 
-// After a write that happened, or may have happened, without a confirmed and
-// durably committed result, the attempted selection stays maintained next to
-// the previous one until the next reconciliation reads the actual receipt.
-// The cohort is full, so losing the attempted selection's maintenance would
-// stale the endpoint the output may already carry.
-func TestPostWriteFailuresKeepAttemptedSelectionMaintained(t *testing.T) {
+// transitionHarness warms up Gateways with topN 8 on a named context of 40
+// healthy endpoints, so the cohort is full of 8 selected members and 16
+// unprotected standbys. It returns the challenger index, outside the cohort,
+// which becomes clearly faster once makeFast is called.
+func transitionHarness(t *testing.T, gateways ...types.UID) (*probeHarness, int, func()) {
+	t.Helper()
+	h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, 40, 0))
+	h.topN = 8
+	h.latency = func(int) time.Duration { return 400 * time.Millisecond }
+	for range 20 {
+		for _, gateway := range gateways {
+			h.reconcile(gateway)
+		}
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	capacity := cohortCapacity(h.key(), evidencePolicy())
+	challenger := -1
+	for i := len(h.records) - 1; i >= 0; i-- {
+		if !slices.Contains(h.state().cohort, h.id(i)) {
+			challenger = i
+			break
+		}
+	}
+	if len(h.state().cohort) != capacity || challenger < 0 || len(h.selected[gateways[0]]) != h.topN {
+		t.Fatalf("warm-up cohort=%d selected=%d", len(h.state().cohort), len(h.selected[gateways[0]]))
+	}
+	return h, challenger, func() {
+		h.latency = func(i int) time.Duration {
+			if i == challenger {
+				return 20 * time.Millisecond
+			}
+			return 400 * time.Millisecond
+		}
+	}
+}
+
+// untilHeld reconciles until the Gateway holds an uncertain write and returns
+// the output that was current before it.
+func (h *probeHarness) untilHeld(gateway types.UID, others ...types.UID) []string {
+	h.t.Helper()
+	for range 16 {
+		previous := slices.Clone(h.selected[gateway])
+		executed := h.reconcile(gateway)
+		h.checkOutputMaintained(gateway, executed, previous)
+		for _, other := range others {
+			h.reconcile(other)
+		}
+		h.checkDemandInvariant()
+		h.now = h.now.Add(maxRequeueSpacing())
+		if h.state().demand[gateway].uncertain != nil {
+			return previous
+		}
+	}
+	h.t.Fatal("no transition was attempted")
+	return nil
+}
+
+// A feasible transition into a full cohort uses unprotected standby slots, so
+// a lost BYO write never costs the current output its maintenance: the
+// receipt stays unreadable for longer than Freshness and every round still
+// probes the healthy current output and the attempted one. Resolving to the
+// current output keeps it fresh, so no stale-driven replacement follows.
+func TestLostUncertainWriteKeepsCurrentOutputMaintained(t *testing.T) {
+	h, challenger, makeFast := transitionHarness(t, "gateway")
+	makeFast()
+	h.publish["gateway"] = publishUncertainLost
+	previous := h.untilHeld("gateway")
+	attempted := h.state().demand["gateway"].uncertain
+	if !slices.Contains(attempted, h.id(challenger)) || !slices.Equal(h.selected["gateway"], previous) {
+		t.Fatal("lost write changed the output or attempted another selection")
+	}
+	if len(h.state().cohort) != cohortCapacity(h.key(), evidencePolicy()) {
+		t.Fatal("attempted endpoints were not admitted into standby capacity")
+	}
+	h.receiptUnreadable["gateway"] = true
+	start := h.now
+	for h.now.Sub(start) <= evidencePolicy().Freshness+maxRequeueSpacing() {
+		executed := h.reconcile("gateway")
+		h.checkOutputMaintained("gateway", executed, attempted)
+		h.checkDemandInvariant()
+		if len(h.writes["gateway"]) != 1 {
+			t.Fatal("a further attempt stacked on the unresolved write")
+		}
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	h.receiptUnreadable["gateway"] = false
+	h.publish["gateway"] = publishOK
+	// Resolution runs before the round, which therefore maintains the actual
+	// output; M5 then moves to the challenger by optimisation, not because
+	// the incumbents went stale.
+	executed := h.reconcile("gateway")
+	h.checkOutputMaintained("gateway", executed, previous)
+	h.checkDemandInvariant()
+	demand := h.state().demand["gateway"]
+	if demand.uncertain != nil || !slices.Equal(demand.selected, h.selected["gateway"]) {
+		t.Fatal("resolution did not settle demand on the actual output")
+	}
+	kept := 0
+	for _, id := range h.selected["gateway"] {
+		if slices.Contains(previous, id) {
+			kept++
+		}
+	}
+	if kept < len(previous)-1 {
+		t.Fatalf("resolution replaced %d incumbents; only the challenger swap is expected", len(previous)-kept)
+	}
+}
+
+// An uncertain write that took effect is serviced together with the previous
+// output until the receipt is readable; the confirmed new output then stays
+// maintained.
+func TestAppliedUncertainWriteServicesBothOutputs(t *testing.T) {
+	h, challenger, makeFast := transitionHarness(t, "gateway")
+	makeFast()
+	h.publish["gateway"] = publishUncertainWritten
+	previous := h.untilHeld("gateway")
+	if !slices.Contains(h.selected["gateway"], h.id(challenger)) {
+		t.Fatal("applied write is not the output")
+	}
+	h.receiptUnreadable["gateway"] = true
+	for range 2 {
+		executed := h.reconcile("gateway")
+		h.checkOutputMaintained("gateway", executed, previous)
+		h.checkDemandInvariant()
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	h.receiptUnreadable["gateway"] = false
+	h.publish["gateway"] = publishOK
+	executed := h.reconcile("gateway")
+	h.checkOutputMaintained("gateway", executed)
+	h.checkDemandInvariant()
+	if demand := h.state().demand["gateway"]; demand.uncertain != nil || !slices.Equal(demand.selected, h.selected["gateway"]) || !slices.Contains(demand.selected, h.id(challenger)) {
+		t.Fatal("confirmed output is not the Gateway's demand")
+	}
+}
+
+// A managed write creates a generation Secret, but after a failed read-back
+// or checkpoint commit the status keeps the previous generation, which stays
+// current and maintained. Resolution reads the current generation, so the
+// attempt is dropped rather than treated as activated.
+func TestManagedGenerationWriteKeepsCurrentGenerationMaintained(t *testing.T) {
 	for _, mode := range []struct {
-		name    string
-		mode    publishMode
-		written bool
-	}{
-		{"receipt readback fails", publishReadbackFail, true},
-		{"checkpoint commit fails", publishCommitFail, true},
-		{"uncertain write took effect", publishUncertainWritten, true},
-		{"uncertain write was lost", publishUncertainLost, false},
-	} {
+		name string
+		mode publishMode
+	}{{"readback fails", publishReadbackFail}, {"commit fails", publishCommitFail}, {"create is ambiguous", publishUncertainWritten}} {
 		t.Run(mode.name, func(t *testing.T) {
-			probeKey := newProbeContextKey("pool", "alpha", artifact.Mihomo11931, testTarget(t, "target-alpha", "https://example.com/alpha"))
-			capacity := cohortCapacity(probeKey, evidencePolicy())
-			h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, capacity+12, 0))
-			h.topN = capacity
-			h.latency = func(int) time.Duration { return 400 * time.Millisecond }
-			for range 20 {
-				h.reconcile("gateway")
-				h.now = h.now.Add(maxRequeueSpacing())
-			}
-			previous := slices.Clone(h.selected["gateway"])
-			challenger := h.id(capacity + 6)
-			h.latency = func(i int) time.Duration {
-				if i == capacity+6 {
-					return 20 * time.Millisecond
-				}
-				return 400 * time.Millisecond
-			}
+			h, challenger, makeFast := transitionHarness(t, "gateway")
+			h.managed = true
+			makeFast()
 			h.publish["gateway"] = mode.mode
-			held := false
-			for range 12 {
-				h.reconcile("gateway")
-				if h.state().demand["gateway"].uncertain != nil {
-					held = true
-					break
-				}
-				h.now = h.now.Add(maxRequeueSpacing())
+			previous := h.untilHeld("gateway")
+			if len(h.writes["gateway"]) != 1 || !slices.Equal(h.selected["gateway"], previous) {
+				t.Fatal("generation write changed the current generation")
 			}
-			if !held {
-				t.Fatal("the challenger was never attempted")
-			}
-			demand := h.state().demand["gateway"]
-			if !slices.Equal(demand.selected, previous) || !slices.Contains(demand.uncertain, challenger) || !slices.Contains(h.state().cohort, challenger) {
-				t.Fatal("post-write failure did not keep both selections protected")
-			}
-			if slices.Contains(h.selected["gateway"], challenger) != mode.written {
-				t.Fatalf("external output carries challenger=%t want %t", !mode.written, mode.written)
-			}
-			// The next reconciliation probes the attempted endpoint before it
-			// resolves the receipt, then settles demand and the M5 checkpoint.
 			h.publish["gateway"] = publishOK
-			h.now = h.now.Add(maxRequeueSpacing())
-			if jobIDs(h.reconcile("gateway"))[challenger] == 0 {
-				t.Fatal("attempted endpoint lost maintenance during the recovery interval")
-			}
+			executed := h.reconcile("gateway")
+			h.checkOutputMaintained("gateway", executed, previous)
 			h.checkDemandInvariant()
-			demand = h.state().demand["gateway"]
-			if demand.uncertain != nil || !slices.Contains(h.selected["gateway"], challenger) || !slices.Equal(demand.selected, h.selected["gateway"]) {
-				t.Fatalf("recovery left demand %v for output %v", demand.selected, h.selected["gateway"])
+			if !slices.Contains(h.selected["gateway"], h.id(challenger)) || !slices.Equal(h.state().demand["gateway"].selected, h.selected["gateway"]) {
+				t.Fatal("the next confirmed publication did not become current")
 			}
 		})
 	}
 }
 
-// Another Gateway reconciling while a write is unresolved cannot take the
-// slots of either the previous or the attempted selection.
+// Another Gateway reconciling during an unresolved write cannot take the
+// capacity reserved for either plausible output; budgets and bounds hold.
 func TestOtherGatewayRespectsUnresolvedWrite(t *testing.T) {
-	h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, 10, 0))
-	h.latency = fastest(0)
-	for range 4 {
-		h.reconcile("gateway-a")
-		h.reconcile("gateway-b")
-		h.now = h.now.Add(maxRequeueSpacing())
-	}
-	h.latency = fastest(5)
-	h.publish["gateway-a"] = publishUncertainWritten
-	for range 8 {
-		h.reconcile("gateway-a")
-		if h.state().demand["gateway-a"].uncertain != nil {
-			break
-		}
-		h.reconcile("gateway-b")
-		h.now = h.now.Add(maxRequeueSpacing())
-	}
-	if h.state().demand["gateway-a"].uncertain == nil {
-		t.Fatal("no uncertain write was held")
-	}
-	h.publish["gateway-a"] = publishOK
+	h, _, makeFast := transitionHarness(t, "gateway-a", "gateway-b")
+	makeFast()
+	h.publish["gateway-a"] = publishUncertainLost
+	previous := h.untilHeld("gateway-a", "gateway-b")
+	attempted := h.state().demand["gateway-a"].uncertain
 	h.receiptUnreadable["gateway-a"] = true
 	for range 4 {
-		h.now = h.now.Add(maxRequeueSpacing())
-		h.reconcile("gateway-a")
+		executed := h.reconcile("gateway-a")
+		h.checkOutputMaintained("gateway-a", executed, previous, attempted)
 		h.reconcile("gateway-b")
 		h.checkDemandInvariant()
-		demand := h.state().demand["gateway-a"]
-		if demand.uncertain == nil || !h.state().protected(h.id(0)) || !h.state().protected(h.id(5)) {
-			t.Fatal("unresolved write lost protection while another Gateway reconciled")
+		if h.state().demand["gateway-a"].uncertain == nil {
+			t.Fatal("unreadable receipt resolved the write")
 		}
+		h.now = h.now.Add(maxRequeueSpacing())
 	}
 	h.receiptUnreadable["gateway-a"] = false
-	h.now = h.now.Add(maxRequeueSpacing())
+	h.publish["gateway-a"] = publishOK
 	h.reconcile("gateway-a")
-	if demand := h.state().demand["gateway-a"]; demand.uncertain != nil || !slices.Equal(demand.selected, []string{h.id(5)}) {
-		t.Fatal("readable receipt did not resolve the uncertain write")
+	if h.state().demand["gateway-a"].uncertain != nil {
+		t.Fatal("readable receipt did not resolve the write")
+	}
+}
+
+// The managed current output is the generation the status records, not the
+// newest generation Secret: a generation written by a failed operation is not
+// treated as activated.
+func TestManagedCurrentGenerationFollowsStatus(t *testing.T) {
+	ctx := context.Background()
+	gateway, runtimeAdapter, _ := managedFixture(t)
+	if _, _, _, err := runtimeAdapter.Prepare(ctx, gateway); err != nil {
+		t.Fatal(err)
+	}
+	publish := func(content string) (string, artifact.Receipt) {
+		publisher, err := runtimeAdapter.Publisher(gateway, allowPublication{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		validated := validatedFixture(t, artifact.SingBox1141, []byte(content))
+		if _, err := publisher.Publish(ctx, validated); err != nil {
+			t.Fatal(err)
+		}
+		receipt, err := validated.Receipt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return publisher.GenerationName(), receipt
+	}
+	if _, exists, err := runtimeAdapter.CurrentGenerationReceipt(ctx, gateway); err != nil || exists {
+		t.Fatalf("no recorded generation reported current=%t err=%v", exists, err)
+	}
+	current, currentReceipt := publish(`{"current":true}`)
+	gateway.Status.PublishedGeneration = current
+	_, newerReceipt := publish(`{"newer":true}`)
+	receipt, exists, err := runtimeAdapter.CurrentGenerationReceipt(ctx, gateway)
+	if err != nil || !exists || !receipt.Equal(currentReceipt) || receipt.Equal(newerReceipt) {
+		t.Fatalf("current generation receipt exists=%t err=%v", exists, err)
 	}
 }
 

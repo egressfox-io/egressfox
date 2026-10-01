@@ -242,6 +242,9 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 		return GatewayOutcome{}, pipelineFailure("probe_executor")
 	}
 	probeKey := newProbeContextKey(pool.UID, profileName, profile, target)
+	// Settle an earlier uncertain write from the actual current output before
+	// the round, so the round maintains the output that is really current.
+	p.resolveUncertain(probeKey, gateway.UID, p.currentOutput(ctx, gateway))
 	if round, due := p.budgetedJobs(probeKey, poolResult.Inventory.Records(), target, profile, p.now()); due {
 		executed, err := p.runRound(ctx, limitedRunner{inner: executor, slots: p.probeSlots}, probe.DefaultScheduleConfig(), round)
 		if err != nil {
@@ -326,15 +329,6 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("reconciler")
 	}
-	// Settle an earlier uncertain write from the actual published receipt
-	// before this Gateway reserves again.
-	p.resolveUncertain(probeKey, gateway.UID, func(intended artifact.Receipt) (bool, error) {
-		current, exists, err := publisher.CurrentReceipt(ctx)
-		if err != nil {
-			return false, err
-		}
-		return exists && current.Equal(intended), nil
-	})
 	// A non-empty decision reserves its maintenance in the shared cohort before
 	// anything is rendered or published. The reservation becomes the Gateway's
 	// demand once that selection is published and durably committed; after an
@@ -376,6 +370,9 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 			// The status must not claim the previous output was retained.
 			return GatewayOutcome{}, pipelineFailure("publication_unconfirmed")
 		}
+	}
+	if errors.Is(err, errPublicationUnresolved) {
+		return GatewayOutcome{}, pipelineFailure("publication_unconfirmed")
 	}
 	if err != nil {
 		var staged interface{ Stage() string }
@@ -563,6 +560,9 @@ var (
 	// errProbeCapacity refuses a selection whose maintenance does not fit the
 	// context's cohort next to the other Gateways' demand.
 	errProbeCapacity = errors.New("probe cohort capacity exceeded")
+	// errPublicationUnresolved refuses a new reservation while the Gateway's
+	// previous write is still unresolved, so attempts never stack.
+	errPublicationUnresolved = errors.New("previous publication unresolved")
 	// errExplorationDeferred marks an exploration job not started because the
 	// round's exploration budget had passed. It is not an endpoint verdict.
 	errExplorationDeferred = errors.New("probe exploration deferred")
@@ -817,16 +817,19 @@ func (p *Pipeline) reserveSelection(key probeContextKey, gateway types.UID, deci
 	for _, id := range state.cohort {
 		members[id] = true
 	}
+	if own, ok := state.demand[gateway]; ok && own.uncertain != nil {
+		return nil, errPublicationUnresolved
+	}
+	// The Gateway's own current output counts too: if this write's outcome
+	// becomes uncertain, both its current and its attempted selection must be
+	// maintained, so a transition is admitted only when both fit.
 	needed := make(map[string]bool, len(selected))
 	for other, demand := range state.demand {
-		if other != gateway {
-			for _, id := range demand.selected {
-				if demand.pending || (members[id] && !state.rejected[id]) {
-					needed[id] = true
-				}
+		for _, id := range demand.selected {
+			if (other != gateway && demand.pending) || (members[id] && !state.rejected[id]) {
+				needed[id] = true
 			}
 		}
-		// An unresolved write may be live; it stays protected for its owner too.
 		for _, id := range demand.uncertain {
 			if members[id] && !state.rejected[id] {
 				needed[id] = true
@@ -848,6 +851,31 @@ func (p *Pipeline) reserveSelection(key probeContextKey, gateway types.UID, deci
 	pending.selected, pending.seen, pending.pending = selected, now, true
 	state.demand[gateway] = pending
 	return reservation, nil
+}
+
+// currentOutput reads the receipt of the output that is actually current. For
+// BYO that is the owned output Secret. For a managed Gateway it is the
+// generation its status records as published, which is what the runtime
+// activates; a newer generation Secret written by a failed operation is not.
+func (p *Pipeline) currentOutput(ctx context.Context, gateway *egressv1alpha1.EgressGateway) func(artifact.Receipt) (bool, error) {
+	return func(intended artifact.Receipt) (bool, error) {
+		var current artifact.Receipt
+		var exists bool
+		var err error
+		if IsManaged(gateway) {
+			current, exists, err = p.managed.CurrentGenerationReceipt(ctx, gateway)
+		} else {
+			reader, readerErr := NewSecretPublisher(p.client, p.scheme, gateway, gateway.Spec.OutputSecretName)
+			if readerErr != nil {
+				return false, readerErr
+			}
+			current, exists, err = reader.CurrentReceipt(ctx)
+		}
+		if err != nil {
+			return false, err
+		}
+		return exists && current.Equal(intended), nil
+	}
 }
 
 // maintained snapshots the context's cohort for constrained planning: when a
@@ -889,10 +917,11 @@ func (p *Pipeline) commitSelection(reservation *selectionReservation) {
 }
 
 // holdUncertain handles a reservation whose external write happened or may
-// have happened without a confirmed, durably committed result. The previous
-// selection stays, the reserved selection is kept as uncertain demand and
-// admitted, and both stay protected until resolveUncertain reads the actual
-// receipt. Nothing is rolled back externally.
+// have happened without a confirmed, durably committed result. The current
+// selection stays the Gateway's demand, the attempted selection is kept as
+// uncertain demand and admitted, and both are maintained until
+// resolveUncertain reads the actual current output. Nothing is rolled back
+// externally.
 func (p *Pipeline) holdUncertain(reservation *selectionReservation, intended artifact.Receipt, now time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -908,32 +937,20 @@ func (p *Pipeline) holdUncertain(reservation *selectionReservation, intended art
 	held := reservation.previous
 	held.uncertain, held.intended, held.attempt, held.seen, held.pending = demand.selected, intended, state.attempts, now, false
 	state.demand[reservation.gateway] = held
-	// Keep the attempted selection observed: if the cohort is full it may take
-	// slots from this Gateway's previous-only endpoints, because the attempt is
-	// M5's current preference and resolution will settle which one is live.
+	// The reservation counted the current and attempted selections together,
+	// so the attempted endpoints are admitted only into rejected or
+	// unprotected slots; the current output stays maintained.
 	capacity := cohortCapacity(reservation.key, evidencePolicy())
 	for _, id := range held.uncertain {
-		if slices.Contains(state.cohort, id) {
-			continue
-		}
-		if len(state.cohort) < capacity || slices.ContainsFunc(state.cohort, func(member string) bool { return state.rejected[member] || !state.protected(member) }) {
-			state.admit(id, capacity, true)
-			continue
-		}
-		victim := slices.IndexFunc(state.cohort, func(member string) bool {
-			return slices.Contains(held.selected, member) && !slices.Contains(held.uncertain, member) && !state.protectedByOthers(member, reservation.gateway)
-		})
-		if victim >= 0 {
-			state.cohort = slices.Delete(state.cohort, victim, victim+1)
-			state.cohort = append(state.cohort, id)
-		}
+		state.admit(id, capacity, true)
 	}
 }
 
-// resolveUncertain settles a Gateway's uncertain write before it reserves
-// again: if the actual published receipt is the intended one, the uncertain
-// selection becomes its demand; if another receipt is published, it is
-// dropped. When the receipt cannot be read, both stay protected.
+// resolveUncertain settles a Gateway's uncertain write before its next round:
+// if the actual current output carries the intended receipt, the attempted
+// selection becomes its demand; otherwise the attempt is dropped and the
+// current selection, which stayed in the cohort throughout, remains. When the
+// output cannot be read, both stay maintained and no new attempt is reserved.
 func (p *Pipeline) resolveUncertain(key probeContextKey, gateway types.UID, published func(artifact.Receipt) (bool, error)) {
 	p.mu.Lock()
 	state := p.probes[key]
@@ -996,18 +1013,6 @@ func (s *probeState) protected(id string) bool {
 	}
 	for _, demand := range s.demand {
 		if slices.Contains(demand.selected, id) || slices.Contains(demand.uncertain, id) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *probeState) protectedByOthers(id string, gateway types.UID) bool {
-	if s.rejected[id] {
-		return false
-	}
-	for other, demand := range s.demand {
-		if other != gateway && (slices.Contains(demand.selected, id) || slices.Contains(demand.uncertain, id)) {
 			return true
 		}
 	}
