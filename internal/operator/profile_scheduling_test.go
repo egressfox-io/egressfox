@@ -936,6 +936,9 @@ func TestInfeasibleTransitionIsRefusedBeforeWrite(t *testing.T) {
 	for _, name := range []string{"alpha", "default"} {
 		t.Run(name, func(t *testing.T) {
 			h, capacity, _ := sharedHarness(t, name, 12)
+			// Warm-up publications are history; the scenario measures writes
+			// from here on.
+			baseline := map[types.UID]int{"gateway-a": len(h.writes["gateway-a"]), "gateway-b": len(h.writes["gateway-b"])}
 			challenger := capacity + 6
 			h.healthy = func(i int) bool { return i < capacity || i == challenger }
 			h.latency = func(i int) time.Duration {
@@ -961,8 +964,11 @@ func TestInfeasibleTransitionIsRefusedBeforeWrite(t *testing.T) {
 				}
 				h.checkDemandInvariant()
 				for _, gateway := range gateways {
-					if len(h.writes[gateway]) != 0 || h.state().demand[gateway].uncertain != nil {
-						t.Fatalf("%s attempted a write the cohort could not maintain", gateway)
+					if got := len(h.writes[gateway]); got != baseline[gateway] {
+						t.Fatalf("%s wrote %d artifacts after warm-up; want none", gateway, got-baseline[gateway])
+					}
+					if h.state().demand[gateway].uncertain != nil {
+						t.Fatalf("%s holds an uncertain write the cohort could not maintain", gateway)
 					}
 					if !slices.Equal(before[gateway], slices.Sorted(slices.Values(h.selected[gateway]))) {
 						t.Fatalf("%s output changed", gateway)
@@ -1166,9 +1172,13 @@ func (h *probeHarness) untilHeld(gateway types.UID, others ...types.UID) []strin
 // current output keeps it fresh, so no stale-driven replacement follows.
 func TestLostUncertainWriteKeepsCurrentOutputMaintained(t *testing.T) {
 	h, challenger, makeFast := transitionHarness(t, "gateway")
+	baseline := len(h.writes["gateway"])
 	makeFast()
 	h.publish["gateway"] = publishUncertainLost
 	previous := h.untilHeld("gateway")
+	if got := len(h.writes["gateway"]) - baseline; got != 1 {
+		t.Fatalf("writes while establishing the hold = %d, want 1", got)
+	}
 	attempted := h.state().demand["gateway"].uncertain
 	if !slices.Contains(attempted, h.id(challenger)) || !slices.Equal(h.selected["gateway"], previous) {
 		t.Fatal("lost write changed the output or attempted another selection")
@@ -1182,8 +1192,8 @@ func TestLostUncertainWriteKeepsCurrentOutputMaintained(t *testing.T) {
 		executed := h.reconcile("gateway")
 		h.checkOutputMaintained("gateway", executed, attempted)
 		h.checkDemandInvariant()
-		if len(h.writes["gateway"]) != 1 {
-			t.Fatal("a further attempt stacked on the unresolved write")
+		if got := len(h.writes["gateway"]) - baseline; got != 1 {
+			t.Fatalf("writes while unresolved = %d, want 1: a further attempt stacked on the unresolved write", got)
 		}
 		h.now = h.now.Add(maxRequeueSpacing())
 	}
@@ -1250,10 +1260,14 @@ func TestManagedGenerationWriteKeepsCurrentGenerationMaintained(t *testing.T) {
 		t.Run(mode.name, func(t *testing.T) {
 			h, challenger, makeFast := transitionHarness(t, "gateway")
 			h.managed = true
+			baseline := len(h.writes["gateway"])
 			makeFast()
 			h.publish["gateway"] = mode.mode
 			previous := h.untilHeld("gateway")
-			if len(h.writes["gateway"]) != 1 || !slices.Equal(h.selected["gateway"], previous) {
+			if got := len(h.writes["gateway"]) - baseline; got != 1 {
+				t.Fatalf("generation writes while establishing the hold = %d, want 1", got)
+			}
+			if !slices.Equal(h.selected["gateway"], previous) {
 				t.Fatal("generation write changed the current generation")
 			}
 			h.publish["gateway"] = publishOK
