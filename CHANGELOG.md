@@ -38,6 +38,7 @@ Release entries are not edited by hand.
 - 🐛 Reserve shared probe capacity and keep maintained evidence fresh.
 - 🐛 Release rejected demand and hold unconfirmed publications.
 - 🐛 Keep the current output maintained through uncertain publication.
+- 🐛 Drop evicted rejected endpoints from scheduling demand.
 
 ### Security
 
