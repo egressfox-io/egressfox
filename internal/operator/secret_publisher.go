@@ -36,6 +36,12 @@ func (e *SecretPublicationError) Error() string { return "Secret publication fai
 func (e *SecretPublicationError) Unwrap() error { return ErrSecretPublication }
 func (e *SecretPublicationError) Code() string  { return e.code }
 
+// PublicationUncertain reports a failed create or update request, which the
+// API server may still have applied.
+func (e *SecretPublicationError) PublicationUncertain() bool {
+	return e.code == "create" || e.code == "update"
+}
+
 func secretPublicationFailure(code string) error { return &SecretPublicationError{code: code} }
 
 // SecretPublisher publishes one Gateway's validated artifact to an exclusively

@@ -99,14 +99,25 @@ type probeHarness struct {
 	healthy  func(int) bool
 	latency  func(int) time.Duration
 	// failCost is how long an unsuccessful probe occupies its slot.
-	failCost    func(int) time.Duration
-	history     map[string][]observation.Observation
-	states      map[types.UID]*selection.State
-	selected    map[types.UID][]string
-	failPublish map[types.UID]bool
-	refused     map[types.UID]bool
-	constrained map[types.UID]bool
-	overloaded  bool
+	failCost func(int) time.Duration
+	history  map[string][]observation.Observation
+	states   map[types.UID]*selection.State
+	// selected is each Gateway's externally published selection (its output).
+	selected map[types.UID][]string
+	// publish injects the outcome of the next publication per Gateway.
+	publish map[types.UID]publishMode
+	// staged is a Gateway's pending M5 checkpoint and the output it belongs to;
+	// like the store, it is promoted only when that output is what is published.
+	staged       map[types.UID]*selection.State
+	stagedOutput map[types.UID][]string
+	// attempted is the output an uncertain write would have published.
+	attempted map[types.UID][]string
+	// receiptUnreadable makes a Gateway's receipt read fail, so its
+	// reconciliation stops before planning, as Reconcile does.
+	receiptUnreadable map[types.UID]bool
+	refused           map[types.UID]bool
+	constrained       map[types.UID]bool
+	overloaded        bool
 }
 
 func newHarness(t *testing.T, name string, profile artifact.Profile, records []endpoint.Record) *probeHarness {
@@ -120,10 +131,12 @@ func newHarness(t *testing.T, name string, profile artifact.Profile, records []e
 		history:     map[string][]observation.Observation{},
 		states:      map[types.UID]*selection.State{},
 		selected:    map[types.UID][]string{},
-		failPublish: map[types.UID]bool{},
+		publish:     map[types.UID]publishMode{},
 		refused:     map[types.UID]bool{},
 		constrained: map[types.UID]bool{},
 	}
+	h.staged, h.stagedOutput, h.attempted = map[types.UID]*selection.State{}, map[types.UID][]string{}, map[types.UID][]string{}
+	h.receiptUnreadable = map[types.UID]bool{}
 	h.pipeline = &Pipeline{now: func() time.Time { return h.now }}
 	h.index = make(map[string]int, len(records))
 	for i, record := range records {
@@ -169,6 +182,25 @@ func (h *probeHarness) Execute(_ context.Context, record endpoint.Record, _ obse
 	return observation.New(params)
 }
 
+// publishMode injects one publication outcome at the boundaries Apply reports.
+type publishMode uint8
+
+const (
+	publishOK publishMode = iota
+	// publishBefore fails before any external write (render, validation, a
+	// definite publisher refusal).
+	publishBefore
+	// publishReadbackFail writes the output, then the receipt read fails.
+	publishReadbackFail
+	// publishCommitFail writes and confirms the output, then the durable
+	// checkpoint commit fails.
+	publishCommitFail
+	// publishUncertainWritten fails ambiguously after the write took effect.
+	publishUncertainWritten
+	// publishUncertainLost fails ambiguously without the write taking effect.
+	publishUncertainLost
+)
+
 var sequentialProbes = probe.ScheduleConfig{Concurrency: 1, Queue: 256, PerEndpoint: 1, PerTarget: 1, MaxJobs: probe.MaxSchedulerJobs}
 
 // reconcile follows Run for one Gateway: the shared round (if due), evidence
@@ -202,6 +234,17 @@ func (h *probeHarness) reconcile(gateway types.UID) []probe.Job {
 	}
 	h.pipeline.touchDemand(key, gateway, h.now)
 	h.refused[gateway], h.constrained[gateway] = false, false
+	if h.receiptUnreadable[gateway] {
+		return executed
+	}
+	h.pipeline.resolveUncertain(key, gateway, func(artifact.Receipt) (bool, error) {
+		return h.attempted[gateway] != nil && slices.Equal(h.selected[gateway], h.attempted[gateway]), nil
+	})
+	delete(h.attempted, gateway)
+	if staged := h.staged[gateway]; staged != nil && slices.Equal(h.selected[gateway], h.stagedOutput[gateway]) {
+		h.states[gateway] = staged
+	}
+	delete(h.staged, gateway)
 	decision := h.decide(gateway, nil)
 	if len(decision.Selected) == 0 {
 		h.pipeline.observeVerdicts(key, decision)
@@ -220,18 +263,28 @@ func (h *probeHarness) reconcile(gateway types.UID) []probe.Job {
 			return executed
 		}
 	}
-	if h.failPublish[gateway] {
-		h.pipeline.releaseSelection(reservation)
-		return executed
-	}
-	h.pipeline.commitSelection(reservation)
-	next := decision.Next
-	h.states[gateway] = &next
 	ids := make([]string, 0, len(decision.Selected))
 	for _, record := range decision.Selected {
 		ids = append(ids, record.ID().String())
 	}
-	h.selected[gateway] = ids
+	next := decision.Next
+	switch mode := h.publish[gateway]; mode {
+	case publishBefore:
+		h.pipeline.releaseSelection(reservation)
+	case publishOK:
+		h.selected[gateway] = ids
+		h.pipeline.commitSelection(reservation)
+		h.states[gateway] = &next
+	default:
+		// The checkpoint is staged before the write; the write itself
+		// happens unless the uncertain failure lost it.
+		h.staged[gateway], h.stagedOutput[gateway] = &next, ids
+		if mode != publishUncertainLost {
+			h.selected[gateway] = ids
+		}
+		h.attempted[gateway] = ids
+		h.pipeline.holdUncertain(reservation, artifact.Receipt{}, h.now)
+	}
 	return executed
 }
 
@@ -586,7 +639,7 @@ func TestGatewaySelectionsStayIndependentInSharedContext(t *testing.T) {
 		t.Fatalf("selections a=%v b=%v", h.selected["gateway-a"], h.selected["gateway-b"])
 	}
 	state := h.state()
-	if !state.demanded(first[0]) || !state.demanded(h.id(1)) {
+	if !state.protected(first[0]) || !state.protected(h.id(1)) {
 		t.Fatal("shared cohort does not maintain both Gateway selections")
 	}
 }
@@ -749,8 +802,9 @@ func TestProbeStateIsBoundedAndExpires(t *testing.T) {
 	}
 }
 
-// checkDemandInvariant asserts that committed demand fits the cohort and is
-// maintained: every demanded endpoint is a cohort member.
+// checkDemandInvariant asserts that protected demand fits the cohort and is
+// maintained: every selected or uncertain endpoint M5 has not rejected is a
+// cohort member.
 func (h *probeHarness) checkDemandInvariant() {
 	h.t.Helper()
 	state := h.state()
@@ -763,10 +817,14 @@ func (h *probeHarness) checkDemandInvariant() {
 		if demand.pending {
 			h.t.Fatalf("pending reservation of %s survived its reconciliation", gateway)
 		}
-		for _, id := range demand.selected {
+		for _, id := range append(slices.Clone(demand.selected), demand.uncertain...) {
+			// An uncertain write may take its previous-only slots.
+			if state.rejected[id] || (demand.uncertain != nil && !slices.Contains(demand.uncertain, id)) {
+				continue
+			}
 			union[id] = true
 			if !members[id] {
-				h.t.Fatalf("published selection of %s is not maintained", gateway)
+				h.t.Fatalf("protected demand of %s is not maintained", gateway)
 			}
 		}
 	}
@@ -775,74 +833,307 @@ func (h *probeHarness) checkDemandInvariant() {
 	}
 }
 
-// Two Gateways share a full cohort: Gateway b's selection pins every member,
-// and Gateway a independently prefers an explored endpoint after its own M5
-// failure streak and cooldown. The union no longer fits, so a chooses among
-// maintained endpoints instead of publishing an unmaintainable endpoint, and
-// regains its preference once b's demand expires.
+// sharedHarness warms up two Gateways that both publish the whole cohort of a
+// context (topN equals the cohort capacity) over capacity+extra endpoints.
+func sharedHarness(t *testing.T, name string, extra int) (*probeHarness, int, func(...types.UID)) {
+	t.Helper()
+	probeKey := newProbeContextKey("pool", name, artifact.Mihomo11931, testTarget(t, "target-"+name, "https://example.com/"+name))
+	capacity := cohortCapacity(probeKey, evidencePolicy())
+	h := newHarness(t, name, artifact.Mihomo11931, testRecords(t, capacity+extra, 0))
+	h.topN = capacity
+	h.latency = func(int) time.Duration { return 400 * time.Millisecond }
+	h.healthy = func(i int) bool { return i < capacity }
+	step := func(gateways ...types.UID) {
+		t.Helper()
+		for _, gateway := range gateways {
+			h.reconcile(gateway)
+		}
+		h.checkDemandInvariant()
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	for range 20 {
+		step("gateway-a", "gateway-b")
+	}
+	for _, gateway := range []types.UID{"gateway-a", "gateway-b"} {
+		if len(h.selected[gateway]) != capacity || h.constrained[gateway] {
+			t.Fatalf("%s warm-up selected %d of %d", gateway, len(h.selected[gateway]), capacity)
+		}
+	}
+	return h, capacity, step
+}
+
+// Both Gateways publish the full cohort. An outside endpoint becomes clearly
+// faster while every cohort member stays healthy and protected: neither
+// Gateway may publish it unmaintained, so both choose among maintained
+// endpoints without churn. Once one Gateway's demand expires, the other
+// adopts the challenger.
 func TestSharedCohortConstrainsSelectionThatDoesNotFit(t *testing.T) {
 	for _, name := range []string{"alpha", "default"} {
 		t.Run(name, func(t *testing.T) {
-			probeKey := newProbeContextKey("pool", name, artifact.Mihomo11931, testTarget(t, "target-"+name, "https://example.com/"+name))
-			capacity := cohortCapacity(probeKey, evidencePolicy())
-			h := newHarness(t, name, artifact.Mihomo11931, testRecords(t, capacity+12, 0))
-			h.topN = capacity
-			h.latency = func(int) time.Duration { return 400 * time.Millisecond }
-			step := func(gateways ...types.UID) {
-				for _, gateway := range gateways {
-					h.reconcile(gateway)
+			h, capacity, step := sharedHarness(t, name, 12)
+			challenger := capacity + 6
+			h.healthy = func(i int) bool { return i < capacity || i == challenger }
+			h.latency = func(i int) time.Duration {
+				if i == challenger {
+					return 20 * time.Millisecond
 				}
-				h.checkDemandInvariant()
-				h.now = h.now.Add(maxRequeueSpacing())
+				return 400 * time.Millisecond
 			}
-			for range 20 {
-				step("gateway-a")
+			before := map[types.UID][]string{}
+			for _, gateway := range []types.UID{"gateway-a", "gateway-b"} {
+				before[gateway] = slices.Sorted(slices.Values(h.selected[gateway]))
 			}
-			if len(h.selected["gateway-a"]) != capacity {
-				t.Fatalf("warm-up selected %d of %d", len(h.selected["gateway-a"]), capacity)
-			}
-			// Overlapping demands whose union fits are not constrained.
-			for range 3 {
+			constrained := false
+			for range 8 {
 				step("gateway-a", "gateway-b")
-				if h.constrained["gateway-a"] || h.constrained["gateway-b"] {
-					t.Fatal("overlapping demands that fit were constrained")
+				for _, gateway := range []types.UID{"gateway-a", "gateway-b"} {
+					if !slices.Equal(before[gateway], slices.Sorted(slices.Values(h.selected[gateway]))) {
+						t.Fatalf("%s published an endpoint the shared cohort cannot maintain", gateway)
+					}
 				}
+				constrained = constrained || (h.constrained["gateway-a"] && h.constrained["gateway-b"])
 			}
-			if len(h.selected["gateway-b"]) != capacity {
-				t.Fatalf("gateway-b selected %d", len(h.selected["gateway-b"]))
+			if !constrained {
+				t.Fatal("the challenger never needed a constrained decision; scenario is too weak")
 			}
 			bLast := h.now.Add(-maxRequeueSpacing())
-			// Gateway a alone observes a failure streak on one of its members.
-			victim := h.index[h.selected["gateway-a"][0]]
-			h.healthy = func(i int) bool { return i != victim }
-			streak := evidencePolicy().FailureStreak
-			for range streak {
+			adopted := false
+			for range 16 {
 				step("gateway-a")
-			}
-			if !h.constrained["gateway-a"] || len(h.selected["gateway-a"]) != capacity-1 || slices.Contains(h.selected["gateway-a"], h.id(victim)) {
-				t.Fatalf("gateway-a constrained=%t selected=%d", h.constrained["gateway-a"], len(h.selected["gateway-a"]))
-			}
-			constrainedSet := slices.Sorted(slices.Values(h.selected["gateway-a"]))
-			// While b's demand lives, a stays constrained and its published
-			// selection does not churn; once it expires, a fills topN again.
-			released := false
-			for range 12 {
-				step("gateway-a")
-				alive := h.now.Add(-maxRequeueSpacing()).Sub(bLast) <= evidencePolicy().EvidenceWindow
-				switch {
-				case alive && !slices.Equal(constrainedSet, slices.Sorted(slices.Values(h.selected["gateway-a"]))):
-					t.Fatal("constrained selection churned while shared demand persisted")
-				case !alive && !h.constrained["gateway-a"] && len(h.selected["gateway-a"]) == capacity:
-					released = true
+				if h.now.Add(-maxRequeueSpacing()).Sub(bLast) > evidencePolicy().EvidenceWindow && slices.Contains(h.selected["gateway-a"], h.id(challenger)) {
+					adopted = true
 				}
 			}
-			if !released {
+			if !adopted {
 				t.Fatal("expired demand did not release shared capacity")
 			}
 			if _, ok := h.state().demand["gateway-b"]; ok {
 				t.Fatal("expired Gateway demand still held")
 			}
 		})
+	}
+}
+
+// Both Gateways keep reconciling while their whole shared cohort fails. M5
+// rejects the failed members, so their retained last-known-good no longer
+// reserves capacity: both Gateways first retain the LKG with an empty
+// decision, then publish maintained healthy replacements once exploration
+// finds them, without deletion, restart or demand expiry.
+func TestFailedSharedCohortDoesNotBlockFailover(t *testing.T) {
+	for _, name := range []string{"alpha", "default"} {
+		t.Run(name, func(t *testing.T) {
+			h, capacity, step := sharedHarness(t, name, contextCapacity(name))
+			lkg := map[types.UID][]string{"gateway-a": h.selected["gateway-a"], "gateway-b": h.selected["gateway-b"]}
+			h.healthy = func(int) bool { return false }
+			sawEmpty := false
+			for range evidencePolicy().FailureStreak + 3 {
+				step("gateway-a", "gateway-b")
+				for gateway, published := range lkg {
+					if !slices.Equal(slices.Sorted(slices.Values(h.selected[gateway])), slices.Sorted(slices.Values(published))) {
+						t.Fatalf("%s changed its output without a healthy replacement", gateway)
+					}
+				}
+				if len(h.decide("gateway-a", nil).Selected) == 0 {
+					sawEmpty = true
+				}
+			}
+			if !sawEmpty {
+				t.Fatal("failed cohort still produced a selection")
+			}
+			// Healthy endpoints outside the failed cohort appear.
+			h.healthy = func(i int) bool { return i >= capacity }
+			for range 40 {
+				step("gateway-a", "gateway-b")
+			}
+			h.reconcile("gateway-a")
+			h.reconcile("gateway-b")
+			h.checkDemandInvariant()
+			for _, gateway := range []types.UID{"gateway-a", "gateway-b"} {
+				if len(h.selected[gateway]) == 0 {
+					t.Fatalf("%s never replaced its failed cohort", gateway)
+				}
+				for _, id := range h.selected[gateway] {
+					if h.index[id] < capacity {
+						t.Fatalf("%s still publishes a failed endpoint", gateway)
+					}
+					if !slices.Contains(h.state().cohort, id) {
+						t.Fatalf("%s publishes an unmaintained replacement", gateway)
+					}
+				}
+			}
+			h.now = h.now.Add(maxRequeueSpacing())
+			executed := jobIDs(h.reconcile("gateway-a"))
+			for _, id := range h.selected["gateway-a"] {
+				if executed[id] == 0 {
+					t.Fatal("published replacement is not probed")
+				}
+			}
+		})
+	}
+}
+
+func contextCapacity(name string) int {
+	return cohortCapacity(probeContextKey{name: name}, evidencePolicy())
+}
+
+// When only part of the shared cohort fails, the healthy shared members stay
+// protected, selected and maintained while the failed ones are replaced.
+func TestPartialSharedCohortFailureKeepsHealthyMembers(t *testing.T) {
+	h, capacity, step := sharedHarness(t, "alpha", 24)
+	failed := func(i int) bool { return i < capacity/2 }
+	h.healthy = func(i int) bool { return !failed(i) }
+	for range 30 {
+		step("gateway-a", "gateway-b")
+		for i := capacity / 2; i < capacity; i++ {
+			if !slices.Contains(h.state().cohort, h.id(i)) {
+				t.Fatal("a healthy shared member lost maintenance")
+			}
+			for _, gateway := range []types.UID{"gateway-a", "gateway-b"} {
+				if !slices.Contains(h.selected[gateway], h.id(i)) {
+					t.Fatalf("%s dropped a healthy shared member", gateway)
+				}
+			}
+		}
+	}
+	for _, gateway := range []types.UID{"gateway-a", "gateway-b"} {
+		for _, id := range h.selected[gateway] {
+			if failed(h.index[id]) {
+				t.Fatalf("%s still publishes a failed member", gateway)
+			}
+		}
+	}
+}
+
+// One failed observation on every shared member does not reach M5 rejection,
+// so no protection is released and nothing changes.
+func TestTransientSharedFailureKeepsProtection(t *testing.T) {
+	h, capacity, step := sharedHarness(t, "alpha", 12)
+	cohort := slices.Sorted(slices.Values(h.state().cohort))
+	before := slices.Sorted(slices.Values(h.selected["gateway-a"]))
+	h.healthy = func(int) bool { return false }
+	step("gateway-a", "gateway-b")
+	if len(h.state().rejected) != 0 {
+		t.Fatal("one failed observation released protection ahead of M5")
+	}
+	h.healthy = func(i int) bool { return i < capacity }
+	for range 6 {
+		step("gateway-a", "gateway-b")
+	}
+	if !slices.Equal(cohort, slices.Sorted(slices.Values(h.state().cohort))) || !slices.Equal(before, slices.Sorted(slices.Values(h.selected["gateway-a"]))) {
+		t.Fatal("a transient failure changed the shared cohort or selection")
+	}
+}
+
+// After a write that happened, or may have happened, without a confirmed and
+// durably committed result, the attempted selection stays maintained next to
+// the previous one until the next reconciliation reads the actual receipt.
+// The cohort is full, so losing the attempted selection's maintenance would
+// stale the endpoint the output may already carry.
+func TestPostWriteFailuresKeepAttemptedSelectionMaintained(t *testing.T) {
+	for _, mode := range []struct {
+		name    string
+		mode    publishMode
+		written bool
+	}{
+		{"receipt readback fails", publishReadbackFail, true},
+		{"checkpoint commit fails", publishCommitFail, true},
+		{"uncertain write took effect", publishUncertainWritten, true},
+		{"uncertain write was lost", publishUncertainLost, false},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			probeKey := newProbeContextKey("pool", "alpha", artifact.Mihomo11931, testTarget(t, "target-alpha", "https://example.com/alpha"))
+			capacity := cohortCapacity(probeKey, evidencePolicy())
+			h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, capacity+12, 0))
+			h.topN = capacity
+			h.latency = func(int) time.Duration { return 400 * time.Millisecond }
+			for range 20 {
+				h.reconcile("gateway")
+				h.now = h.now.Add(maxRequeueSpacing())
+			}
+			previous := slices.Clone(h.selected["gateway"])
+			challenger := h.id(capacity + 6)
+			h.latency = func(i int) time.Duration {
+				if i == capacity+6 {
+					return 20 * time.Millisecond
+				}
+				return 400 * time.Millisecond
+			}
+			h.publish["gateway"] = mode.mode
+			held := false
+			for range 12 {
+				h.reconcile("gateway")
+				if h.state().demand["gateway"].uncertain != nil {
+					held = true
+					break
+				}
+				h.now = h.now.Add(maxRequeueSpacing())
+			}
+			if !held {
+				t.Fatal("the challenger was never attempted")
+			}
+			demand := h.state().demand["gateway"]
+			if !slices.Equal(demand.selected, previous) || !slices.Contains(demand.uncertain, challenger) || !slices.Contains(h.state().cohort, challenger) {
+				t.Fatal("post-write failure did not keep both selections protected")
+			}
+			if slices.Contains(h.selected["gateway"], challenger) != mode.written {
+				t.Fatalf("external output carries challenger=%t want %t", !mode.written, mode.written)
+			}
+			// The next reconciliation probes the attempted endpoint before it
+			// resolves the receipt, then settles demand and the M5 checkpoint.
+			h.publish["gateway"] = publishOK
+			h.now = h.now.Add(maxRequeueSpacing())
+			if jobIDs(h.reconcile("gateway"))[challenger] == 0 {
+				t.Fatal("attempted endpoint lost maintenance during the recovery interval")
+			}
+			h.checkDemandInvariant()
+			demand = h.state().demand["gateway"]
+			if demand.uncertain != nil || !slices.Contains(h.selected["gateway"], challenger) || !slices.Equal(demand.selected, h.selected["gateway"]) {
+				t.Fatalf("recovery left demand %v for output %v", demand.selected, h.selected["gateway"])
+			}
+		})
+	}
+}
+
+// Another Gateway reconciling while a write is unresolved cannot take the
+// slots of either the previous or the attempted selection.
+func TestOtherGatewayRespectsUnresolvedWrite(t *testing.T) {
+	h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, 10, 0))
+	h.latency = fastest(0)
+	for range 4 {
+		h.reconcile("gateway-a")
+		h.reconcile("gateway-b")
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	h.latency = fastest(5)
+	h.publish["gateway-a"] = publishUncertainWritten
+	for range 8 {
+		h.reconcile("gateway-a")
+		if h.state().demand["gateway-a"].uncertain != nil {
+			break
+		}
+		h.reconcile("gateway-b")
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	if h.state().demand["gateway-a"].uncertain == nil {
+		t.Fatal("no uncertain write was held")
+	}
+	h.publish["gateway-a"] = publishOK
+	h.receiptUnreadable["gateway-a"] = true
+	for range 4 {
+		h.now = h.now.Add(maxRequeueSpacing())
+		h.reconcile("gateway-a")
+		h.reconcile("gateway-b")
+		h.checkDemandInvariant()
+		demand := h.state().demand["gateway-a"]
+		if demand.uncertain == nil || !h.state().protected(h.id(0)) || !h.state().protected(h.id(5)) {
+			t.Fatal("unresolved write lost protection while another Gateway reconciled")
+		}
+	}
+	h.receiptUnreadable["gateway-a"] = false
+	h.now = h.now.Add(maxRequeueSpacing())
+	h.reconcile("gateway-a")
+	if demand := h.state().demand["gateway-a"]; demand.uncertain != nil || !slices.Equal(demand.selected, []string{h.id(5)}) {
+		t.Fatal("readable receipt did not resolve the uncertain write")
 	}
 }
 
@@ -860,7 +1151,7 @@ func TestFailedPublicationReleasesReservation(t *testing.T) {
 	before := *h.states["gateway"]
 	// Endpoint 5 becomes clearly faster; M5 prefers it after residence.
 	h.latency = fastest(5)
-	h.failPublish["gateway"] = true
+	h.publish["gateway"] = publishBefore
 	for range 6 {
 		h.reconcile("gateway")
 		h.checkDemandInvariant()
@@ -872,10 +1163,10 @@ func TestFailedPublicationReleasesReservation(t *testing.T) {
 	if !h.states["gateway"].EvaluatedAt.Equal(before.EvaluatedAt) {
 		t.Fatal("failed publication committed M5 state")
 	}
-	h.failPublish["gateway"] = false
+	h.publish["gateway"] = publishOK
 	h.reconcile("gateway")
 	h.checkDemandInvariant()
-	if !slices.Equal(h.selected["gateway"], []string{h.id(5)}) || !h.state().demanded(h.id(5)) {
+	if !slices.Equal(h.selected["gateway"], []string{h.id(5)}) || !h.state().protected(h.id(5)) {
 		t.Fatalf("successful publication did not commit: %v", h.selected["gateway"])
 	}
 }

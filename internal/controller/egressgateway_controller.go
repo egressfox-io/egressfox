@@ -104,8 +104,15 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 		gateway.Status.EligibleEndpoints = 0
 		gateway.Status.SelectedEndpoints = 0
 		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionFalse, reason, "selection for the current desired generation is unavailable", gateway.Generation, now()))
-		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionFalse, reason, message, gateway.Generation, now()))
-		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionPublished, metav1.ConditionFalse, reason, "the previous owned configuration, if any, was retained", gateway.Generation, now()))
+		publishedMessage := "the previous owned configuration, if any, was retained"
+		if reason == "PublicationUnconfirmed" {
+			// The artifact passed native validation and may already be live.
+			publishedMessage = message
+			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionTrue, "NativeValidationPassed", "the exact artifact passed native engine validation", gateway.Generation, now()))
+		} else {
+			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionFalse, reason, message, gateway.Generation, now()))
+		}
+		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionPublished, metav1.ConditionFalse, reason, publishedMessage, gateway.Generation, now()))
 		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionReady, metav1.ConditionFalse, reason, "the desired configuration is not published", gateway.Generation, now()))
 	} else {
 		gateway.Status.EligibleEndpoints = int32(outcome.Eligible)
@@ -290,6 +297,8 @@ func pipelineCondition(err error) (string, string) {
 		return "RenderFailed", "the selected configuration could not be rendered"
 	case "publication", "publisher", "publication_too_large":
 		return "PublicationFailed", "the validated artifact could not replace the owned output Secret"
+	case "publication_unconfirmed":
+		return "PublicationUnconfirmed", "the output may already carry the new artifact, but its receipt or checkpoint was not confirmed; it is resolved from the actual receipt on the next reconciliation"
 	case "publication_conflict":
 		return "PublicationConflict", "the requested output Secret is not owned by this gateway"
 	case "snapshot_obsolete":

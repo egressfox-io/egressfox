@@ -120,19 +120,28 @@ type probeState struct {
 	// rejected holds cohort members whose latest M5 explanation was a failure
 	// streak or unreliability; only they may yield a slot to a newcomer.
 	rejected map[string]bool
-	// demand records each Gateway's published selection (or a pending
-	// reservation for the selection it is about to publish). Their union never
-	// exceeds the cohort capacity, so demanded endpoints are always maintained.
+	// demand records each Gateway's scheduling demand in this context. Demand
+	// for an endpoint M5 rejected is not protected, so the union of protected
+	// demand stays within the cohort capacity and is always maintained.
 	demand map[types.UID]probeDemand
 	// overloaded reports that the latest maintenance phase outlasted Freshness.
 	overloaded bool
+	attempts   uint64
 	seen       time.Time
 }
 
+// probeDemand is one Gateway's demand. selected is the selection it last
+// published here, or while pending, a reservation for the decision it is
+// about to publish. uncertain is a selection whose external write may have
+// taken effect (intended is its receipt); it stays protected next to selected
+// until the Gateway's next reconciliation reads the actual receipt.
 type probeDemand struct {
-	selected []string
-	seen     time.Time
-	pending  bool
+	selected  []string
+	seen      time.Time
+	pending   bool
+	uncertain []string
+	intended  artifact.Receipt
+	attempt   uint64
 }
 
 type limitedRunner struct {
@@ -317,9 +326,20 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("reconciler")
 	}
+	// Settle an earlier uncertain write from the actual published receipt
+	// before this Gateway reserves again.
+	p.resolveUncertain(probeKey, gateway.UID, func(intended artifact.Receipt) (bool, error) {
+		current, exists, err := publisher.CurrentReceipt(ctx)
+		if err != nil {
+			return false, err
+		}
+		return exists && current.Equal(intended), nil
+	})
 	// A non-empty decision reserves its maintenance in the shared cohort before
-	// anything is rendered or published; the reservation becomes committed
-	// demand only once that exact selection is published.
+	// anything is rendered or published. The reservation becomes the Gateway's
+	// demand once that selection is published and durably committed; after an
+	// external write without that confirmation it is held as uncertain demand;
+	// only a failure before any external write releases it.
 	var reservation *selectionReservation
 	defer func() {
 		if reservation != nil {
@@ -337,12 +357,24 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 		Maintained:  p.maintained(probeKey),
 		BeforeApply: guard.BindSelected,
 	})
-	if err == nil {
-		if reservation == nil {
+	switch {
+	case reservation == nil:
+		if err == nil {
 			p.observeVerdicts(probeKey, result.Decision)
-		} else if result.Published {
-			p.commitSelection(reservation)
-			reservation = nil
+		}
+	case err == nil && result.Published:
+		p.commitSelection(reservation)
+		reservation = nil
+	case result.Publication != reconcile.PublicationNone:
+		// The output may now carry the new selection while the receipt or the
+		// durable checkpoint is unconfirmed; a managed Gateway also activates
+		// only the generation its status records. Keep both selections
+		// protected until the next reconciliation reads the actual receipt.
+		p.holdUncertain(reservation, result.Intended, now)
+		reservation = nil
+		if err != nil {
+			// The status must not claim the previous output was retained.
+			return GatewayOutcome{}, pipelineFailure("publication_unconfirmed")
 		}
 	}
 	if err != nil {
@@ -593,7 +625,7 @@ func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, 
 		record, ok := compatible[id]
 		if ok {
 			job := probe.Job{Record: record, Target: target}
-			if state.demanded(id) {
+			if state.protected(id) {
 				demanded = append(demanded, job)
 			} else {
 				round.maintain = append(round.maintain, job)
@@ -751,7 +783,7 @@ func (s *probeState) observeVerdicts(decision selection.Decision) {
 }
 
 // selectionReservation is a pending demand for one Gateway's decision. It
-// holds the Gateway's previous committed demand so a refusal or failure
+// holds the Gateway's previous demand so a failure before any external write
 // leaves the context exactly as it was.
 type selectionReservation struct {
 	key         probeContextKey
@@ -760,11 +792,15 @@ type selectionReservation struct {
 	hadPrevious bool
 }
 
-// reserveSelection accepts a decision only when the union of every Gateway's
-// demand in the context, with this decision replacing the Gateway's own, fits
-// the cohort. The check runs before rendering or publication. A refusal makes
-// the reconciler plan again among maintained endpoints; if that is refused as
-// well, the last-known-good output and its committed demand remain.
+// reserveSelection accepts a decision only when the union of every protected
+// demand in the context, with this decision replacing the Gateway's own
+// selection, fits the cohort. The check runs before rendering or publication.
+// Demand counts only for maintained endpoints M5 has not rejected: a Gateway
+// keeps publishing its last-known-good, but an endpoint M5 rejected for its
+// failure streak or unreliability no longer reserves capacity. Missing
+// evidence, withheld evidence, deferral and cooldown are not rejections. A
+// refusal makes the reconciler plan again among maintained endpoints; if that
+// is refused as well, the last-known-good output and its demand remain.
 func (p *Pipeline) reserveSelection(key probeContextKey, gateway types.UID, decision selection.Decision, now time.Time) (*selectionReservation, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -777,8 +813,6 @@ func (p *Pipeline) reserveSelection(key probeContextKey, gateway types.UID, deci
 	for _, record := range decision.Selected {
 		selected = append(selected, record.ID().String())
 	}
-	// Committed demand counts only while it is maintained; an endpoint that
-	// left the inventory holds no slot. Pending demand is about to be admitted.
 	members := make(map[string]bool, len(state.cohort))
 	for _, id := range state.cohort {
 		members[id] = true
@@ -787,9 +821,15 @@ func (p *Pipeline) reserveSelection(key probeContextKey, gateway types.UID, deci
 	for other, demand := range state.demand {
 		if other != gateway {
 			for _, id := range demand.selected {
-				if demand.pending || members[id] {
+				if demand.pending || (members[id] && !state.rejected[id]) {
 					needed[id] = true
 				}
+			}
+		}
+		// An unresolved write may be live; it stays protected for its owner too.
+		for _, id := range demand.uncertain {
+			if members[id] && !state.rejected[id] {
+				needed[id] = true
 			}
 		}
 	}
@@ -804,13 +844,15 @@ func (p *Pipeline) reserveSelection(key probeContextKey, gateway types.UID, deci
 	if state.demand == nil {
 		state.demand = map[types.UID]probeDemand{}
 	}
-	state.demand[gateway] = probeDemand{selected: selected, seen: now, pending: true}
+	pending := reservation.previous
+	pending.selected, pending.seen, pending.pending = selected, now, true
+	state.demand[gateway] = pending
 	return reservation, nil
 }
 
 // maintained snapshots the context's cohort for constrained planning: when a
 // preferred decision does not fit, M5 chooses again among these endpoints.
-// Every committed demand is a cohort member, so such a decision always fits.
+// Every protected demand is a cohort member, so such a decision always fits.
 func (p *Pipeline) maintained(key probeContextKey) func(endpoint.Record) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -823,9 +865,10 @@ func (p *Pipeline) maintained(key probeContextKey) func(endpoint.Record) bool {
 	return func(record endpoint.Record) bool { return members[record.ID().String()] }
 }
 
-// commitSelection turns a published reservation into committed demand and
-// admits its endpoints. Reservation keeps the demand union within capacity,
-// so a member outside every demand can always yield its slot.
+// commitSelection turns a published reservation into the Gateway's demand and
+// admits its endpoints. Reservation keeps protected demand within capacity, so
+// an unprotected member can always yield its slot. A confirmed publication
+// also settles any earlier uncertain write.
 func (p *Pipeline) commitSelection(reservation *selectionReservation) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -837,7 +880,7 @@ func (p *Pipeline) commitSelection(reservation *selectionReservation) {
 	if !ok || !demand.pending {
 		return
 	}
-	demand.pending = false
+	demand.pending, demand.uncertain, demand.intended = false, nil, artifact.Receipt{}
 	state.demand[reservation.gateway] = demand
 	capacity := cohortCapacity(reservation.key, evidencePolicy())
 	for _, id := range demand.selected {
@@ -845,8 +888,87 @@ func (p *Pipeline) commitSelection(reservation *selectionReservation) {
 	}
 }
 
-// releaseSelection restores the Gateway's previous demand after a refused,
-// failed or obsolete publication, leaving no speculative pin behind.
+// holdUncertain handles a reservation whose external write happened or may
+// have happened without a confirmed, durably committed result. The previous
+// selection stays, the reserved selection is kept as uncertain demand and
+// admitted, and both stay protected until resolveUncertain reads the actual
+// receipt. Nothing is rolled back externally.
+func (p *Pipeline) holdUncertain(reservation *selectionReservation, intended artifact.Receipt, now time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	state := p.probes[reservation.key]
+	if state == nil {
+		return
+	}
+	demand, ok := state.demand[reservation.gateway]
+	if !ok || !demand.pending {
+		return
+	}
+	state.attempts++
+	held := reservation.previous
+	held.uncertain, held.intended, held.attempt, held.seen, held.pending = demand.selected, intended, state.attempts, now, false
+	state.demand[reservation.gateway] = held
+	// Keep the attempted selection observed: if the cohort is full it may take
+	// slots from this Gateway's previous-only endpoints, because the attempt is
+	// M5's current preference and resolution will settle which one is live.
+	capacity := cohortCapacity(reservation.key, evidencePolicy())
+	for _, id := range held.uncertain {
+		if slices.Contains(state.cohort, id) {
+			continue
+		}
+		if len(state.cohort) < capacity || slices.ContainsFunc(state.cohort, func(member string) bool { return state.rejected[member] || !state.protected(member) }) {
+			state.admit(id, capacity, true)
+			continue
+		}
+		victim := slices.IndexFunc(state.cohort, func(member string) bool {
+			return slices.Contains(held.selected, member) && !slices.Contains(held.uncertain, member) && !state.protectedByOthers(member, reservation.gateway)
+		})
+		if victim >= 0 {
+			state.cohort = slices.Delete(state.cohort, victim, victim+1)
+			state.cohort = append(state.cohort, id)
+		}
+	}
+}
+
+// resolveUncertain settles a Gateway's uncertain write before it reserves
+// again: if the actual published receipt is the intended one, the uncertain
+// selection becomes its demand; if another receipt is published, it is
+// dropped. When the receipt cannot be read, both stay protected.
+func (p *Pipeline) resolveUncertain(key probeContextKey, gateway types.UID, published func(artifact.Receipt) (bool, error)) {
+	p.mu.Lock()
+	state := p.probes[key]
+	if state == nil {
+		p.mu.Unlock()
+		return
+	}
+	demand, ok := state.demand[gateway]
+	if !ok || demand.pending || demand.uncertain == nil {
+		p.mu.Unlock()
+		return
+	}
+	intended, attempt := demand.intended, demand.attempt
+	p.mu.Unlock()
+	written, err := published(intended)
+	if err != nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if state = p.probes[key]; state == nil {
+		return
+	}
+	if demand, ok = state.demand[gateway]; !ok || demand.pending || demand.attempt != attempt || demand.uncertain == nil {
+		return
+	}
+	if written {
+		demand.selected = demand.uncertain
+	}
+	demand.uncertain, demand.intended = nil, artifact.Receipt{}
+	state.demand[gateway] = demand
+}
+
+// releaseSelection restores the Gateway's previous demand after a refusal or a
+// failure before any external write, leaving no speculative pin behind.
 func (p *Pipeline) releaseSelection(reservation *selectionReservation) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -864,9 +986,28 @@ func (p *Pipeline) releaseSelection(reservation *selectionReservation) {
 	}
 }
 
-func (s *probeState) demanded(id string) bool {
+// protected reports whether some Gateway's demand still requires id to be
+// maintained: it is selected, reserved or uncertainly written, and M5 has not
+// rejected it. Rejected demand keeps its published last-known-good but no
+// longer blocks admission of replacements.
+func (s *probeState) protected(id string) bool {
+	if s.rejected[id] {
+		return false
+	}
 	for _, demand := range s.demand {
-		if slices.Contains(demand.selected, id) {
+		if slices.Contains(demand.selected, id) || slices.Contains(demand.uncertain, id) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *probeState) protectedByOthers(id string, gateway types.UID) bool {
+	if s.rejected[id] {
+		return false
+	}
+	for other, demand := range s.demand {
+		if other != gateway && (slices.Contains(demand.selected, id) || slices.Contains(demand.uncertain, id)) {
 			return true
 		}
 	}
@@ -874,17 +1015,17 @@ func (s *probeState) demanded(id string) bool {
 }
 
 // admit adds id to a bounded cohort. When the cohort is full, the oldest
-// member outside every demand that M5 rejected yields its slot; a selected
-// endpoint may displace the oldest member outside every demand. Demanded
-// members are never displaced.
+// member M5 rejected that no demand protects yields its slot; a selected
+// endpoint may displace the oldest unprotected member. Protected members are
+// never displaced.
 func (s *probeState) admit(id string, capacity int, selected bool) {
 	if slices.Contains(s.cohort, id) {
 		return
 	}
 	if len(s.cohort) >= capacity {
-		victim := slices.IndexFunc(s.cohort, func(member string) bool { return s.rejected[member] && !s.demanded(member) })
+		victim := slices.IndexFunc(s.cohort, func(member string) bool { return s.rejected[member] })
 		if victim < 0 && selected {
-			victim = slices.IndexFunc(s.cohort, func(member string) bool { return !s.demanded(member) })
+			victim = slices.IndexFunc(s.cohort, func(member string) bool { return !s.protected(member) })
 		}
 		if victim < 0 {
 			return

@@ -274,6 +274,7 @@ func TestGatewaySelectionShortfallReasons(t *testing.T) {
 		{"no evidence", operatoradapter.GatewayOutcome{RequestedTopN: 1, EffectiveTopN: 1}, nil, metav1.ConditionFalse, "NoEligibleEndpoints"},
 		{"limited by shared demand", operatoradapter.GatewayOutcome{Eligible: 26, Selected: 24, RequestedTopN: 24, EffectiveTopN: 24, Published: true, SharedCapacityLimited: true}, nil, metav1.ConditionTrue, "ProbeCapacityShared"},
 		{"shared demand leaves no maintainable selection", operatoradapter.GatewayOutcome{}, codedError("probe_capacity"), metav1.ConditionFalse, "ProbeCapacityExceeded"},
+		{"write not confirmed", operatoradapter.GatewayOutcome{}, codedError("publication_unconfirmed"), metav1.ConditionFalse, "PublicationUnconfirmed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			scheme := controllerScheme(t)

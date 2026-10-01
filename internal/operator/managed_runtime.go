@@ -56,6 +56,10 @@ func (e *ManagedRuntimeError) Unwrap() error  { return ErrManagedRuntime }
 func (e *ManagedRuntimeError) Code() string   { return e.code }
 func managedRuntimeFailure(code string) error { return &ManagedRuntimeError{code: code} }
 
+// PublicationUncertain reports a failed generation create request, which the
+// API server may still have applied.
+func (e *ManagedRuntimeError) PublicationUncertain() bool { return e.code == "generation_create" }
+
 type ManagedRuntimeConfig struct {
 	Client client.Client
 	Scheme *runtime.Scheme

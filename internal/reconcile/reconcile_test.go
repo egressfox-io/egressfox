@@ -369,6 +369,139 @@ func TestRefusedReservationPlansAmongMaintainedEndpoints(t *testing.T) {
 	}
 }
 
+// memoryPublisher holds one published receipt and injects faults around the
+// external write.
+type memoryPublisher struct {
+	receipt        artifact.Receipt
+	exists         bool
+	publishErr     error
+	writeOnFailure bool
+	// readbackErr fails receipt reads once something has been written.
+	readbackErr error
+}
+
+func (p *memoryPublisher) CurrentReceipt(context.Context) (artifact.Receipt, bool, error) {
+	if p.readbackErr != nil && p.exists {
+		return artifact.Receipt{}, false, p.readbackErr
+	}
+	return p.receipt, p.exists, nil
+}
+
+func (p *memoryPublisher) Publish(_ context.Context, validated artifact.Validated) (artifact.Publication, error) {
+	receipt, err := validated.Receipt()
+	if err != nil {
+		return artifact.Publication{}, err
+	}
+	if p.publishErr != nil {
+		if p.writeOnFailure {
+			p.receipt, p.exists = receipt, true
+		}
+		return artifact.Publication{}, p.publishErr
+	}
+	changed := !p.exists || !p.receipt.Equal(receipt)
+	p.receipt, p.exists = receipt, true
+	return artifact.Publication{Changed: changed}, nil
+}
+
+type uncertainError struct{}
+
+func (uncertainError) Error() string              { return "synthetic write timeout" }
+func (uncertainError) PublicationUncertain() bool { return true }
+
+// failingCommit wraps the real store and fails CommitDecision while set.
+type failingCommit struct {
+	*state.Store
+	fail bool
+}
+
+func (d *failingCommit) CommitDecision(ctx context.Context, scope string, receipt artifact.Receipt) error {
+	if d.fail {
+		return errors.New("synthetic commit failure")
+	}
+	return d.Store.CommitDecision(ctx, scope, receipt)
+}
+
+// Apply reports the external publication state independently of its error:
+// failures before the write report none, an ambiguous write is uncertain, a
+// write whose receipt cannot be read back is written, and a matching receipt
+// is confirmed even when the durable checkpoint commit fails.
+func TestApplyReportsPublicationStateSeparately(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		checker     artifact.Checker
+		publisher   *memoryPublisher
+		failCommit  bool
+		stage       string
+		publication reconcile.Publication
+		written     bool
+	}{
+		{"validation fails before publication", checker{reject: true}, &memoryPublisher{}, false, "validation", reconcile.PublicationNone, false},
+		{"publication fails before writing", checker{}, &memoryPublisher{publishErr: errors.New("synthetic ownership refusal")}, false, "publication", reconcile.PublicationNone, false},
+		{"uncertain write that happened", checker{}, &memoryPublisher{publishErr: uncertainError{}, writeOnFailure: true}, false, "publication", reconcile.PublicationUncertain, true},
+		{"uncertain write that did not happen", checker{}, &memoryPublisher{publishErr: uncertainError{}}, false, "publication", reconcile.PublicationUncertain, false},
+		{"receipt read-back fails after the write", checker{}, &memoryPublisher{readbackErr: errors.New("synthetic read failure")}, false, "publication_readback", reconcile.PublicationWritten, true},
+		{"commit fails after a confirmed write", checker{}, &memoryPublisher{}, true, "state_commit", reconcile.PublicationConfirmed, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store, err := state.Open(filepath.Join(privateDirectory(t), "history.db"), state.DefaultRetention())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			inventory := testInventory(t, "fault-secret")
+			now := time.Date(2026, 9, 19, 21, 0, 0, 0, time.UTC)
+			selectionContext := testSelectionContext(t, artifact.Mihomo11931)
+			appendEvidence(t, store, inventory, selectionContext, now)
+			decisions := &failingCommit{Store: store, fail: test.failCommit}
+			reconciler, err := reconcile.New(store, decisions, test.publisher)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := reconciler.Reconcile(context.Background(), testRequest(t, inventory, selectionContext, mihomo.Renderer{}, now, test.checker))
+			if failureStage(err) != test.stage || result.Publication != test.publication || result.Published {
+				t.Fatalf("stage=%q publication=%d published=%t", failureStage(err), result.Publication, result.Published)
+			}
+			if test.publisher.exists != test.written {
+				t.Fatalf("external write=%t want %t", test.publisher.exists, test.written)
+			}
+			if test.written && !test.publisher.receipt.Equal(result.Intended) {
+				t.Fatal("intended receipt does not identify the written artifact")
+			}
+		})
+	}
+}
+
+// After a confirmed write whose durable commit failed, the next reconciliation
+// recovers the staged checkpoint from the actual published receipt instead of
+// treating the decision as new.
+func TestPendingCheckpointRecoversFromPublishedReceipt(t *testing.T) {
+	store, err := state.Open(filepath.Join(privateDirectory(t), "history.db"), state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	inventory := testInventory(t, "recovery-secret")
+	now := time.Date(2026, 9, 19, 22, 0, 0, 0, time.UTC)
+	selectionContext := testSelectionContext(t, artifact.Mihomo11931)
+	appendEvidence(t, store, inventory, selectionContext, now)
+	publisher := &memoryPublisher{}
+	decisions := &failingCommit{Store: store, fail: true}
+	reconciler, err := reconcile.New(store, decisions, publisher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := testRequest(t, inventory, selectionContext, mihomo.Renderer{}, now, checker{})
+	first, err := reconciler.Reconcile(context.Background(), request)
+	if failureStage(err) != "state_commit" || first.Publication != reconcile.PublicationConfirmed {
+		t.Fatalf("first reconcile stage=%q publication=%d", failureStage(err), first.Publication)
+	}
+	decisions.fail = false
+	second, err := reconciler.Reconcile(context.Background(), request)
+	if err != nil || !second.Published || second.Changed || second.Decision.Changed || !sameSelected(first.Decision.Selected, second.Decision.Selected) {
+		t.Fatalf("recovery reconcile = %s, %v", second, err)
+	}
+}
+
 func testRequest(t testing.TB, inventory endpoint.Inventory, context selection.Context, renderer engine.Renderer, now time.Time, checker artifact.Checker) reconcile.Request {
 	t.Helper()
 	listener, err := policy.NewSOCKSListener("127.0.0.1", 1080)
