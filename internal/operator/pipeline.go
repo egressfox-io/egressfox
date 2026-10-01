@@ -30,15 +30,21 @@ import (
 	"github.com/egressfox-io/egressfox/internal/state"
 )
 
-const maxProbeBatch = 64
-
-// Named profiles keep a bounded working set of endpoints that answered the
-// profile target and re-probe it every window so M5 evidence accumulates on
-// the same endpoints, while a small deterministic cursor explores the rest.
+// Probe scheduling is one mechanism for the default and every named profile.
+// Each probe context runs at most one round per evidence cadence. A round
+// re-probes the context's maintained cohort once and explores a few further
+// compatible endpoints from a shared cursor, probing each MinSamples times so
+// a challenger can reach M5 evidence in one round. The per-round job budget is
+// the documented bound: 64 for the default profile, 30 for a named profile.
 const (
-	namedWorkingSet = 8
-	namedExploreMin = 2
+	maxProbeBatch   = 64
+	namedProbeBatch = 30
+	exploreMin      = 2
 	probeStateTTL   = 24 * time.Hour
+	minProbeCadence = 30 * time.Second
+	// RequeueJitterPermille is the controller's maximum stable positive requeue
+	// spread. The evidence cadence assumes every requeue may be this late.
+	RequeueJitterPermille = 100
 )
 
 var ErrPipeline = errors.New("operator pipeline failed")
@@ -74,7 +80,6 @@ type Pipeline struct {
 	managed       *ManagedRuntime
 	now           func() time.Time
 	mu            sync.Mutex
-	cursors       map[types.UID]int
 	probes        map[probeContextKey]*probeState
 	probeSlots    chan struct{}
 }
@@ -83,8 +88,8 @@ type Pipeline struct {
 // observation dimensions: pool, exact engine profile, target ID and target
 // revision. For named profiles the target ID already encodes the profile name
 // and its incarnation (FirstObservedGeneration), so a removed and recreated
-// profile never inherits old budget, cursor or working set. Gateways are
-// deliberately not part of the key; selection state stays Gateway-scoped.
+// profile never inherits old round, cursor or cohort. Gateways are deliberately
+// not part of the key; M5 selection state stays Gateway-scoped.
 type probeContextKey struct {
 	pool     types.UID
 	name     string
@@ -103,12 +108,26 @@ func newProbeContextKey(pool types.UID, name string, profile artifact.Profile, t
 	return key
 }
 
+// probeState is the shared scheduling state of one probe context. It holds
+// which endpoints to keep observing, never health verdicts: eligibility,
+// failure streaks, cooldown and anti-flap remain M5 decisions.
 type probeState struct {
-	until   time.Time
-	used    int
-	cursor  int
-	working []string
-	seen    time.Time
+	until  time.Time
+	cursor int
+	// cohort lists maintained endpoint IDs in admission order.
+	cohort []string
+	// rejected holds cohort members whose latest M5 explanation was a failure
+	// streak or unreliability; only they may yield a slot to a newcomer.
+	rejected map[string]bool
+	// demand records each referencing Gateway's current selection so selected
+	// endpoints stay maintained whatever path admitted them.
+	demand map[types.UID]probeDemand
+	seen   time.Time
+}
+
+type probeDemand struct {
+	selected []string
+	seen     time.Time
 }
 
 type limitedRunner struct {
@@ -155,7 +174,7 @@ func NewPipeline(config PipelineConfig) (*Pipeline, error) {
 			return nil, pipelineFailure("managed_runtime")
 		}
 	}
-	return &Pipeline{client: config.Client, reader: reader, scheme: config.Scheme, store: config.Store, mihomoBinary: config.MihomoBinary, singBoxBinary: config.SingBoxBinary, managed: managed, now: now, cursors: map[types.UID]int{}, probes: map[probeContextKey]*probeState{}, probeSlots: make(chan struct{}, 4)}, nil
+	return &Pipeline{client: config.Client, reader: reader, scheme: config.Scheme, store: config.Store, mihomoBinary: config.MihomoBinary, singBoxBinary: config.SingBoxBinary, managed: managed, now: now, probes: map[probeContextKey]*probeState{}, probeSlots: make(chan struct{}, 4)}, nil
 }
 
 func (p *Pipeline) ManagedRuntime() *ManagedRuntime { return p.managed }
@@ -202,7 +221,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 		return GatewayOutcome{}, pipelineFailure("probe_scheduler")
 	}
 	probeKey := newProbeContextKey(pool.UID, profileName, profile, target)
-	jobs := p.budgetedJobs(probeKey, gateway.UID, poolResult.Inventory.Records(), target, profile, refreshDuration(pool.Spec.RefreshInterval), p.now())
+	jobs := p.budgetedJobs(probeKey, poolResult.Inventory.Records(), target, profile, p.now())
 	results, _, err := scheduler.Run(ctx, jobs)
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_schedule")
@@ -222,7 +241,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	}
 	selectionPolicy := selection.DefaultPolicy(selectionStrategy(selectionSpec.Strategy))
 	if selectionSpec.TopN > 0 {
-		selectionPolicy.TopN = int(selectionSpec.TopN)
+		selectionPolicy.TopN = maintainableTopN(probeKey, int(selectionSpec.TopN))
 	}
 	inputRevisions := poolResult.SourceRevisions
 	inputRevisions[targetName] = targetRevision
@@ -299,6 +318,7 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 		}
 		return GatewayOutcome{}, pipelineFailure("reconcile")
 	}
+	p.recordSelection(probeKey, gateway.UID, result.Decision, now)
 	eligible := 0
 	for _, explanation := range result.Decision.Explanations {
 		if explanation.Reason == selection.ReasonEligible {
@@ -404,126 +424,198 @@ func (p *Pipeline) target(ctx context.Context, pool *egressv1alpha1.ProxyPool, p
 	return target, name, revision, nil
 }
 
-func (p *Pipeline) nextJobs(uid types.UID, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile) []probe.Job {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.nextJobsLocked(uid, records, target, profile, maxProbeBatch)
+// evidencePolicy is the M5 evidence policy every profile currently uses; the
+// API exposes only strategy and TopN.
+func evidencePolicy() selection.Policy {
+	return selection.DefaultPolicy(selection.StrategyAdaptive)
 }
 
-// budgetedJobs returns the probe jobs for one probe context. Budget, cursor
-// and working set belong to the context, so equivalent Gateways share them and
-// a changed target or recreated profile starts fresh. The legacy default
-// profile keeps its 64-job round robin with the per-Gateway cursor.
-func (p *Pipeline) budgetedJobs(key probeContextKey, gatewayUID types.UID, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, interval time.Duration, now time.Time) []probe.Job {
+// probeCadence derives the evidence-maintenance round interval from the M5
+// evidence policy, independently of the source refresh interval. Rounds run
+// when a Gateway reconciles, and the controller requeues after the cadence
+// plus at most RequeueJitterPermille of it. The cadence therefore keeps:
+//   - every evaluation within Freshness of the round it reads, because a
+//     round's window never exceeds Freshness; and
+//   - MinSamples maintenance rounds inside EvidenceWindow even when every
+//     requeue is maximally late, with one extra round of headroom for probe
+//     and queue latency: MinSamples * cadence * (1 + jitter) <= EvidenceWindow.
+func probeCadence(policy selection.Policy) time.Duration {
+	cadence := policy.Freshness
+	if policy.MinSamples > 1 {
+		spread := time.Duration(policy.MinSamples) * (1000 + RequeueJitterPermille)
+		cadence = min(cadence, policy.EvidenceWindow*1000/spread)
+	}
+	return max(cadence, minProbeCadence)
+}
+
+// EvidenceCadence is the Gateway requeue base needed to maintain M5 evidence.
+// The controller requeues at the shorter of it and the source refresh interval.
+func EvidenceCadence() time.Duration { return probeCadence(evidencePolicy()) }
+
+func roundBudget(key probeContextKey) int {
+	if key.name == "default" {
+		return maxProbeBatch
+	}
+	return namedProbeBatch
+}
+
+// cohortCapacity is the number of endpoints a context can maintain every
+// round while still reserving exploration for exploreMin newcomers.
+func cohortCapacity(key probeContextKey, policy selection.Policy) int {
+	return roundBudget(key) - exploreMin*policy.MinSamples
+}
+
+// maintainableTopN bounds a requested TopN by what the context can keep fresh.
+// TopN is an upper bound in M5: a shortfall is reported, never filled, so this
+// avoids selecting endpoints whose evidence the scheduler cannot maintain.
+func maintainableTopN(key probeContextKey, requested int) int {
+	return max(1, min(requested, cohortCapacity(key, evidencePolicy())))
+}
+
+// budgetedJobs returns the probe jobs for one probe context. Round window,
+// cursor and cohort belong to the context, so equivalent Gateways share one
+// round and one exploration position, and a changed target, engine profile or
+// recreated profile starts fresh. A Gateway reconciling inside the current
+// window gets no jobs and evaluates the evidence the round already produced.
+func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, now time.Time) []probe.Job {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.probes == nil {
 		p.probes = map[probeContextKey]*probeState{}
 	}
-	if p.cursors == nil {
-		p.cursors = map[types.UID]int{}
-	}
-	if interval <= 0 {
-		interval = 5 * time.Minute
-	}
-	evidence := selection.DefaultPolicy(selection.StrategyAdaptive)
-	isDefault := key.name == "default"
-	window := interval
-	if !isDefault {
-		// A long source refresh must not stretch the probe budget window.
-		window = min(interval, evidence.Freshness)
-	}
+	policy := evidencePolicy()
 	state := p.probes[key]
 	if state == nil {
 		state = &probeState{}
 		p.probes[key] = state
 	}
-	if !now.Before(state.until) {
-		state.until = now.Add(window)
-		state.used = 0
-	}
 	state.seen = now
 	defer p.expireProbeStatesLocked(now)
-	if isDefault {
-		available := maxProbeBatch - state.used
-		if available <= 0 {
-			return nil
-		}
-		jobs := p.nextJobsLocked(gatewayUID, records, target, profile, available)
-		state.used += len(jobs)
-		return jobs
-	}
-	if state.used > 0 {
+	if now.Before(state.until) {
 		return nil
 	}
+	state.until = now.Add(probeCadence(policy))
+	// Members leave the cohort only when they disappear from the inventory or
+	// stop being exact-engine compatible; health is M5's decision.
 	compatible := make(map[string]endpoint.Record, len(records))
 	for _, record := range records {
 		if engine.CheckEndpoint(profile, record.Configuration()) == nil {
 			compatible[record.ID().String()] = record
 		}
 	}
-	working := make([]endpoint.Record, 0, len(state.working))
-	state.working = slices.DeleteFunc(state.working, func(id string) bool {
+	jobs := make([]probe.Job, 0, roundBudget(key))
+	skip := make(map[string]bool, len(state.cohort))
+	state.cohort = slices.DeleteFunc(state.cohort, func(id string) bool {
 		record, ok := compatible[id]
 		if ok {
-			working = append(working, record)
+			jobs = append(jobs, probe.Job{Record: record, Target: target})
+			skip[id] = true
 		}
 		return !ok
 	})
-	skip := make(map[string]bool, len(working))
-	for _, id := range state.working {
-		skip[id] = true
-	}
-	explore, next := nextProbeBatch(records, target, profile, state.cursor, max(namedExploreMin, namedWorkingSet-len(working)), skip)
+	explore, next := nextProbeBatch(records, target, profile, state.cursor, max(exploreMin, (roundBudget(key)-len(jobs))/policy.MinSamples), skip)
 	state.cursor = next
-	// One pass per window is enough when successive windows fit MinSamples into
-	// the evidence window; otherwise burst so a long refresh interval still
-	// qualifies endpoints. Newly explored endpoints always burst.
-	workingPasses := 1
-	if time.Duration(evidence.MinSamples-1)*interval >= evidence.EvidenceWindow {
-		workingPasses = evidence.MinSamples
-	}
-	var jobs []probe.Job
-	for pass := range evidence.MinSamples {
-		if pass < workingPasses {
-			for _, record := range working {
-				jobs = append(jobs, probe.Job{Record: record, Target: target})
-			}
-		}
+	for range policy.MinSamples {
 		jobs = append(jobs, explore...)
 	}
-	state.used = len(jobs)
 	return jobs
 }
 
-// recordProbeResults promotes endpoints that answered to the context's bounded
-// working set and drops those that failed. Infrastructure errors carry no
-// endpoint verdict and are ignored.
+// recordProbeResults admits endpoints that answered the target to the cohort.
+// A failed observation changes nothing here: it is evidence for M5, and a
+// maintained member keeps being probed until M5 rejects it and a newcomer
+// needs its slot. Infrastructure errors carry no endpoint verdict.
 func (p *Pipeline) recordProbeResults(key probeContextKey, jobs []probe.Job, results []probe.Result) {
-	if key.name == "default" {
-		return
-	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	state := p.probes[key]
 	if state == nil {
 		return
 	}
+	capacity := cohortCapacity(key, evidencePolicy())
 	for index, result := range results {
-		if index >= len(jobs) || result.Err != nil {
-			continue
-		}
-		id := jobs[index].Record.ID().String()
-		position := slices.Index(state.working, id)
-		switch {
-		case !result.Observation.Successful():
-			if position >= 0 {
-				state.working = slices.Delete(state.working, position, position+1)
-			}
-		case position < 0 && len(state.working) < namedWorkingSet:
-			state.working = append(state.working, id)
+		if index < len(jobs) && result.Err == nil && result.Observation.Successful() {
+			state.admit(jobs[index].Record.ID().String(), capacity, false)
 		}
 	}
+}
+
+// recordSelection feeds one Gateway's M5 decision back into its probe context:
+// the selected endpoints are pinned in the cohort, and members M5 rejected for
+// failure streak or unreliability become replaceable. The Gateway's demand
+// leaves any context it no longer uses; selection state itself stays with the
+// Gateway's receipt-bound M5 state.
+func (p *Pipeline) recordSelection(key probeContextKey, gateway types.UID, decision selection.Decision, now time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for other, state := range p.probes {
+		if other != key {
+			delete(state.demand, gateway)
+		}
+	}
+	state := p.probes[key]
+	if state == nil {
+		return
+	}
+	selected := make([]string, 0, len(decision.Selected))
+	for _, record := range decision.Selected {
+		selected = append(selected, record.ID().String())
+	}
+	if state.demand == nil {
+		state.demand = map[types.UID]probeDemand{}
+	}
+	state.demand[gateway] = probeDemand{selected: selected, seen: now}
+	policy := evidencePolicy()
+	for id, demand := range state.demand {
+		if now.Sub(demand.seen) > policy.EvidenceWindow {
+			delete(state.demand, id)
+		}
+	}
+	members := make(map[string]bool, len(state.cohort))
+	for _, id := range state.cohort {
+		members[id] = true
+	}
+	state.rejected = map[string]bool{}
+	for _, explanation := range decision.Explanations {
+		id := explanation.EndpointID.String()
+		if members[id] && (explanation.Reason == selection.ReasonFailureStreak || explanation.Reason == selection.ReasonUnreliable) {
+			state.rejected[id] = true
+		}
+	}
+	capacity := cohortCapacity(key, policy)
+	for _, id := range selected {
+		state.admit(id, capacity, true)
+	}
+}
+
+func (s *probeState) pinned(id string) bool {
+	for _, demand := range s.demand {
+		if slices.Contains(demand.selected, id) {
+			return true
+		}
+	}
+	return false
+}
+
+// admit adds id to a bounded cohort. When the cohort is full, the oldest
+// unpinned member M5 rejected yields its slot; a selected endpoint may also
+// displace the oldest unpinned member. Pinned members are never displaced.
+func (s *probeState) admit(id string, capacity int, selected bool) {
+	if slices.Contains(s.cohort, id) {
+		return
+	}
+	if len(s.cohort) >= capacity {
+		victim := slices.IndexFunc(s.cohort, func(member string) bool { return s.rejected[member] && !s.pinned(member) })
+		if victim < 0 && selected {
+			victim = slices.IndexFunc(s.cohort, func(member string) bool { return !s.pinned(member) })
+		}
+		if victim < 0 {
+			return
+		}
+		delete(s.rejected, s.cohort[victim])
+		s.cohort = slices.Delete(s.cohort, victim, victim+1)
+	}
+	s.cohort = append(s.cohort, id)
 }
 
 func (p *Pipeline) expireProbeStatesLocked(now time.Time) {
@@ -532,12 +624,6 @@ func (p *Pipeline) expireProbeStatesLocked(now time.Time) {
 			delete(p.probes, key)
 		}
 	}
-}
-
-func (p *Pipeline) nextJobsLocked(uid types.UID, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, limit int) []probe.Job {
-	jobs, next := nextProbeBatch(records, target, profile, p.cursors[uid], limit, nil)
-	p.cursors[uid] = next
-	return jobs
 }
 
 func nextProbeBatch(records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, start, limit int, skip map[string]bool) ([]probe.Job, int) {

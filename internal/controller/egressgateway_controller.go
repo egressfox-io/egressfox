@@ -150,9 +150,17 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 			// inventory follows the ordinary bounded refresh schedule.
 			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 		}
-		return ctrl.Result{RequeueAfter: requeueAfter(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
+		return ctrl.Result{RequeueAfter: gatewayRequeue(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
 	}
-	return ctrl.Result{RequeueAfter: requeueAfter(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
+	return ctrl.Result{RequeueAfter: gatewayRequeue(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
+}
+
+// gatewayRequeue keeps probe evidence maintenance independent of source
+// acquisition: a Gateway reconciles at the M5 evidence cadence even when its
+// pool refreshes rarely. Gateway reconciliation reads only the pool's admitted
+// cache or Secret snapshot; it never fetches a subscription.
+func gatewayRequeue(refresh time.Duration, uid types.UID) time.Duration {
+	return requeueAfter(min(refreshInterval(refresh), operatoradapter.EvidenceCadence()), uid)
 }
 
 func (r *EgressGatewayReconciler) applyManagedStatus(gateway *egressv1alpha1.EgressGateway, outcome operatoradapter.RuntimeOutcome, pipelineErr, runtimeErr error, now time.Time) {
