@@ -1035,10 +1035,31 @@ func (s *probeState) admit(id string, capacity int, selected bool) {
 		if victim < 0 {
 			return
 		}
-		delete(s.rejected, s.cohort[victim])
+		evicted := s.cohort[victim]
+		if s.rejected[evicted] {
+			s.forget(evicted)
+		}
+		delete(s.rejected, evicted)
 		s.cohort = slices.Delete(s.cohort, victim, victim+1)
 	}
 	s.cohort = append(s.cohort, id)
+}
+
+// forget drops an evicted endpoint M5 rejected from every Gateway's demand.
+// The published output keeps it until its Gateway publishes a replacement,
+// but it no longer claims maintenance; exploration observes it again.
+// Slices are copied because a reservation may still share them.
+func (s *probeState) forget(id string) {
+	for gateway, demand := range s.demand {
+		without := func(ids []string) []string {
+			if ids == nil {
+				return nil
+			}
+			return slices.DeleteFunc(slices.Clone(ids), func(value string) bool { return value == id })
+		}
+		demand.selected, demand.uncertain = without(demand.selected), without(demand.uncertain)
+		s.demand[gateway] = demand
+	}
 }
 
 func (p *Pipeline) expireProbeStatesLocked(now time.Time) {
