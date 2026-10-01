@@ -36,6 +36,7 @@ Release entries are not edited by hand.
 - 🐛 Scope probe state to shared context and qualify named working sets.
 - 🐛 Maintain profile evidence with one M5-fed scheduler.
 - 🐛 Reserve shared probe capacity and keep maintained evidence fresh.
+- 🐛 Release rejected demand and hold unconfirmed publications.
 
 ### Security
 
