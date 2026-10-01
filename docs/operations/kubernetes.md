@@ -16,7 +16,7 @@ exists, download its `egressfox-<version>.tgz` asset, verify it with the release
 placeholders; no public artifact exists yet:
 
 ```sh
-helm upgrade --install egressfox ./egressfox-0.1.0-dev.1.tgz \
+helm upgrade --install egressfox ./egressfox-0.1.0-dev.2.tgz \
   --namespace egressfox --create-namespace \
   --set image.repository=ghcr.io/egressfox-io/egressfox \
   --set image.digest=sha256:REPLACE_WITH_VERIFIED_DIGEST

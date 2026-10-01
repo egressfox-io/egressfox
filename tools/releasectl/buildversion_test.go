@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/egressfox-io/egressfox/internal/releasemanifest"
 )
 
 // identityFixture creates a throwaway Git repository. The development version
@@ -208,7 +210,12 @@ func TestBuildVersionRepositoryIdentity(t *testing.T) {
 	case tree != "" && !strings.HasSuffix(identity, ".dirty"):
 		t.Fatalf("dirty repository identity = %q, want a .dirty suffix", identity)
 	}
-	if !strings.HasPrefix(identity, "0.1.0-dev.1") {
-		t.Fatalf("repository identity = %q, want the planned development version 0.1.0-dev.1", identity)
+	manifest, err := releasemanifest.Load(filepath.Join(root, defaultManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := strings.TrimPrefix(manifest.Release.DevelopmentVersion, "v")
+	if !strings.HasPrefix(identity, planned+"+") && identity != planned {
+		t.Fatalf("repository identity = %q, want the planned development version %s", identity, planned)
 	}
 }

@@ -1,8 +1,10 @@
 # Development and release versioning
 
 [ADR 0014](../decisions/0014-development-versioning-and-kubernetes-compatibility.md)
-is the authoritative decision. The planned first development version is
-`v0.1.0-dev.1`; it is a repository value, not a tag created by this guide.
+is the authoritative decision. The first development identity, `v0.1.0-dev.1`, is
+consumed: its Git tag exists, so it is never rebuilt or reused. The planned next
+development version is `v0.1.0-dev.2`; it is a repository value in
+`release/manifest.json`, not a tag created by this guide.
 
 ## Version forms
 
@@ -18,15 +20,15 @@ number, or SemVer build metadata are rejected. The leading `v` is retained for G
 tags. Without it, the value is used consistently for the operator `--version`, OCI
 tag/label, Helm `version`, Helm `appVersion`, and default image tag.
 
-An untagged build reports `0.1.0-dev.1+g<commit>`; a build outside Git reports
-`0.1.0-dev.1+local`. A working tree with non-ignored changes appends `.dirty`, so a
+An untagged build reports `0.1.0-dev.2+g<commit>`; a build outside Git reports
+`0.1.0-dev.2+local`. A working tree with non-ignored changes appends `.dirty`, so a
 dirty build can never claim the identity of a clean build from the same commit:
 
 | Source tree | Reported identity |
 | --- | --- |
-| Clean untagged commit `abcdef123456` | `0.1.0-dev.1+gabcdef123456` |
-| Same commit with uncommitted changes | `0.1.0-dev.1+gabcdef123456.dirty` |
-| Commit tagged `v0.1.0-dev.1` | `0.1.0-dev.1` |
+| Clean untagged commit `abcdef123456` | `0.1.0-dev.2+gabcdef123456` |
+| Same commit with uncommitted changes | `0.1.0-dev.2+gabcdef123456.dirty` |
+| Commit tagged `v0.1.0-dev.2` | `0.1.0-dev.2` |
 
 Ignored build and release output (`dist/`, `.cache/`, `bin/`) is not source and never
 marks the tree dirty. These local identities are not publishable release artifacts.
@@ -65,7 +67,7 @@ tag is created only for publication and is not a prerequisite for building evide
 | Publication | Exact existing Git tag for that version on the selected commit, clean source, approval of the protected `release` environment, and an immutable version that has never been published |
 
 Dry-run qualification on a clean untagged commit reports the commit-derived identity
-`0.1.0-dev.1+g<commit>` in the artifacts. Publication is strictly tag-bound: the
+`0.1.0-dev.2+g<commit>` in the artifacts. Publication is strictly tag-bound: the
 protected workflow runs only from the exact tag, rechecks the tag and a clean tree in
 the privileged job, and refuses a version that already exists.
 
