@@ -41,9 +41,14 @@ selection, activation, source cache and engine capability.
   for M5-rejected endpoints no longer reserves capacity, and writes without a
   confirmed receipt and committed checkpoint are held as uncertain demand until
   the actual receipt is read. Focused tests written; not executed.
+- [x] Uncertain-publication maintenance (2026-10-01, after review of `bd7a0ab`):
+  reservations fit the current and attempted outputs together before any write,
+  held writes never displace the current output, and the actual current output
+  (BYO Secret or managed status generation) is read before the next round.
+  Focused tests written; not executed.
 - [ ] Maintainer requalification of the final scheduler hardening, including the
   full kind suite and remaining native/release checks. Validation started on
-  `bb0777b` or `e8553d6` does not qualify the follow-up commits.
+  `bb0777b`, `e8553d6` or `bd7a0ab` does not qualify the follow-up commits.
 
 ## Progress and evidence
 
@@ -119,6 +124,15 @@ maintenance. `reconcile.Result` now reports the external publication state
 durable checkpoint commit; the operator holds such writes as uncertain demand and
 resolves them from the actual receipt. Publisher create/update errors are marked
 uncertain.
+
+A review of `bd7a0ab` confirmed that an uncertain hold in a full cohort evicted
+the Gateway's previous-only endpoints even though the actual output (a lost BYO
+write, or a managed generation that never became current) could still carry
+them, and that receipt resolution ran after the round and never re-admitted
+them. Reservations now count the Gateway's own current output, so a hold always
+fits without displacing it; infeasible transitions are refused before writing.
+Resolution reads the BYO Secret or the managed status generation before the
+round.
 
 ## Resume and handoff
 

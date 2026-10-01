@@ -48,22 +48,35 @@ revision, exact engine profile and receipt-bound selection state already exist.
   endpoint stays in the published output until its Gateway publishes a
   replacement, but yields its cohort slot to an answering endpoint and is then
   observed again only when exploration reaches it.
-- Before rendering, a non-empty decision is reserved: the union of every
-  protected demand and the new selection must fit the cohort. When it does not,
-  the reconciler plans once more with evidence withheld from endpoints outside
-  the cohort, so M5 chooses among maintained endpoints; if even that is refused,
-  the last-known-good remains. A failure before any external write releases the
-  reservation. A confirmed publication with a committed checkpoint makes it the
-  Gateway's demand. A write that happened or may have happened without that
-  confirmation (an ambiguous publisher error, a failed receipt read-back, or a
-  failed checkpoint commit) is held as uncertain demand: the previous and the
-  attempted selections both stay protected, the attempted endpoints are
-  admitted (taking the Gateway's previous-only slots if the cohort is full), and
-  nothing is rolled back externally. The Gateway's next reconciliation reads the
-  actual published receipt before reserving again: the intended receipt promotes
-  the attempt, another receipt drops it, and an unreadable receipt keeps both,
-  while the store's receipt-bound checkpoint recovery decides M5 state
-  independently. Status reports `PublicationUnconfirmed` meanwhile. Demand
+- Before rendering, a non-empty decision is reserved. Because any write can end
+  with an uncertain outcome, the reservation must fit the cohort with every
+  protected demand, including the Gateway's own current output, plus the new
+  selection: both plausible outputs have to stay maintainable before anything is
+  written. When that does not fit, the reconciler plans once more with evidence
+  withheld from endpoints outside the cohort, so M5 chooses among maintained
+  endpoints; if even that is refused, nothing is written and the
+  last-known-good remains. A Gateway whose own healthy output fills the cohort
+  therefore cannot move to an endpoint outside it until a protected endpoint is
+  released; rejected endpoints release theirs, so failover still proceeds. A
+  failure before any external write releases the reservation. A confirmed
+  publication with a committed checkpoint makes it the Gateway's demand. A
+  write that happened or may have happened without that confirmation (an
+  ambiguous publisher error, a failed receipt read-back, or a failed checkpoint
+  commit) is held as uncertain demand: the current output stays the Gateway's
+  demand and in the cohort, the attempted endpoints are admitted into rejected
+  or unprotected slots that the reservation proved available, both are probed
+  every round, and nothing is rolled back externally. While the hold lasts, no
+  further attempt is reserved.
+- Before its next probe round, the Gateway reads the actual current output: for
+  BYO, the owned output Secret's receipt; for a managed Gateway, the receipt of
+  the generation its status records as published, which is what the runtime
+  activates. A generation Secret written by a failed operation is not current
+  until the status records it. If the current output carries the attempted
+  receipt, the attempt becomes the Gateway's demand; otherwise it is dropped and
+  the current output, which stayed maintained, remains. An unreadable output
+  keeps both. The store's receipt-bound checkpoint recovery decides M5 state
+  independently and is never reported as committed when the commit failed.
+  Status reports `PublicationUnconfirmed` while a write is unresolved. Demand
   expires one evidence window after the Gateway last reconciled in the context
   and is dropped as soon as it reconciles in another. Anti-flap state stays in
   the Gateway's receipt-bound M5 state.
@@ -74,8 +87,9 @@ revision, exact engine profile and receipt-bound selection state already exist.
   `ProbeCapacityShared` for a decision constrained by other Gateways' demand,
   `InsufficientEligibleEndpoints` for missing evidence, and
   `ProbeCapacityExceeded` when no maintainable decision could be reserved. While
-  healthy protected demand fills the cohort, a better endpoint outside it is not
-  adopted by any Gateway until some protected endpoint is released.
+  healthy protected demand, including a Gateway's own current output, leaves no
+  room for its transition, a better endpoint outside the cohort is not adopted
+  until some protected endpoint is released.
 - A round runs exploration first and maintenance last, with demanded members at
   the end, so maintenance evidence is the newest at evaluation. New exploration
   probes start only within half of `Freshness` after the round starts; later

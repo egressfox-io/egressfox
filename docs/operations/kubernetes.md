@@ -108,9 +108,15 @@ Gateways' selections, so maintained endpoints were chosen),
 period). `ProbeCapacityExceeded` keeps the previous configuration when no
 maintainable selection could be reserved. Endpoints of a published selection
 that M5 has rejected keep serving until a replacement is published but no longer
-hold probe capacity. `PublicationUnconfirmed` means the output may already carry
-the new artifact while its receipt or decision checkpoint was not confirmed; the
-next reconciliation resolves it from the actual published receipt. Changes to an unrelated profile do not
+hold probe capacity. `ProbeCapacityShared` also covers a change that cannot
+be maintained together with the Gateway's current output: the switch is refused
+before anything is written, so a Gateway whose `topN` fills the profile's cohort
+keeps its healthy selection rather than moving to an endpoint outside it.
+`PublicationUnconfirmed` means the output may already carry the new artifact
+while its receipt or decision checkpoint was not confirmed; both selections stay
+probed until the next reconciliation reads the current output. For a managed
+Gateway that is the generation recorded in `status.publishedGeneration`; a newer
+generation Secret alone is not active. Changes to an unrelated profile do not
 change an equal validated artifact or restart a healthy Gateway.
 
 ## Managed HTTP sources

@@ -170,10 +170,12 @@ not remove a cohort member; only members M5 last rejected for failure streak or
 unreliability yield their slot. Each Gateway's published selection is demand
 reserved before rendering, and it protects capacity only while M5 has not
 rejected the endpoint, so a failed last-known-good cannot block replacements; a
-preferred decision that does not fit the shared cohort is re-planned among
-maintained endpoints. A write without a confirmed receipt and committed
-checkpoint keeps both selections protected until the next reconciliation reads
-the actual receipt. Rounds follow an evidence
+reservation must fit the current output and the new selection together, because
+an uncertain write leaves both plausible; a decision that does not fit is
+re-planned among maintained endpoints before anything is written. A write
+without a confirmed receipt and committed checkpoint keeps both selections
+maintained until the Gateway's next round reads the actual current output (the
+BYO Secret, or the managed generation recorded in status). Rounds follow an evidence
 cadence derived from `Freshness`, `MinSamples`, `EvidenceWindow` and the
 controller's maximum requeue jitter rather than the source refresh interval. `topN`
 is capped at the cohort a context can maintain; a shortfall is reported, not
