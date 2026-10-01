@@ -13,7 +13,8 @@ notices, SBOM, scan and provenance share the release contract in
 [ADR 0012](../decisions/0012-release-distribution-and-provenance.md). After a release
 exists, download its `egressfox-<version>.tgz` asset, verify it with the release's
 `SHA256SUMS`, and install with the verified image digest. The command below uses
-placeholders; no public artifact exists yet:
+the planned next version and placeholder digest; replace both with a published
+release's values:
 
 ```sh
 helm upgrade --install egressfox ./egressfox-0.1.0-dev.2.tgz \
@@ -96,9 +97,16 @@ minutes at the current defaults) rather than `refreshInterval`, so a pool may
 refresh its subscription rarely while Gateways keep their evidence fresh. Each
 profile and engine runs at most one round per cadence: 30 jobs for a named profile,
 64 for the default profile, with four concurrent probes process-wide. `topN` is an
-upper bound; a profile maintains at most 24 (named) or 58 (default) selected
-endpoints at the current defaults, and a shortfall shows as `selectedEndpoints`
-below `topN`. Changes to an unrelated profile do not
+upper bound; a profile maintains at most 24 (named) or 58 (default) endpoints at
+the current defaults, shared by every Gateway that uses the same profile, engine
+and target. A shortfall shows as `selectedEndpoints` below `topN`, and the
+`SelectionReady` reason says why: `ProbeCapacityLimited` (topN above the profile's
+cohort), `ProbeCapacityShared` (the preferred endpoints did not fit next to other
+Gateways' selections, so maintained endpoints were chosen),
+`InsufficientEligibleEndpoints` (too few endpoints with current evidence) or
+`ProbeRoundOverloaded` (maintenance probes outlasted the five-minute freshness
+period). `ProbeCapacityExceeded` keeps the previous configuration when no
+maintainable selection could be reserved. Changes to an unrelated profile do not
 change an equal validated artifact or restart a healthy Gateway.
 
 ## Managed HTTP sources

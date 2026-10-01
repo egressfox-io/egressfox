@@ -2,7 +2,8 @@
 
 [ADR 0014](../decisions/0014-development-versioning-and-kubernetes-compatibility.md)
 is the authoritative decision. The first development identity, `v0.1.0-dev.1`, is
-consumed: its Git tag exists, so it is never rebuilt or reused. The planned next
+consumed: it was published as a GitHub prerelease with its GHCR image, so it is
+never rebuilt or reused. The planned next
 development version is `v0.1.0-dev.2`; it is a repository value in
 `release/manifest.json`, not a tag created by this guide.
 

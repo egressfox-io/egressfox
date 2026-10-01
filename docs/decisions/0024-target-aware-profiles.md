@@ -1,7 +1,8 @@
 # ADR 0024: Target-aware profiles over a shared pool inventory
 
 Date: 2026-09-25. Status: Accepted for M9 implementation; scheduling amended
-2026-10-01 by the final M9 scheduler hardening.
+2026-10-01 by the final M9 scheduler hardening, including shared-capacity
+reservation, round ordering and `topN` diagnostics.
 
 ## Context
 
@@ -38,26 +39,36 @@ revision, exact engine profile and receipt-bound selection state already exist.
   member; only a member whose latest M5 explanation is a failure streak or
   unreliability yields its slot to a newly answering endpoint. Members also leave
   when they disappear from the inventory or stop being exact-engine compatible.
-  Each Gateway's current selection is pinned in its context's cohort, so an
-  endpoint selected after exploration stays maintained and may displace the
-  oldest unpinned member; pinned members are never displaced. The pins record
-  scheduling demand only; anti-flap state stays in the Gateway's receipt-bound M5
-  state. `topN` remains an upper bound: the operator caps it at the context's
-  cohort capacity so it never selects endpoints whose evidence it cannot keep
-  fresh, and a shortfall shows as `selectedEndpoints` below `topN`.
-- The evidence cadence derives from the M5 evidence policy, not the source refresh
-  interval: at most `Freshness`, and short enough that MinSamples rounds fit the
-  evidence window even when every requeue carries the controller's maximum stable
-  10% jitter (five minutes at the current defaults). Gateways requeue at the
-  shorter of the cadence and the pool refresh interval. Gateway reconciliation
-  reads only the admitted cache or Secret snapshot, so the refresh interval alone
-  governs subscription acquisition and no profile starts a separate refresher. With
-  eight named profiles, both engines and the default profile the pool ceiling is
-  608 jobs per cadence, and the operator shares four probe slots across Gateway
-  reconciliations. Probe state is in-memory: a Gateway's pins expire one evidence
-  window after its last reconciliation, an unused context after 24 hours, and a
-  restart begins empty; durable observations and Gateway selection state are
-  unaffected.
+- Each Gateway's published selection is its committed demand in the context.
+  Before rendering, a non-empty decision is reserved: the union of the other
+  Gateways' maintained demand and the new selection must fit the cohort. A
+  reservation becomes committed demand, whose endpoints join the cohort and are
+  never displaced, only after that exact selection is published; a refused,
+  failed or obsolete publication restores the previous demand. When the preferred
+  decision does not fit, the reconciler plans once more with evidence withheld
+  from endpoints outside the cohort, so M5 chooses among maintained endpoints;
+  committed demand is always in the cohort, so that decision fits unless another
+  reservation is in flight, in which case the last-known-good remains. Demand
+  expires one evidence window after the Gateway last reconciled in the context
+  and is dropped as soon as it reconciles in another. Anti-flap state stays in
+  the Gateway's receipt-bound M5 state.
+- `topN` remains an upper bound. M5 receives `topN` capped at the context's cohort
+  capacity, so it never selects endpoints whose evidence the scheduler cannot
+  keep fresh; the operator keeps the requested value and reports the shortfall
+  through the `SelectionReady` reason: `ProbeCapacityLimited` for the cap,
+  `ProbeCapacityShared` for a decision constrained by other Gateways' demand,
+  `InsufficientEligibleEndpoints` for missing evidence, and
+  `ProbeCapacityExceeded` when no maintainable decision could be reserved.
+- A round runs exploration first and maintenance last, with demanded members at
+  the end, so maintenance evidence is the newest at evaluation. New exploration
+  probes start only within half of `Freshness` after the round starts; later
+  exploration jobs are deferred and record nothing. Maintenance is not cut short.
+  Freshness at evaluation therefore holds while the maintenance phase completes
+  within `Freshness`: at most 58 or 24 probes at a per-target concurrency of two.
+  A longer phase is reported as `ProbeRoundOverloaded`; demanded members still
+  run last. A round that fails before its evidence is stored, including
+  cancellation and evidence-store errors, is released for the next
+  reconciliation and restores its exploration position.
 - Target IDs include pool identity and an opaque digest of profile name and
   its first observed pool generation. Bounded status retains that incarnation
   while a profile is present and drops it on observed removal. The target revision covers

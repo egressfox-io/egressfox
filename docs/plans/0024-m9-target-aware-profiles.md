@@ -33,8 +33,13 @@ selection, activation, source cache and engine capability.
   profiles, M5-fed maintained cohort with pinned selections, evidence cadence
   independent of the source refresh interval, `topN` capped at the maintainable
   cohort. Focused tests written; not executed.
+- [x] Scheduler follow-up (2026-10-01, after review of `bb0777b`): shared-capacity
+  reservation with constrained re-planning, exploration-first rounds with a
+  bounded exploration time and maintenance last, released failed rounds, and
+  `topN`/overload `SelectionReady` reasons. Focused tests written; not executed.
 - [ ] Maintainer requalification of the final scheduler hardening, including the
-  full kind suite and remaining native/release checks.
+  full kind suite and remaining native/release checks. Validation started on
+  `bb0777b` does not qualify the follow-up commits.
 
 ## Progress and evidence
 
@@ -84,6 +89,21 @@ schedulers with the single contract in
 [ADR 0024](../decisions/0024-target-aware-profiles.md). Its focused tests are in
 `internal/operator/profile_scheduling_test.go` and
 `internal/controller/scheduling_internal_test.go`; they were written but not run.
+
+A review of `bb0777b` confirmed three further gaps. Each Gateway's `topN` was
+capped separately while the cohort is shared, so two Gateways' selections could
+exceed it and a published endpoint could silently miss admission. A round ran
+maintenance first and evaluated after the whole batch, so slow exploration (up to
+six two-minute timeouts on one named context) could stale healthy maintenance
+evidence before evaluation. And M5 received the capped `topN`, so
+`Decision.Degraded` could not report the cap. The follow-up reserves each
+non-empty decision against the other Gateways' maintained demand before
+rendering, re-plans among maintained endpoints when it does not fit, commits
+demand only after publication, orders rounds exploration first with a
+time-bounded exploration phase and demanded members last, reports overload, and
+keeps the requested `topN` for status reasons. Its tests are in
+`internal/operator/profile_scheduling_test.go`,
+`internal/controller/reconcile_test.go` and `internal/reconcile/reconcile_test.go`.
 
 ## Resume and handoff
 
