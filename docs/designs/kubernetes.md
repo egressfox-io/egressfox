@@ -45,8 +45,10 @@ engine profiles clearly. Secret rotation must trigger reconciliation.
 M8's `sources[]` entry has exactly one `secretRef` or `http`. HTTP requires a URL
 Secret key and optionally an Authorization Secret key; `allowHTTP`,
 `allowPrivateNetworks`, `allowLoopback` and `allowInsecureTLS` are separate opt-ins. The existing
-pool `refreshInterval` owns scheduling, and HTTP `maxStale` bounds fallback
-independently. Source status
+pool `refreshInterval` owns source refresh scheduling, and HTTP `maxStale` bounds
+fallback independently. Gateways requeue at the shorter of `refreshInterval` and
+the M5 evidence cadence ([ADR 0024](../decisions/0024-target-aware-profiles.md));
+a Gateway reconciliation reads the admitted cache and never fetches. Source status
 is keyed by safe ID and reports `Fresh`, `Cached`, `Expired` or `Unavailable` with a
 safe reason and last-success time. `SourcesReady=False` may coexist with
 `Ready=True` when an admitted inventory remains usable from cache or another

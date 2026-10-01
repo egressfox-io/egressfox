@@ -91,9 +91,14 @@ active generation intact while `SelectionReady` reports the failure. Pool status
 shows bounded profile incarnations; each Gateway status shows its resolved profile,
 eligible and selected counts, and the existing publication and runtime Conditions.
 Target-specific evidence is isolated by profile incarnation, target revision,
-connection revision and exact engine. The operator admits at most eight jobs per
-named profile and engine per refresh window, 64 for the default profile and engine,
-and four concurrent probes process-wide. Changes to an unrelated profile do not
+connection revision and exact engine. Probing follows an evidence cadence (five
+minutes at the current defaults) rather than `refreshInterval`, so a pool may
+refresh its subscription rarely while Gateways keep their evidence fresh. Each
+profile and engine runs at most one round per cadence: 30 jobs for a named profile,
+64 for the default profile, with four concurrent probes process-wide. `topN` is an
+upper bound; a profile maintains at most 24 (named) or 58 (default) selected
+endpoints at the current defaults, and a shortfall shows as `selectedEndpoints`
+below `topN`. Changes to an unrelated profile do not
 change an equal validated artifact or restart a healthy Gateway.
 
 ## Managed HTTP sources
@@ -175,6 +180,8 @@ render the same validated artifact do not cause a rollout.
 
 The Pool controller schedules its next reconcile no later than the earliest
 currently admitted HTTP cache expiry, even when that precedes `refreshInterval`.
+Gateways reconcile at least every evidence cadence to keep probe evidence fresh;
+those reconciliations read the admitted cache and never contact the provider.
 At expiry it recomputes per-source status and effective inventory without a new
 provider response; an already expired cache does not cause immediate requeues.
 

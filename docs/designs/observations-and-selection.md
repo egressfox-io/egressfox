@@ -161,12 +161,21 @@ private-target permission change changes the confidential target revision. Legac
 default target IDs and endpoint identities remain stable. Each Gateway retains a
 separate receipt-bound M5 decision context; switching profiles resets its anti-churn
 state. Demand-driven Gateway evaluations reuse the shared source cache and
-inventory. Probe budget, cursor and a bounded working set of up to eight responsive
-endpoints belong to the shared probe context (pool, engine, target ID, target
-revision), not to a Gateway. A named context admits at most 30 jobs per window, the
-legacy default/engine 64, and concurrent probes stay at four; the ceiling is 608
-jobs per pool window across eight named profiles and both engines. Unsupported
-endpoints do not consume the batch. M5 evidence requirements are unchanged.
+inventory. Default and named profiles share one scheduler whose round window,
+cursor and maintained cohort belong to the probe context (pool, engine, target ID,
+target revision), not to a Gateway. Each round re-probes the cohort once and
+explores a few compatible newcomers MinSamples times, within 64 jobs for the
+default context and 30 for a named one. A failed observation does not remove a
+cohort member; only members M5 last rejected for failure streak or unreliability
+yield their slot, and every Gateway's current selection is pinned so a promoted
+challenger stays maintained. Rounds follow an evidence cadence derived from
+`Freshness`, `MinSamples`, `EvidenceWindow` and the controller's maximum requeue
+jitter rather than the source refresh interval. `topN` is capped at the cohort a
+context can maintain; a shortfall is reported, not filled. Concurrent probes stay
+at four, and the ceiling is 608 jobs per pool cadence across eight named profiles
+and both engines. Unsupported endpoints do not consume the batch. M5 evidence
+requirements are unchanged; the full contract is in
+[ADR 0024](../decisions/0024-target-aware-profiles.md).
 
 Future static source/country/ASN/tag policy restrictions also belong before ranking.
 Hard policy restrictions cannot be traded for a higher score. Untrusted metadata

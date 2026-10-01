@@ -221,7 +221,8 @@ P0 milestones M1–M6, post-M6 release hardening, P1 M7 managed
 gateway/activation and M8 resilient HTTP source refresh are complete. The current
 API is `v1alpha1`; Kubernetes 1.32, 1.34 and 1.37 are release-qualification
 profiles, and the project is not production-certified. M9 target-aware selection
-profiles are the next implementation unit. See the
+profiles are implemented; their final scheduler hardening awaits maintainer
+requalification. See the
 [P1 roadmap](docs/roadmap/p1.md).
 
 ## Documentation

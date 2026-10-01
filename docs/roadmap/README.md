@@ -19,7 +19,7 @@ time-bounded cache, and its compatibility completion adds request profiles and
 bounded URI/JSON subscription decoding. There is still no product CLI,
 cross-namespace API or HA topology.
 
-**Current implementation state: M9 code and tests prepared; maintainer qualification pending.**
+**Current implementation state: M9 implemented; final scheduler-hardening requalification pending.**
 The authoritative [P1 product roadmap](p1.md)
 defines the seven-milestone path from managed runtime through explainability.
 M7–M8 and M8.5 C1–C4 are complete for their documented bounded profiles;

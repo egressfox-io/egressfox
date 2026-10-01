@@ -1,6 +1,6 @@
 # M9 target-aware profiles
 
-Status: implemented; focused maintainer qualification passed, post-review fixes and full qualification pending. Date: 2026-09-25. Branch: `codex/m9-target-aware-profiles`.
+Status: implemented; the pre-hardening implementation passed the maintainer's existing suite; final scheduler-hardening requalification pending. Date: 2026-09-25. Branch: `codex/m9-target-aware-profiles`.
 Baseline: `e1a6469`.
 
 ## Objective and boundaries
@@ -27,7 +27,14 @@ selection, activation, source cache and engine capability.
   accumulation, probe-context-scoped budget/cursor/working set, failed-profile
   Gateway status and documentation reconciliation. Tests prepared; maintainer
   re-validation pending.
-- [ ] Full kind suite and remaining native/release qualification.
+- [x] Maintainer reported the existing test suite passing on the pre-hardening
+  implementation (2026-10-01).
+- [x] Final scheduler hardening (2026-10-01): one scheduler for default and named
+  profiles, M5-fed maintained cohort with pinned selections, evidence cadence
+  independent of the source refresh interval, `topN` capped at the maintainable
+  cohort. Focused tests written; not executed.
+- [ ] Maintainer requalification of the final scheduler hardening, including the
+  full kind suite and remaining native/release checks.
 
 ## Progress and evidence
 
@@ -64,14 +71,28 @@ controlled profile scenario after the IPv4 fixture change. Only the `profiles`
 scenario appears in that log directory; the full kind suite and native checks
 remain unqualified.
 
+On 2026-10-01 the maintainer reported that the existing test suite passed on the
+pre-hardening implementation. A follow-up review then confirmed four scheduler
+defects: one failed observation evicted a working-set member ahead of M5's failure
+streak; an explored endpoint that became selected while the eight-member working
+set was full was never re-probed and went stale; Gateway requeue followed the
+source refresh interval plus up to 10% jitter, so a 14-minute refresh could not
+keep three samples in the 30-minute evidence window and a 24-hour refresh left the
+default profile unable to qualify; and the default profile kept a per-Gateway
+cursor while sharing the context budget. The final hardening replaces both
+schedulers with the single contract in
+[ADR 0024](../decisions/0024-target-aware-profiles.md). Its focused tests are in
+`internal/operator/profile_scheduling_test.go` and
+`internal/controller/scheduling_internal_test.go`; they were written but not run.
+
 ## Resume and handoff
 
-The maintainer should run the full kind suite and any remaining native/release
-checks before marking M9 fully qualified. The demand-driven scheduler stores
-probe budgets, cursors and working sets per probe context in the single operator
-process; durable SQLite
+The maintainer should requalify the final scheduler hardening, including the full
+kind suite and remaining native/release checks, before marking M9 fully qualified.
+The demand-driven scheduler stores round windows, cursors, cohorts and Gateway
+selection pins per probe context in the single operator process; durable SQLite
 observations and Gateway selection state recover normally. A process restart
-opens a new bounded quota window. Profile incarnation changes after an observed
+begins a new round immediately. Profile incarnation changes after an observed
 removal; updates too rapid for the controller to observe as separate resource
 states cannot be distinguished from an in-place edit. The kind scenario uses
 synthetic target CGI responses. Do not begin M10 in this task.

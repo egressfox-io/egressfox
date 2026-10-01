@@ -29,7 +29,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0021](0021-m8-review-corrections.md) | Complete | M8 metadata destination and cache-expiry scheduling corrections |
 | [0022](0022-docker-build-cache.md) | Complete | Docker build caching, stage isolation and architecture correctness |
 | [0023](0023-parallel-kubernetes-e2e.md) | Implementation complete; cluster validation pending | Parallel kind E2E scenario isolation and scheduling |
-| [0024](0024-m9-target-aware-profiles.md) | Implementation prepared; maintainer qualification pending | M9 target-aware profiles over shared inventory |
+| [0024](0024-m9-target-aware-profiles.md) | Implemented; final scheduler-hardening requalification pending | M9 target-aware profiles over shared inventory |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.
