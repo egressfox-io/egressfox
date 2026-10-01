@@ -2,7 +2,9 @@ package operator
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -78,9 +80,11 @@ func maxRequeueSpacing() time.Duration {
 	return cadence + cadence*RequeueJitterPermille/1000
 }
 
-// probeHarness replays the operator's probe scheduling and the real M5
-// selector with a fake clock and fake probe outcomes, without a store or
-// native engine. Each Gateway keeps its own M5 state, as the pipeline does.
+// probeHarness replays the operator's probe rounds and the real M5 selector
+// with a fake clock that advances while each probe runs, a controlled runner
+// and simulated publication, without a store, native engine or Kubernetes.
+// Like Run, a Gateway's M5 state and published selection change only when its
+// reserved decision is published.
 type probeHarness struct {
 	t        *testing.T
 	pipeline *Pipeline
@@ -94,22 +98,33 @@ type probeHarness struct {
 	now      time.Time
 	healthy  func(int) bool
 	latency  func(int) time.Duration
-	history  map[string][]observation.Observation
-	states   map[types.UID]*selection.State
-	selected map[types.UID][]string
+	// failCost is how long an unsuccessful probe occupies its slot.
+	failCost    func(int) time.Duration
+	history     map[string][]observation.Observation
+	states      map[types.UID]*selection.State
+	selected    map[types.UID][]string
+	failPublish map[types.UID]bool
+	refused     map[types.UID]bool
+	constrained map[types.UID]bool
+	overloaded  bool
 }
 
 func newHarness(t *testing.T, name string, profile artifact.Profile, records []endpoint.Record) *probeHarness {
 	h := &probeHarness{
-		t: t, pipeline: &Pipeline{}, pool: "pool", name: name, profile: profile, records: records, topN: 1,
-		target:   testTarget(t, "target-"+name, "https://example.com/"+name),
-		now:      time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC),
-		healthy:  func(int) bool { return true },
-		latency:  func(int) time.Duration { return 100 * time.Millisecond },
-		history:  map[string][]observation.Observation{},
-		states:   map[types.UID]*selection.State{},
-		selected: map[types.UID][]string{},
+		t: t, pool: "pool", name: name, profile: profile, records: records, topN: 1,
+		target:      testTarget(t, "target-"+name, "https://example.com/"+name),
+		now:         time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC),
+		healthy:     func(int) bool { return true },
+		latency:     func(int) time.Duration { return 100 * time.Millisecond },
+		failCost:    func(int) time.Duration { return 5 * time.Second },
+		history:     map[string][]observation.Observation{},
+		states:      map[types.UID]*selection.State{},
+		selected:    map[types.UID][]string{},
+		failPublish: map[types.UID]bool{},
+		refused:     map[types.UID]bool{},
+		constrained: map[types.UID]bool{},
 	}
+	h.pipeline = &Pipeline{now: func() time.Time { return h.now }}
 	h.index = make(map[string]int, len(records))
 	for i, record := range records {
 		h.index[record.ID().String()] = i
@@ -137,39 +152,92 @@ func (h *probeHarness) evidenceKey(record endpoint.Record) observation.Key {
 	return key
 }
 
-// reconcile runs one Gateway reconciliation: the shared probe round (if due),
-// then that Gateway's M5 decision, fed back to the scheduler like Run does.
+// Execute is the controlled runner: each probe advances the fake clock by its
+// cost and completes at the new time. The round runs one probe at a time, a
+// conservative model of the operator's per-target concurrency.
+func (h *probeHarness) Execute(_ context.Context, record endpoint.Record, _ observation.HTTPTarget) (observation.Observation, error) {
+	position := h.index[record.ID().String()]
+	params := observation.Params{Key: h.evidenceKey(record), Outcome: observation.OutcomeTimeout}
+	cost := h.failCost(position)
+	if h.healthy(position) {
+		cost = h.latency(position)
+		params.Outcome, params.StatusCode = observation.OutcomeSuccess, 204
+	}
+	params.StartedAt = h.now
+	h.now = h.now.Add(cost)
+	params.CompletedAt, params.Duration = h.now, cost
+	return observation.New(params)
+}
+
+var sequentialProbes = probe.ScheduleConfig{Concurrency: 1, Queue: 256, PerEndpoint: 1, PerTarget: 1, MaxJobs: probe.MaxSchedulerJobs}
+
+// reconcile follows Run for one Gateway: the shared round (if due), evidence
+// recording, demand touch, the M5 decision, reservation (with constrained
+// re-planning on refusal), simulated publication, then commit or release. It
+// returns the probe jobs that actually executed.
 func (h *probeHarness) reconcile(gateway types.UID) []probe.Job {
 	h.t.Helper()
 	key := h.key()
-	jobs := h.pipeline.budgetedJobs(key, h.records, h.target, h.profile, h.now)
-	if len(jobs) > roundBudget(key) {
-		h.t.Fatalf("round of %d jobs exceeds budget %d", len(jobs), roundBudget(key))
-	}
-	results := make([]probe.Result, len(jobs))
-	for index, job := range jobs {
-		id := job.Record.ID().String()
-		position := h.index[id]
-		completed := h.now.Add(time.Duration(index-len(jobs)) * time.Millisecond)
-		params := observation.Params{Key: h.evidenceKey(job.Record), StartedAt: completed, CompletedAt: completed, Duration: time.Millisecond, Outcome: observation.OutcomeTimeout}
-		if h.healthy(position) {
-			params.StartedAt = completed.Add(-h.latency(position))
-			params.Duration, params.Outcome, params.StatusCode = h.latency(position), observation.OutcomeSuccess, 204
+	var executed []probe.Job
+	if round, due := h.pipeline.budgetedJobs(key, h.records, h.target, h.profile, h.now); due {
+		if jobs := len(round.explore) + len(round.maintain); jobs > roundBudget(key) {
+			h.t.Fatalf("round of %d jobs exceeds budget %d", jobs, roundBudget(key))
 		}
-		value, err := observation.New(params)
+		result, err := h.pipeline.runRound(context.Background(), h, sequentialProbes, round)
 		if err != nil {
 			h.t.Fatal(err)
 		}
-		results[index] = probe.Result{Observation: value}
-		h.history[id] = append(h.history[id], value)
+		h.pipeline.recordProbeResults(key, result.jobs, result.results)
+		for index, value := range result.results {
+			if value.Err == nil {
+				id := result.jobs[index].Record.ID().String()
+				h.history[id] = append(h.history[id], value.Observation)
+				executed = append(executed, result.jobs[index])
+			} else if !errors.Is(value.Err, errExplorationDeferred) {
+				h.t.Fatalf("unexpected probe infrastructure error: %v", value.Err)
+			}
+		}
+		h.overloaded = h.now.Sub(result.maintenanceStart) > evidencePolicy().Freshness
+		h.pipeline.completeRound(round, h.overloaded)
 	}
-	h.pipeline.recordProbeResults(key, jobs, results)
-	decision := h.decide(gateway)
-	h.pipeline.recordSelection(key, gateway, decision, h.now)
-	return jobs
+	h.pipeline.touchDemand(key, gateway, h.now)
+	h.refused[gateway], h.constrained[gateway] = false, false
+	decision := h.decide(gateway, nil)
+	if len(decision.Selected) == 0 {
+		h.pipeline.observeVerdicts(key, decision)
+		return executed
+	}
+	reservation, err := h.pipeline.reserveSelection(key, gateway, decision, h.now)
+	if err != nil {
+		h.constrained[gateway] = true
+		decision = h.decide(gateway, h.pipeline.maintained(key))
+		if len(decision.Selected) == 0 {
+			h.pipeline.observeVerdicts(key, decision)
+			return executed
+		}
+		if reservation, err = h.pipeline.reserveSelection(key, gateway, decision, h.now); err != nil {
+			h.refused[gateway] = true
+			return executed
+		}
+	}
+	if h.failPublish[gateway] {
+		h.pipeline.releaseSelection(reservation)
+		return executed
+	}
+	h.pipeline.commitSelection(reservation)
+	next := decision.Next
+	h.states[gateway] = &next
+	ids := make([]string, 0, len(decision.Selected))
+	for _, record := range decision.Selected {
+		ids = append(ids, record.ID().String())
+	}
+	h.selected[gateway] = ids
+	return executed
 }
 
-func (h *probeHarness) decide(gateway types.UID) selection.Decision {
+// decide plans like reconcile.Plan: evidence of records maintained rejects is
+// withheld. It does not commit the Gateway's M5 state.
+func (h *probeHarness) decide(gateway types.UID, maintained func(endpoint.Record) bool) selection.Decision {
 	h.t.Helper()
 	policy := selection.DefaultPolicy(selection.StrategyAdaptive)
 	policy.TopN = maintainableTopN(h.key(), h.topN)
@@ -185,7 +253,7 @@ func (h *probeHarness) decide(gateway types.UID) selection.Decision {
 		h.history[id] = slices.DeleteFunc(h.history[id], func(value observation.Observation) bool {
 			return h.now.Sub(value.CompletedAt()) > policy.EvidenceWindow
 		})
-		if values := h.history[id]; len(values) > 0 {
+		if values := h.history[id]; len(values) > 0 && (maintained == nil || maintained(record)) {
 			summary, err := observation.Summarize(h.evidenceKey(record), values, h.now, policy.EvidenceWindow, policy.Freshness)
 			if err != nil {
 				h.t.Fatal(err)
@@ -198,13 +266,6 @@ func (h *probeHarness) decide(gateway types.UID) selection.Decision {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	next := decision.Next
-	h.states[gateway] = &next
-	ids := make([]string, 0, len(decision.Selected))
-	for _, record := range decision.Selected {
-		ids = append(ids, record.ID().String())
-	}
-	h.selected[gateway] = ids
 	return decision
 }
 
@@ -219,6 +280,13 @@ func fastest(index int) func(int) time.Duration {
 		}
 		return 400 * time.Millisecond
 	}
+}
+
+func roundJobs(round probeRound, due bool) int {
+	if !due {
+		return 0
+	}
+	return len(round.explore) + len(round.maintain)
 }
 
 func jobIDs(jobs []probe.Job) map[string]int {
@@ -518,7 +586,7 @@ func TestGatewaySelectionsStayIndependentInSharedContext(t *testing.T) {
 		t.Fatalf("selections a=%v b=%v", h.selected["gateway-a"], h.selected["gateway-b"])
 	}
 	state := h.state()
-	if !state.pinned(first[0]) || !state.pinned(h.id(1)) {
+	if !state.demanded(first[0]) || !state.demanded(h.id(1)) {
 		t.Fatal("shared cohort does not maintain both Gateway selections")
 	}
 }
@@ -582,10 +650,10 @@ func TestProbeContextFollowsProfileIncarnation(t *testing.T) {
 	if oldKey == newKey {
 		t.Fatal("recreated profile shares the old probe context")
 	}
-	if len(pipeline.budgetedJobs(oldKey, records, old, artifact.Mihomo11931, now)) == 0 {
+	if roundJobs(pipeline.budgetedJobs(oldKey, records, old, artifact.Mihomo11931, now)) == 0 {
 		t.Fatal("old context empty")
 	}
-	if len(pipeline.budgetedJobs(newKey, records, recreated, artifact.Mihomo11931, now)) == 0 {
+	if roundJobs(pipeline.budgetedJobs(newKey, records, recreated, artifact.Mihomo11931, now)) == 0 {
 		t.Fatal("recreated profile inherited the old round")
 	}
 	if len(pipeline.probes[newKey].cohort) != 0 || pipeline.probes[newKey].cursor == 0 {
@@ -602,17 +670,17 @@ func TestEngineContextsAreIndependent(t *testing.T) {
 			now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 			mihomoKey := newProbeContextKey("pool", name, artifact.Mihomo11931, target)
 			singKey := newProbeContextKey("pool", name, artifact.SingBox1141, target)
-			if len(pipeline.budgetedJobs(mihomoKey, records, target, artifact.Mihomo11931, now)) == 0 {
+			if roundJobs(pipeline.budgetedJobs(mihomoKey, records, target, artifact.Mihomo11931, now)) == 0 {
 				t.Fatal("mihomo empty")
 			}
-			if len(pipeline.budgetedJobs(mihomoKey, records, target, artifact.Mihomo11931, now)) != 0 {
+			if roundJobs(pipeline.budgetedJobs(mihomoKey, records, target, artifact.Mihomo11931, now)) != 0 {
 				t.Fatal("mihomo round repeated")
 			}
-			if len(pipeline.budgetedJobs(singKey, records, target, artifact.SingBox1141, now)) == 0 {
+			if roundJobs(pipeline.budgetedJobs(singKey, records, target, artifact.SingBox1141, now)) == 0 {
 				t.Fatal("sing-box starved by mihomo context")
 			}
 			otherPool := newProbeContextKey("other-pool", name, artifact.Mihomo11931, target)
-			if len(pipeline.budgetedJobs(otherPool, records, target, artifact.Mihomo11931, now)) == 0 {
+			if roundJobs(pipeline.budgetedJobs(otherPool, records, target, artifact.Mihomo11931, now)) == 0 {
 				t.Fatal("another pool shares the context")
 			}
 		})
@@ -678,5 +746,247 @@ func TestProbeStateIsBoundedAndExpires(t *testing.T) {
 	other.reconcile("gateway")
 	if _, ok := h.pipeline.probes[h.key()]; ok || len(h.pipeline.probes) != 1 {
 		t.Fatalf("stale probe context was not released: %d", len(h.pipeline.probes))
+	}
+}
+
+// checkDemandInvariant asserts that committed demand fits the cohort and is
+// maintained: every demanded endpoint is a cohort member.
+func (h *probeHarness) checkDemandInvariant() {
+	h.t.Helper()
+	state := h.state()
+	members := map[string]bool{}
+	for _, id := range state.cohort {
+		members[id] = true
+	}
+	union := map[string]bool{}
+	for gateway, demand := range state.demand {
+		if demand.pending {
+			h.t.Fatalf("pending reservation of %s survived its reconciliation", gateway)
+		}
+		for _, id := range demand.selected {
+			union[id] = true
+			if !members[id] {
+				h.t.Fatalf("published selection of %s is not maintained", gateway)
+			}
+		}
+	}
+	if len(union) > cohortCapacity(h.key(), evidencePolicy()) || len(state.cohort) > cohortCapacity(h.key(), evidencePolicy()) {
+		h.t.Fatalf("demand %d or cohort %d exceeds capacity", len(union), len(state.cohort))
+	}
+}
+
+// Two Gateways share a full cohort: Gateway b's selection pins every member,
+// and Gateway a independently prefers an explored endpoint after its own M5
+// failure streak and cooldown. The union no longer fits, so a chooses among
+// maintained endpoints instead of publishing an unmaintainable endpoint, and
+// regains its preference once b's demand expires.
+func TestSharedCohortConstrainsSelectionThatDoesNotFit(t *testing.T) {
+	for _, name := range []string{"alpha", "default"} {
+		t.Run(name, func(t *testing.T) {
+			probeKey := newProbeContextKey("pool", name, artifact.Mihomo11931, testTarget(t, "target-"+name, "https://example.com/"+name))
+			capacity := cohortCapacity(probeKey, evidencePolicy())
+			h := newHarness(t, name, artifact.Mihomo11931, testRecords(t, capacity+12, 0))
+			h.topN = capacity
+			h.latency = func(int) time.Duration { return 400 * time.Millisecond }
+			step := func(gateways ...types.UID) {
+				for _, gateway := range gateways {
+					h.reconcile(gateway)
+				}
+				h.checkDemandInvariant()
+				h.now = h.now.Add(maxRequeueSpacing())
+			}
+			for range 20 {
+				step("gateway-a")
+			}
+			if len(h.selected["gateway-a"]) != capacity {
+				t.Fatalf("warm-up selected %d of %d", len(h.selected["gateway-a"]), capacity)
+			}
+			// Overlapping demands whose union fits are not constrained.
+			for range 3 {
+				step("gateway-a", "gateway-b")
+				if h.constrained["gateway-a"] || h.constrained["gateway-b"] {
+					t.Fatal("overlapping demands that fit were constrained")
+				}
+			}
+			if len(h.selected["gateway-b"]) != capacity {
+				t.Fatalf("gateway-b selected %d", len(h.selected["gateway-b"]))
+			}
+			bLast := h.now.Add(-maxRequeueSpacing())
+			// Gateway a alone observes a failure streak on one of its members.
+			victim := h.index[h.selected["gateway-a"][0]]
+			h.healthy = func(i int) bool { return i != victim }
+			streak := evidencePolicy().FailureStreak
+			for range streak {
+				step("gateway-a")
+			}
+			if !h.constrained["gateway-a"] || len(h.selected["gateway-a"]) != capacity-1 || slices.Contains(h.selected["gateway-a"], h.id(victim)) {
+				t.Fatalf("gateway-a constrained=%t selected=%d", h.constrained["gateway-a"], len(h.selected["gateway-a"]))
+			}
+			constrainedSet := slices.Sorted(slices.Values(h.selected["gateway-a"]))
+			// While b's demand lives, a stays constrained and its published
+			// selection does not churn; once it expires, a fills topN again.
+			released := false
+			for range 12 {
+				step("gateway-a")
+				alive := h.now.Add(-maxRequeueSpacing()).Sub(bLast) <= evidencePolicy().EvidenceWindow
+				switch {
+				case alive && !slices.Equal(constrainedSet, slices.Sorted(slices.Values(h.selected["gateway-a"]))):
+					t.Fatal("constrained selection churned while shared demand persisted")
+				case !alive && !h.constrained["gateway-a"] && len(h.selected["gateway-a"]) == capacity:
+					released = true
+				}
+			}
+			if !released {
+				t.Fatal("expired demand did not release shared capacity")
+			}
+			if _, ok := h.state().demand["gateway-b"]; ok {
+				t.Fatal("expired Gateway demand still held")
+			}
+		})
+	}
+}
+
+// A reservation whose publication fails is released: no speculative pin
+// remains, M5 state and the published selection stay, and the next successful
+// publication commits normally.
+func TestFailedPublicationReleasesReservation(t *testing.T) {
+	h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, 10, 0))
+	h.latency = fastest(0)
+	for range 4 {
+		h.reconcile("gateway")
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	incumbent := h.selected["gateway"]
+	before := *h.states["gateway"]
+	// Endpoint 5 becomes clearly faster; M5 prefers it after residence.
+	h.latency = fastest(5)
+	h.failPublish["gateway"] = true
+	for range 6 {
+		h.reconcile("gateway")
+		h.checkDemandInvariant()
+		if !slices.Equal(h.selected["gateway"], incumbent) || !slices.Equal(h.state().demand["gateway"].selected, incumbent) {
+			t.Fatal("failed publication replaced the committed selection or demand")
+		}
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	if !h.states["gateway"].EvaluatedAt.Equal(before.EvaluatedAt) {
+		t.Fatal("failed publication committed M5 state")
+	}
+	h.failPublish["gateway"] = false
+	h.reconcile("gateway")
+	h.checkDemandInvariant()
+	if !slices.Equal(h.selected["gateway"], []string{h.id(5)}) || !h.state().demanded(h.id(5)) {
+		t.Fatalf("successful publication did not commit: %v", h.selected["gateway"])
+	}
+}
+
+// Unreachable exploration endpoints cost a full probe timeout each. They must
+// not delay maintenance until the maintained selection's evidence is stale.
+func TestSlowExplorationDoesNotStaleMaintainedEvidence(t *testing.T) {
+	for _, name := range []string{"alpha", "default"} {
+		t.Run(name, func(t *testing.T) {
+			probeKey := newProbeContextKey("pool", name, artifact.Mihomo11931, testTarget(t, "target-"+name, "https://example.com/"+name))
+			healthy := cohortCapacity(probeKey, evidencePolicy())
+			h := newHarness(t, name, artifact.Mihomo11931, testRecords(t, healthy+40, 0))
+			h.healthy = func(i int) bool { return i < healthy }
+			h.failCost = func(int) time.Duration { return 2 * time.Minute }
+			var selected []string
+			for round := range 30 {
+				start := h.now
+				executed := h.reconcile("gateway")
+				if h.overloaded {
+					t.Fatalf("round %d: fast maintenance reported overload", round)
+				}
+				// Exploration starts no probe after its budget; one already
+				// running finishes within its own timeout.
+				if elapsed := h.now.Sub(start); round > 0 && elapsed > explorationBudget(evidencePolicy())+2*time.Minute+time.Minute {
+					t.Fatalf("round %d took %s", round, elapsed)
+				}
+				if round >= 8 {
+					if selected == nil {
+						selected = h.selected["gateway"]
+					}
+					if len(h.selected["gateway"]) == 0 || !slices.Equal(selected, h.selected["gateway"]) {
+						t.Fatalf("round %d: slow exploration staled the maintained selection", round)
+					}
+				}
+				// Deferred exploration leaves no observation behind.
+				for id, count := range jobIDs(executed) {
+					if h.index[id] >= healthy && count > evidencePolicy().MinSamples {
+						t.Fatal("deferred exploration recorded observations")
+					}
+				}
+				h.now = h.now.Add(maxRequeueSpacing())
+			}
+		})
+	}
+}
+
+// Maintenance slower than Freshness cannot keep every observation fresh. The
+// round reports overload, and demanded members run last so the selection
+// they back is still observed immediately before evaluation.
+func TestSlowMaintenanceIsReportedAndSelectionProbedLast(t *testing.T) {
+	h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, 40, 0))
+	// 24 maintained probes of 13s take longer than Freshness, while the round
+	// stays short enough to keep MinSamples in the evidence window.
+	h.latency = func(int) time.Duration { return 13 * time.Second }
+	overloaded := false
+	var selected []string
+	for round := range 16 {
+		h.reconcile("gateway")
+		overloaded = overloaded || h.overloaded
+		if round >= 8 {
+			if selected == nil {
+				selected = h.selected["gateway"]
+			}
+			if !slices.Equal(selected, h.selected["gateway"]) {
+				t.Fatalf("round %d: selection lost under slow maintenance", round)
+			}
+		}
+		h.now = h.now.Add(maxRequeueSpacing())
+	}
+	if !overloaded || len(selected) != 1 {
+		t.Fatalf("overloaded=%t selected=%d", overloaded, len(selected))
+	}
+	round, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now)
+	if !due || round.maintain[len(round.maintain)-1].Record.ID().String() != selected[0] {
+		t.Fatal("selected endpoint is not probed last")
+	}
+}
+
+// A round abandoned before its evidence was stored is retried by the next
+// reconciliation instead of suppressing probes for a whole cadence, and its
+// exploration position is not lost.
+func TestAbandonedRoundIsRetried(t *testing.T) {
+	h := newHarness(t, "alpha", artifact.Mihomo11931, testRecords(t, 100, 0))
+	first, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now)
+	if !due {
+		t.Fatal("first round not due")
+	}
+	h.pipeline.abandonRound(first)
+	retry, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now)
+	if !due || retry.id == first.id || !slices.Equal(slices.Sorted(maps.Keys(jobIDs(retry.explore))), slices.Sorted(maps.Keys(jobIDs(first.explore)))) {
+		t.Fatal("abandoned round was not retried from the same position")
+	}
+	h.pipeline.completeRound(retry, false)
+	if _, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now); due {
+		t.Fatal("completed round repeated within its window")
+	}
+	// Abandoning a superseded round does not reopen the current one.
+	h.pipeline.abandonRound(first)
+	if _, due := h.pipeline.budgetedJobs(h.key(), h.records, h.target, h.profile, h.now); due {
+		t.Fatal("stale abandonment reopened the current round")
+	}
+}
+
+func TestMaintainableTopNKeepsRequestBelowCapacity(t *testing.T) {
+	for _, name := range []string{"alpha", "default"} {
+		key := newProbeContextKey("pool", name, artifact.Mihomo11931, testTarget(t, "target", "https://example.com/"))
+		capacity := cohortCapacity(key, evidencePolicy())
+		for requested, want := range map[int]int{1: 1, capacity - 1: capacity - 1, capacity: capacity, capacity + 1: capacity, 10_000: capacity} {
+			if got := maintainableTopN(key, requested); got != want {
+				t.Fatalf("%s: maintainableTopN(%d)=%d want %d", name, requested, got, want)
+			}
+		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -244,5 +245,59 @@ func TestGatewayFailedProfileDoesNotKeepPreviousCounts(t *testing.T) {
 	}
 	if status.ActiveGeneration != "healthy-old" || status.PublishedGeneration != "published-old" {
 		t.Fatalf("LKG generations were not preserved: %#v", status)
+	}
+}
+
+type codedError string
+
+func (e codedError) Error() string { return "pipeline failed" }
+func (e codedError) Code() string  { return string(e) }
+
+// TopN is an upper bound: the status distinguishes a full selection, a
+// shortfall caused by the maintainable probe cohort, a shortfall caused by
+// evidence, probe overload and a refused shared-capacity reservation.
+func TestGatewaySelectionShortfallReasons(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		outcome operatoradapter.GatewayOutcome
+		err     error
+		status  metav1.ConditionStatus
+		reason  string
+	}{
+		{"below capacity, full", operatoradapter.GatewayOutcome{Eligible: 9, Selected: 5, RequestedTopN: 5, EffectiveTopN: 5, Published: true}, nil, metav1.ConditionTrue, "SelectionReady"},
+		{"exactly at capacity", operatoradapter.GatewayOutcome{Eligible: 26, Selected: 24, RequestedTopN: 24, EffectiveTopN: 24, Published: true}, nil, metav1.ConditionTrue, "SelectionReady"},
+		{"above capacity", operatoradapter.GatewayOutcome{Eligible: 26, Selected: 24, RequestedTopN: 100, EffectiveTopN: 24, Published: true}, nil, metav1.ConditionTrue, "ProbeCapacityLimited"},
+		{"above capacity, evidence-limited", operatoradapter.GatewayOutcome{Eligible: 10, Selected: 10, RequestedTopN: 100, EffectiveTopN: 24, Published: true}, nil, metav1.ConditionTrue, "InsufficientEligibleEndpoints"},
+		{"below capacity, evidence-limited", operatoradapter.GatewayOutcome{Eligible: 3, Selected: 3, RequestedTopN: 5, EffectiveTopN: 5, Published: true}, nil, metav1.ConditionTrue, "InsufficientEligibleEndpoints"},
+		{"overloaded with selection", operatoradapter.GatewayOutcome{Eligible: 1, Selected: 1, RequestedTopN: 1, EffectiveTopN: 1, Published: true, ProbeOverloaded: true}, nil, metav1.ConditionTrue, "ProbeRoundOverloaded"},
+		{"overloaded without selection", operatoradapter.GatewayOutcome{RequestedTopN: 1, EffectiveTopN: 1, ProbeOverloaded: true}, nil, metav1.ConditionFalse, "ProbeRoundOverloaded"},
+		{"no evidence", operatoradapter.GatewayOutcome{RequestedTopN: 1, EffectiveTopN: 1}, nil, metav1.ConditionFalse, "NoEligibleEndpoints"},
+		{"limited by shared demand", operatoradapter.GatewayOutcome{Eligible: 26, Selected: 24, RequestedTopN: 24, EffectiveTopN: 24, Published: true, SharedCapacityLimited: true}, nil, metav1.ConditionTrue, "ProbeCapacityShared"},
+		{"shared demand leaves no maintainable selection", operatoradapter.GatewayOutcome{}, codedError("probe_capacity"), metav1.ConditionFalse, "ProbeCapacityExceeded"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			scheme := controllerScheme(t)
+			pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress"}}
+			gateway := &egressv1alpha1.EgressGateway{ObjectMeta: metav1.ObjectMeta{Name: "gateway", Namespace: "egress"}, Spec: egressv1alpha1.EgressGatewaySpec{PoolRef: egressv1alpha1.LocalReference{Name: "pool"}}}
+			kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gateway).WithObjects(pool, gateway).Build()
+			reconciler := &controller.EgressGatewayReconciler{Client: kubeClient, Scheme: scheme, Pipeline: fakePipeline{outcome: test.outcome, err: test.err}, Now: func() time.Time { return time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC) }}
+			if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "egress", Name: "gateway"}}); err != nil {
+				t.Fatal(err)
+			}
+			current := &egressv1alpha1.EgressGateway{}
+			if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(gateway), current); err != nil {
+				t.Fatal(err)
+			}
+			ready := apimeta.FindStatusCondition(current.Status.Conditions, controller.ConditionSelectionReady)
+			if ready == nil || ready.Status != test.status || ready.Reason != test.reason {
+				t.Fatalf("SelectionReady = %#v, want %s/%s", ready, test.status, test.reason)
+			}
+			if test.err != nil && (current.Status.SelectedEndpoints != 0 || conditionTrue(current.Status.Conditions, controller.ConditionPublished)) {
+				t.Fatalf("refused reservation reported a published selection: %#v", current.Status)
+			}
+			if test.err == nil && current.Status.SelectedEndpoints != int32(test.outcome.Selected) {
+				t.Fatalf("selected=%d want %d", current.Status.SelectedEndpoints, test.outcome.Selected)
+			}
+		})
 	}
 }

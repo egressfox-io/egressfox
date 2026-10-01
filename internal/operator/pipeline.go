@@ -113,21 +113,26 @@ func newProbeContextKey(pool types.UID, name string, profile artifact.Profile, t
 // failure streaks, cooldown and anti-flap remain M5 decisions.
 type probeState struct {
 	until  time.Time
+	round  uint64
 	cursor int
 	// cohort lists maintained endpoint IDs in admission order.
 	cohort []string
 	// rejected holds cohort members whose latest M5 explanation was a failure
 	// streak or unreliability; only they may yield a slot to a newcomer.
 	rejected map[string]bool
-	// demand records each referencing Gateway's current selection so selected
-	// endpoints stay maintained whatever path admitted them.
+	// demand records each Gateway's published selection (or a pending
+	// reservation for the selection it is about to publish). Their union never
+	// exceeds the cohort capacity, so demanded endpoints are always maintained.
 	demand map[types.UID]probeDemand
-	seen   time.Time
+	// overloaded reports that the latest maintenance phase outlasted Freshness.
+	overloaded bool
+	seen       time.Time
 }
 
 type probeDemand struct {
 	selected []string
 	seen     time.Time
+	pending  bool
 }
 
 type limitedRunner struct {
@@ -146,12 +151,23 @@ func (r limitedRunner) Execute(ctx context.Context, record endpoint.Record, targ
 }
 
 type GatewayOutcome struct {
-	Eligible            int
-	Selected            int
-	Published           bool
-	Changed             bool
-	RetainedLKG         bool
-	PublishedGeneration string
+	Eligible int
+	Selected int
+	// RequestedTopN is the profile's topN; EffectiveTopN is what M5 was asked
+	// for after the context's maintainable cohort bound.
+	RequestedTopN int
+	EffectiveTopN int
+	// ProbeOverloaded reports that the context's latest maintenance phase
+	// outlasted Freshness, so early maintenance evidence was stale at evaluation.
+	ProbeOverloaded bool
+	// SharedCapacityLimited reports that the preferred selection did not fit
+	// the cohort shared with other Gateways and M5 chose among maintained
+	// endpoints instead.
+	SharedCapacityLimited bool
+	Published             bool
+	Changed               bool
+	RetainedLKG           bool
+	PublishedGeneration   string
 }
 
 func NewPipeline(config PipelineConfig) (*Pipeline, error) {
@@ -216,33 +232,41 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("probe_executor")
 	}
-	scheduler, err := probe.NewScheduler(limitedRunner{inner: executor, slots: p.probeSlots}, probe.DefaultScheduleConfig())
-	if err != nil {
-		return GatewayOutcome{}, pipelineFailure("probe_scheduler")
-	}
 	probeKey := newProbeContextKey(pool.UID, profileName, profile, target)
-	jobs := p.budgetedJobs(probeKey, poolResult.Inventory.Records(), target, profile, p.now())
-	results, _, err := scheduler.Run(ctx, jobs)
-	if err != nil {
-		return GatewayOutcome{}, pipelineFailure("probe_schedule")
-	}
-	p.recordProbeResults(probeKey, jobs, results)
-	now := p.now().UTC()
-	for _, result := range results {
-		if result.Err == nil {
-			if err := p.store.Append(ctx, result.Observation, now); err != nil {
-				return GatewayOutcome{}, pipelineFailure("evidence_store")
+	if round, due := p.budgetedJobs(probeKey, poolResult.Inventory.Records(), target, profile, p.now()); due {
+		executed, err := p.runRound(ctx, limitedRunner{inner: executor, slots: p.probeSlots}, probe.DefaultScheduleConfig(), round)
+		if err != nil {
+			p.abandonRound(round)
+			return GatewayOutcome{}, pipelineFailure("probe_schedule")
+		}
+		p.recordProbeResults(probeKey, executed.jobs, executed.results)
+		received := p.now().UTC()
+		for _, result := range executed.results {
+			if result.Err == nil {
+				if err := p.store.Append(ctx, result.Observation, received); err != nil {
+					p.abandonRound(round)
+					return GatewayOutcome{}, pipelineFailure("evidence_store")
+				}
 			}
 		}
+		if ctx.Err() != nil {
+			p.abandonRound(round)
+			return GatewayOutcome{}, pipelineFailure("probe_schedule")
+		}
+		p.completeRound(round, received.Sub(executed.maintenanceStart) > evidencePolicy().Freshness)
 	}
+	p.touchDemand(probeKey, gateway.UID, p.now())
+	now := p.now().UTC()
 	selectionContext, err := selection.NewContext(target.Ref(), vantage, observation.KindHTTPGet, profile)
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("selection_context")
 	}
 	selectionPolicy := selection.DefaultPolicy(selectionStrategy(selectionSpec.Strategy))
+	requestedTopN := selectionPolicy.TopN
 	if selectionSpec.TopN > 0 {
-		selectionPolicy.TopN = maintainableTopN(probeKey, int(selectionSpec.TopN))
+		requestedTopN = int(selectionSpec.TopN)
 	}
+	selectionPolicy.TopN = maintainableTopN(probeKey, requestedTopN)
 	inputRevisions := poolResult.SourceRevisions
 	inputRevisions[targetName] = targetRevision
 	var listener policy.Listener
@@ -293,11 +317,34 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 	if err != nil {
 		return GatewayOutcome{}, pipelineFailure("reconciler")
 	}
+	// A non-empty decision reserves its maintenance in the shared cohort before
+	// anything is rendered or published; the reservation becomes committed
+	// demand only once that exact selection is published.
+	var reservation *selectionReservation
+	defer func() {
+		if reservation != nil {
+			p.releaseSelection(reservation)
+		}
+	}()
 	result, err := useCase.Reconcile(ctx, reconcile.Request{
 		Scope: "k8s_" + string(gateway.UID), Inventory: poolResult.Inventory, Context: selectionContext,
 		Selection: selectionPolicy, Listener: listener, Renderer: renderer, Checker: checker, EvaluatedAt: now,
+		Reserve: func(decision selection.Decision) error {
+			var err error
+			reservation, err = p.reserveSelection(probeKey, gateway.UID, decision, now)
+			return err
+		},
+		Maintained:  p.maintained(probeKey),
 		BeforeApply: guard.BindSelected,
 	})
+	if err == nil {
+		if reservation == nil {
+			p.observeVerdicts(probeKey, result.Decision)
+		} else if result.Published {
+			p.commitSelection(reservation)
+			reservation = nil
+		}
+	}
 	if err != nil {
 		var staged interface{ Stage() string }
 		if errors.As(err, &staged) {
@@ -318,14 +365,14 @@ func (p *Pipeline) Run(ctx context.Context, gateway *egressv1alpha1.EgressGatewa
 		}
 		return GatewayOutcome{}, pipelineFailure("reconcile")
 	}
-	p.recordSelection(probeKey, gateway.UID, result.Decision, now)
 	eligible := 0
 	for _, explanation := range result.Decision.Explanations {
 		if explanation.Reason == selection.ReasonEligible {
 			eligible++
 		}
 	}
-	outcome := GatewayOutcome{Eligible: eligible, Selected: len(result.Decision.Selected), Published: result.Published, Changed: result.Changed, RetainedLKG: result.RetainedLKG}
+	outcome := GatewayOutcome{Eligible: eligible, Selected: len(result.Decision.Selected), Published: result.Published, Changed: result.Changed, RetainedLKG: result.RetainedLKG,
+		RequestedTopN: requestedTopN, EffectiveTopN: selectionPolicy.TopN, ProbeOverloaded: p.roundOverloaded(probeKey), SharedCapacityLimited: result.Constrained}
 	if generationPublisher != nil {
 		outcome.PublishedGeneration = generationPublisher.GenerationName()
 	}
@@ -352,6 +399,8 @@ func reconcileStageCode(stage string) string {
 		return "persistence"
 	case "selection", "candidate", "evidence_key":
 		return "selection"
+	case "scheduling":
+		return "probe_capacity"
 	default:
 		return "reconcile"
 	}
@@ -448,6 +497,13 @@ func probeCadence(policy selection.Policy) time.Duration {
 	return max(cadence, minProbeCadence)
 }
 
+// explorationBudget bounds how long after a round starts a new exploration
+// probe may begin. Probes already running finish within their own timeout;
+// later exploration jobs are deferred, not observed.
+func explorationBudget(policy selection.Policy) time.Duration {
+	return policy.Freshness / 2
+}
+
 // EvidenceCadence is the Gateway requeue base needed to maintain M5 evidence.
 // The controller requeues at the shorter of it and the source refresh interval.
 func EvidenceCadence() time.Duration { return probeCadence(evidencePolicy()) }
@@ -466,18 +522,44 @@ func cohortCapacity(key probeContextKey, policy selection.Policy) int {
 }
 
 // maintainableTopN bounds a requested TopN by what the context can keep fresh.
-// TopN is an upper bound in M5: a shortfall is reported, never filled, so this
-// avoids selecting endpoints whose evidence the scheduler cannot maintain.
+// M5 receives the bounded value; the operator reports the requested one.
 func maintainableTopN(key probeContextKey, requested int) int {
 	return max(1, min(requested, cohortCapacity(key, evidencePolicy())))
 }
 
-// budgetedJobs returns the probe jobs for one probe context. Round window,
+var (
+	// errProbeCapacity refuses a selection whose maintenance does not fit the
+	// context's cohort next to the other Gateways' demand.
+	errProbeCapacity = errors.New("probe cohort capacity exceeded")
+	// errExplorationDeferred marks an exploration job not started because the
+	// round's exploration budget had passed. It is not an endpoint verdict.
+	errExplorationDeferred = errors.New("probe exploration deferred")
+)
+
+// probeRound is one context's work for a round. id identifies the claim, and
+// cursor is the exploration position to restore if the round is abandoned.
+type probeRound struct {
+	key      probeContextKey
+	id       uint64
+	explore  []probe.Job
+	maintain []probe.Job
+	cursor   int
+}
+
+type roundResult struct {
+	jobs             []probe.Job
+	results          []probe.Result
+	maintenanceStart time.Time
+}
+
+// budgetedJobs claims the next round for one probe context. Round window,
 // cursor and cohort belong to the context, so equivalent Gateways share one
 // round and one exploration position, and a changed target, engine profile or
 // recreated profile starts fresh. A Gateway reconciling inside the current
-// window gets no jobs and evaluates the evidence the round already produced.
-func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, now time.Time) []probe.Job {
+// window gets no round and evaluates the evidence the last round produced.
+// Maintenance lists demanded (selected) members last so they are observed
+// closest to evaluation.
+func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, target observation.HTTPTarget, profile artifact.Profile, now time.Time) (probeRound, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.probes == nil {
@@ -492,9 +574,11 @@ func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, 
 	state.seen = now
 	defer p.expireProbeStatesLocked(now)
 	if now.Before(state.until) {
-		return nil
+		return probeRound{}, false
 	}
 	state.until = now.Add(probeCadence(policy))
+	state.round++
+	round := probeRound{key: key, id: state.round, cursor: state.cursor}
 	// Members leave the cohort only when they disappear from the inventory or
 	// stop being exact-engine compatible; health is M5's decision.
 	compatible := make(map[string]endpoint.Record, len(records))
@@ -503,28 +587,102 @@ func (p *Pipeline) budgetedJobs(key probeContextKey, records []endpoint.Record, 
 			compatible[record.ID().String()] = record
 		}
 	}
-	jobs := make([]probe.Job, 0, roundBudget(key))
+	var demanded []probe.Job
 	skip := make(map[string]bool, len(state.cohort))
 	state.cohort = slices.DeleteFunc(state.cohort, func(id string) bool {
 		record, ok := compatible[id]
 		if ok {
-			jobs = append(jobs, probe.Job{Record: record, Target: target})
+			job := probe.Job{Record: record, Target: target}
+			if state.demanded(id) {
+				demanded = append(demanded, job)
+			} else {
+				round.maintain = append(round.maintain, job)
+			}
 			skip[id] = true
 		}
 		return !ok
 	})
-	explore, next := nextProbeBatch(records, target, profile, state.cursor, max(exploreMin, (roundBudget(key)-len(jobs))/policy.MinSamples), skip)
+	round.maintain = append(round.maintain, demanded...)
+	explore, next := nextProbeBatch(records, target, profile, state.cursor, max(exploreMin, (roundBudget(key)-len(round.maintain))/policy.MinSamples), skip)
 	state.cursor = next
 	for range policy.MinSamples {
-		jobs = append(jobs, explore...)
+		round.explore = append(round.explore, explore...)
 	}
-	return jobs
+	return round, true
+}
+
+// runRound executes exploration first and maintenance last, so maintenance
+// evidence is the newest evidence at evaluation however slow exploration is.
+// New exploration probes start only within explorationBudget of the round
+// start; deferred jobs return errExplorationDeferred and record nothing.
+// Maintenance is not cut short: a phase longer than Freshness is reported as
+// overload by the caller rather than hidden by skipping observations.
+func (p *Pipeline) runRound(ctx context.Context, runner probe.Runner, config probe.ScheduleConfig, round probeRound) (roundResult, error) {
+	start := p.now()
+	explorer, err := probe.NewScheduler(deadlineRunner{inner: runner, now: p.now, notAfter: start.Add(explorationBudget(evidencePolicy()))}, config)
+	if err != nil {
+		return roundResult{}, err
+	}
+	maintainer, err := probe.NewScheduler(runner, config)
+	if err != nil {
+		return roundResult{}, err
+	}
+	explored, _, err := explorer.Run(ctx, round.explore)
+	if err != nil {
+		return roundResult{}, err
+	}
+	result := roundResult{maintenanceStart: p.now()}
+	maintained, _, err := maintainer.Run(ctx, round.maintain)
+	if err != nil {
+		return roundResult{}, err
+	}
+	result.jobs = append(append(result.jobs, round.explore...), round.maintain...)
+	result.results = append(append(result.results, explored...), maintained...)
+	return result, nil
+}
+
+type deadlineRunner struct {
+	inner    probe.Runner
+	now      func() time.Time
+	notAfter time.Time
+}
+
+func (r deadlineRunner) Execute(ctx context.Context, record endpoint.Record, target observation.HTTPTarget) (observation.Observation, error) {
+	if r.now().After(r.notAfter) {
+		return observation.Observation{}, errExplorationDeferred
+	}
+	return r.inner.Execute(ctx, record, target)
+}
+
+// abandonRound releases a round that failed before its evidence was stored,
+// so the next reconciliation retries it instead of waiting a whole cadence.
+func (p *Pipeline) abandonRound(round probeRound) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if state := p.probes[round.key]; state != nil && state.round == round.id {
+		state.until, state.cursor = time.Time{}, round.cursor
+	}
+}
+
+func (p *Pipeline) completeRound(round probeRound, overloaded bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if state := p.probes[round.key]; state != nil && state.round == round.id {
+		state.overloaded = overloaded
+	}
+}
+
+func (p *Pipeline) roundOverloaded(key probeContextKey) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	state := p.probes[key]
+	return state != nil && state.overloaded
 }
 
 // recordProbeResults admits endpoints that answered the target to the cohort.
 // A failed observation changes nothing here: it is evidence for M5, and a
 // maintained member keeps being probed until M5 rejects it and a newcomer
-// needs its slot. Infrastructure errors carry no endpoint verdict.
+// needs its slot. Infrastructure errors and deferred jobs carry no verdict.
 func (p *Pipeline) recordProbeResults(key probeContextKey, jobs []probe.Job, results []probe.Result) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -540,12 +698,11 @@ func (p *Pipeline) recordProbeResults(key probeContextKey, jobs []probe.Job, res
 	}
 }
 
-// recordSelection feeds one Gateway's M5 decision back into its probe context:
-// the selected endpoints are pinned in the cohort, and members M5 rejected for
-// failure streak or unreliability become replaceable. The Gateway's demand
-// leaves any context it no longer uses; selection state itself stays with the
-// Gateway's receipt-bound M5 state.
-func (p *Pipeline) recordSelection(key probeContextKey, gateway types.UID, decision selection.Decision, now time.Time) {
+// touchDemand marks the Gateway as evaluating in key: its committed demand
+// (the selection it last published here) stays alive, its demand in any other
+// context is released, and demand of Gateways that stopped reconciling for an
+// evidence window expires.
+func (p *Pipeline) touchDemand(key probeContextKey, gateway types.UID, now time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for other, state := range p.probes {
@@ -557,38 +714,157 @@ func (p *Pipeline) recordSelection(key probeContextKey, gateway types.UID, decis
 	if state == nil {
 		return
 	}
+	if demand, ok := state.demand[gateway]; ok && !demand.pending {
+		demand.seen = now
+		state.demand[gateway] = demand
+	}
+	window := evidencePolicy().EvidenceWindow
+	for id, demand := range state.demand {
+		if !demand.pending && now.Sub(demand.seen) > window {
+			delete(state.demand, id)
+		}
+	}
+}
+
+// observeVerdicts records which cohort members M5 rejected for failure streak
+// or unreliability; only they may yield a slot to an answering newcomer.
+func (p *Pipeline) observeVerdicts(key probeContextKey, decision selection.Decision) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if state := p.probes[key]; state != nil {
+		state.observeVerdicts(decision)
+	}
+}
+
+func (s *probeState) observeVerdicts(decision selection.Decision) {
+	members := make(map[string]bool, len(s.cohort))
+	for _, id := range s.cohort {
+		members[id] = true
+	}
+	s.rejected = map[string]bool{}
+	for _, explanation := range decision.Explanations {
+		id := explanation.EndpointID.String()
+		if members[id] && (explanation.Reason == selection.ReasonFailureStreak || explanation.Reason == selection.ReasonUnreliable) {
+			s.rejected[id] = true
+		}
+	}
+}
+
+// selectionReservation is a pending demand for one Gateway's decision. It
+// holds the Gateway's previous committed demand so a refusal or failure
+// leaves the context exactly as it was.
+type selectionReservation struct {
+	key         probeContextKey
+	gateway     types.UID
+	previous    probeDemand
+	hadPrevious bool
+}
+
+// reserveSelection accepts a decision only when the union of every Gateway's
+// demand in the context, with this decision replacing the Gateway's own, fits
+// the cohort. The check runs before rendering or publication. A refusal makes
+// the reconciler plan again among maintained endpoints; if that is refused as
+// well, the last-known-good output and its committed demand remain.
+func (p *Pipeline) reserveSelection(key probeContextKey, gateway types.UID, decision selection.Decision, now time.Time) (*selectionReservation, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	state := p.probes[key]
+	if state == nil {
+		return nil, errProbeCapacity
+	}
+	state.observeVerdicts(decision)
 	selected := make([]string, 0, len(decision.Selected))
 	for _, record := range decision.Selected {
 		selected = append(selected, record.ID().String())
 	}
-	if state.demand == nil {
-		state.demand = map[types.UID]probeDemand{}
-	}
-	state.demand[gateway] = probeDemand{selected: selected, seen: now}
-	policy := evidencePolicy()
-	for id, demand := range state.demand {
-		if now.Sub(demand.seen) > policy.EvidenceWindow {
-			delete(state.demand, id)
-		}
-	}
+	// Committed demand counts only while it is maintained; an endpoint that
+	// left the inventory holds no slot. Pending demand is about to be admitted.
 	members := make(map[string]bool, len(state.cohort))
 	for _, id := range state.cohort {
 		members[id] = true
 	}
-	state.rejected = map[string]bool{}
-	for _, explanation := range decision.Explanations {
-		id := explanation.EndpointID.String()
-		if members[id] && (explanation.Reason == selection.ReasonFailureStreak || explanation.Reason == selection.ReasonUnreliable) {
-			state.rejected[id] = true
+	needed := make(map[string]bool, len(selected))
+	for other, demand := range state.demand {
+		if other != gateway {
+			for _, id := range demand.selected {
+				if demand.pending || members[id] {
+					needed[id] = true
+				}
+			}
 		}
 	}
-	capacity := cohortCapacity(key, policy)
 	for _, id := range selected {
+		needed[id] = true
+	}
+	if len(needed) > cohortCapacity(key, evidencePolicy()) {
+		return nil, errProbeCapacity
+	}
+	reservation := &selectionReservation{key: key, gateway: gateway}
+	reservation.previous, reservation.hadPrevious = state.demand[gateway]
+	if state.demand == nil {
+		state.demand = map[types.UID]probeDemand{}
+	}
+	state.demand[gateway] = probeDemand{selected: selected, seen: now, pending: true}
+	return reservation, nil
+}
+
+// maintained snapshots the context's cohort for constrained planning: when a
+// preferred decision does not fit, M5 chooses again among these endpoints.
+// Every committed demand is a cohort member, so such a decision always fits.
+func (p *Pipeline) maintained(key probeContextKey) func(endpoint.Record) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	members := map[string]bool{}
+	if state := p.probes[key]; state != nil {
+		for _, id := range state.cohort {
+			members[id] = true
+		}
+	}
+	return func(record endpoint.Record) bool { return members[record.ID().String()] }
+}
+
+// commitSelection turns a published reservation into committed demand and
+// admits its endpoints. Reservation keeps the demand union within capacity,
+// so a member outside every demand can always yield its slot.
+func (p *Pipeline) commitSelection(reservation *selectionReservation) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	state := p.probes[reservation.key]
+	if state == nil {
+		return
+	}
+	demand, ok := state.demand[reservation.gateway]
+	if !ok || !demand.pending {
+		return
+	}
+	demand.pending = false
+	state.demand[reservation.gateway] = demand
+	capacity := cohortCapacity(reservation.key, evidencePolicy())
+	for _, id := range demand.selected {
 		state.admit(id, capacity, true)
 	}
 }
 
-func (s *probeState) pinned(id string) bool {
+// releaseSelection restores the Gateway's previous demand after a refused,
+// failed or obsolete publication, leaving no speculative pin behind.
+func (p *Pipeline) releaseSelection(reservation *selectionReservation) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	state := p.probes[reservation.key]
+	if state == nil {
+		return
+	}
+	if demand, ok := state.demand[reservation.gateway]; !ok || !demand.pending {
+		return
+	}
+	if reservation.hadPrevious {
+		state.demand[reservation.gateway] = reservation.previous
+	} else {
+		delete(state.demand, reservation.gateway)
+	}
+}
+
+func (s *probeState) demanded(id string) bool {
 	for _, demand := range s.demand {
 		if slices.Contains(demand.selected, id) {
 			return true
@@ -598,16 +874,17 @@ func (s *probeState) pinned(id string) bool {
 }
 
 // admit adds id to a bounded cohort. When the cohort is full, the oldest
-// unpinned member M5 rejected yields its slot; a selected endpoint may also
-// displace the oldest unpinned member. Pinned members are never displaced.
+// member outside every demand that M5 rejected yields its slot; a selected
+// endpoint may displace the oldest member outside every demand. Demanded
+// members are never displaced.
 func (s *probeState) admit(id string, capacity int, selected bool) {
 	if slices.Contains(s.cohort, id) {
 		return
 	}
 	if len(s.cohort) >= capacity {
-		victim := slices.IndexFunc(s.cohort, func(member string) bool { return s.rejected[member] && !s.pinned(member) })
+		victim := slices.IndexFunc(s.cohort, func(member string) bool { return s.rejected[member] && !s.demanded(member) })
 		if victim < 0 && selected {
-			victim = slices.IndexFunc(s.cohort, func(member string) bool { return !s.pinned(member) })
+			victim = slices.IndexFunc(s.cohort, func(member string) bool { return !s.demanded(member) })
 		}
 		if victim < 0 {
 			return

@@ -42,6 +42,13 @@ type Request struct {
 	Renderer    engine.Renderer
 	Checker     artifact.Checker
 	EvaluatedAt time.Time
+	// Reserve, when set, may refuse a non-empty decision before anything is
+	// rendered, staged or published. When Maintained is also set, a refused
+	// decision is planned once more with evidence withheld from records that
+	// Maintained rejects, so M5 chooses only among endpoints whose evidence
+	// stays maintained; if that is refused too, the last-known-good remains.
+	Reserve     func(selection.Decision) error
+	Maintained  func(endpoint.Record) bool
 	BeforeApply func([]endpoint.Record)
 }
 
@@ -50,6 +57,9 @@ type Result struct {
 	Published   bool
 	Changed     bool
 	RetainedLKG bool
+	// Constrained reports that the decision was planned among maintained
+	// endpoints because the unconstrained decision was refused.
+	Constrained bool
 }
 
 func (result Result) String() string {
@@ -106,17 +116,48 @@ func (reconciler *Reconciler) Reconcile(ctx context.Context, request Request) (R
 	if len(decision.Selected) == 0 {
 		return Result{Decision: decision, RetainedLKG: exists}, nil
 	}
+	constrained := false
+	if request.Reserve != nil {
+		if err := request.Reserve(decision); err != nil {
+			if request.Maintained == nil {
+				return Result{}, fail("scheduling", err)
+			}
+			decision, err = plan(ctx, reconciler.history, request, previous, request.Maintained)
+			if err != nil {
+				return Result{}, err
+			}
+			constrained = true
+			if len(decision.Selected) == 0 {
+				return Result{Decision: decision, RetainedLKG: exists, Constrained: true}, nil
+			}
+			if err := request.Reserve(decision); err != nil {
+				return Result{}, fail("scheduling", err)
+			}
+		}
+	}
 	if request.BeforeApply != nil {
 		request.BeforeApply(decision.Selected)
 	}
-	return Apply(ctx, reconciler.decisions, reconciler.publisher, request, decision)
+	result, err := Apply(ctx, reconciler.decisions, reconciler.publisher, request, decision)
+	result.Constrained = constrained && err == nil
+	return result, err
 }
 
 // Plan loads one bounded summary for every current connection revision and then
 // delegates the side-effect-free decision to internal/selection.
 func Plan(ctx context.Context, history History, request Request, previous *selection.State) (selection.Decision, error) {
+	return plan(ctx, history, request, previous, nil)
+}
+
+// plan withholds evidence from records maintained rejects; M5 then reports
+// them as missing evidence and cannot select them.
+func plan(ctx context.Context, history History, request Request, previous *selection.State, maintained func(endpoint.Record) bool) (selection.Decision, error) {
 	candidates := make([]selection.Candidate, 0, request.Inventory.Len())
 	for _, record := range request.Inventory.Records() {
+		if maintained != nil && !maintained(record) {
+			candidates = append(candidates, selection.Candidate{Record: record})
+			continue
+		}
 		connection, err := observation.NewConnectionRef(record.Identity())
 		if err != nil {
 			return selection.Decision{}, fail("candidate", err)

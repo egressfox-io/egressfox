@@ -276,6 +276,99 @@ func TestPublicationFailureLeavesDecisionPending(t *testing.T) {
 	}
 }
 
+// A refused reservation stops the decision before rendering, staging or
+// publication, so the last-known-good output and committed state stay put.
+func TestRefusedReservationPreservesLastKnownGood(t *testing.T) {
+	directory := privateDirectory(t)
+	store, err := state.Open(filepath.Join(directory, "history.db"), state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	targetPath := filepath.Join(directory, "gateway.conf")
+	publisher, err := publish.NewFilePublisher(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory := testInventory(t, "reservation-secret")
+	now := time.Date(2026, 9, 19, 19, 0, 0, 0, time.UTC)
+	selectionContext := testSelectionContext(t, artifact.Mihomo11931)
+	appendEvidence(t, store, inventory, selectionContext, now)
+	reconciler, err := reconcile.New(store, store, publisher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := testRequest(t, inventory, selectionContext, mihomo.Renderer{}, now, checker{})
+	reserved := 0
+	request.Reserve = func(decision selection.Decision) error {
+		reserved++
+		if len(decision.Selected) == 0 {
+			t.Fatal("empty decision reached Reserve")
+		}
+		return errors.New("synthetic capacity refusal")
+	}
+	request.BeforeApply = func([]endpoint.Record) { t.Fatal("refused decision reached BeforeApply") }
+	if _, err := reconciler.Reconcile(context.Background(), request); failureStage(err) != "scheduling" || reserved != 1 {
+		t.Fatalf("reservation error = %v reserved=%d", err, reserved)
+	}
+	if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
+		t.Fatal("refused decision was published")
+	}
+	// With nothing maintained the constrained plan selects nothing, which
+	// retains the last-known-good without another reservation.
+	reserved = 0
+	request.Maintained = func(endpoint.Record) bool { return false }
+	result, err := reconciler.Reconcile(context.Background(), request)
+	if err != nil || reserved != 1 || !result.Constrained || len(result.Decision.Selected) != 0 || result.Published {
+		t.Fatalf("constrained result = %s constrained=%t reserved=%d err=%v", result, result.Constrained, reserved, err)
+	}
+}
+
+// A refused decision is planned again among maintained endpoints only; that
+// constrained decision is reserved and published.
+func TestRefusedReservationPlansAmongMaintainedEndpoints(t *testing.T) {
+	directory := privateDirectory(t)
+	store, err := state.Open(filepath.Join(directory, "history.db"), state.DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	publisher, err := publish.NewFilePublisher(filepath.Join(directory, "gateway.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory := testInventory(t, "preferred-secret", "maintained-secret")
+	now := time.Date(2026, 9, 19, 20, 0, 0, 0, time.UTC)
+	selectionContext := testSelectionContext(t, artifact.Mihomo11931)
+	appendEvidence(t, store, inventory, selectionContext, now)
+	reconciler, err := reconcile.New(store, store, publisher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := testRequest(t, inventory, selectionContext, mihomo.Renderer{}, now, checker{})
+	unconstrained, err := reconcile.Plan(context.Background(), store, request, nil)
+	if err != nil || len(unconstrained.Selected) != 1 {
+		t.Fatalf("plan = %v, %v", unconstrained, err)
+	}
+	preferred := unconstrained.Selected[0].ID()
+	var reservations []endpoint.ID
+	request.Reserve = func(decision selection.Decision) error {
+		reservations = append(reservations, decision.Selected[0].ID())
+		if decision.Selected[0].ID() == preferred {
+			return errors.New("synthetic capacity refusal")
+		}
+		return nil
+	}
+	request.Maintained = func(record endpoint.Record) bool { return record.ID() != preferred }
+	result, err := reconciler.Reconcile(context.Background(), request)
+	if err != nil || !result.Published || !result.Constrained || len(result.Decision.Selected) != 1 || result.Decision.Selected[0].ID() == preferred {
+		t.Fatalf("constrained publication = %s constrained=%t err=%v", result, result.Constrained, err)
+	}
+	if len(reservations) != 2 {
+		t.Fatalf("reservations=%d want 2", len(reservations))
+	}
+}
+
 func testRequest(t testing.TB, inventory endpoint.Inventory, context selection.Context, renderer engine.Renderer, now time.Time, checker artifact.Checker) reconcile.Request {
 	t.Helper()
 	listener, err := policy.NewSOCKSListener("127.0.0.1", 1080)

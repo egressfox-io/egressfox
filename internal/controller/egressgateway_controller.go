@@ -111,12 +111,17 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 		gateway.Status.EligibleEndpoints = int32(outcome.Eligible)
 		gateway.Status.SelectedEndpoints = int32(outcome.Selected)
 		if outcome.Selected == 0 {
-			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionFalse, "NoEligibleEndpoints", "no endpoint has sufficient current evidence", gateway.Generation, now()))
+			reason, message := "NoEligibleEndpoints", "no endpoint has sufficient current evidence"
+			if outcome.ProbeOverloaded || outcome.SharedCapacityLimited {
+				reason, message = selectionShortfall(outcome)
+			}
+			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionFalse, reason, message, gateway.Generation, now()))
 			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionUnknown, "SelectionNotReady", "no candidate artifact was rendered or validated", gateway.Generation, now()))
 			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionPublished, metav1.ConditionFalse, "LastKnownGoodRetained", "no replacement was published", gateway.Generation, now()))
 			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionReady, metav1.ConditionFalse, "SelectionNotReady", "the desired selection is empty", gateway.Generation, now()))
 		} else {
-			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionTrue, "SelectionReady", "the bounded selection is ready", gateway.Generation, now()))
+			reason, message := selectionShortfall(outcome)
+			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionTrue, reason, message, gateway.Generation, now()))
 			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionTrue, "NativeValidationPassed", "the exact artifact passed native engine validation", gateway.Generation, now()))
 			publishedReason := "SecretPublished"
 			publishedMessage := "the validated artifact is stored in the owned Secret; runtime activation is unobserved"
@@ -240,6 +245,25 @@ func (r *EgressGatewayReconciler) applyBYOStatus(gateway *egressv1alpha1.EgressG
 	}
 }
 
+// selectionShortfall explains how the selection relates to the requested topN.
+// Probe overload is reported first because it can starve otherwise healthy
+// evidence; then a selection constrained by the shared cohort; then a topN
+// above the maintainable cohort; then too few eligible endpoints.
+func selectionShortfall(outcome operatoradapter.GatewayOutcome) (string, string) {
+	switch {
+	case outcome.ProbeOverloaded:
+		return "ProbeRoundOverloaded", "the latest maintenance probes outlasted the freshness period; some evidence was stale at evaluation"
+	case outcome.SharedCapacityLimited:
+		return "ProbeCapacityShared", "the preferred selection did not fit the probe cohort shared with other Gateways; the best maintained endpoints were selected"
+	case outcome.Selected >= outcome.RequestedTopN:
+		return "SelectionReady", "the bounded selection is ready"
+	case outcome.EffectiveTopN < outcome.RequestedTopN && outcome.Selected >= outcome.EffectiveTopN:
+		return "ProbeCapacityLimited", "topN exceeds the endpoints this profile can keep observed; the selection is limited to the maintainable cohort"
+	default:
+		return "InsufficientEligibleEndpoints", "fewer endpoints than topN have sufficient current evidence"
+	}
+}
+
 func pipelineCondition(err error) (string, string) {
 	var coded interface{ Code() string }
 	if !errors.As(err, &coded) {
@@ -256,6 +280,8 @@ func pipelineCondition(err error) (string, string) {
 		return "ProfileInvalid", "the pool profile definitions or reference are invalid"
 	case "probe_executor", "probe_scheduler", "probe_schedule":
 		return "ProbeFailed", "bounded probe execution could not complete"
+	case "probe_capacity":
+		return "ProbeCapacityExceeded", "no maintainable selection fits the shared probe cohort; the previous configuration was retained"
 	case "selection", "selection_context":
 		return "SelectionFailed", "the current inventory and evidence could not be selected"
 	case "native_validation", "checker":
