@@ -859,6 +859,42 @@ func (h *probeHarness) checkDemandInvariant() {
 	}
 }
 
+// checkOutputMaintained asserts that the round just executed actually
+// completed a probe of every endpoint the Gateway's output may rely on: its
+// published output after the reconciliation and every further plausible
+// output the caller passes, such as the output current before the round or an
+// attempted selection whose write is unresolved. executed must be the jobs
+// that completed in that round, as returned by reconcile. Endpoints whose
+// latest M5 explanation is a failure streak or unreliability are exempt,
+// because their demand no longer reserves capacity.
+func (h *probeHarness) checkOutputMaintained(gateway types.UID, executed []probe.Job, outputs ...[]string) {
+	h.t.Helper()
+	probed := jobIDs(executed)
+	rejected := map[string]bool{}
+	if state := h.state(); state != nil {
+		rejected = state.rejected
+	}
+	checked := 0
+	for index, output := range append([][]string{h.selected[gateway]}, outputs...) {
+		label := "published output"
+		if index > 0 {
+			label = fmt.Sprintf("plausible output %d", index)
+		}
+		for _, id := range output {
+			if rejected[id] {
+				continue
+			}
+			checked++
+			if probed[id] == 0 {
+				h.t.Fatalf("%s: endpoint %d of its %s was not probed in the round", gateway, h.index[id], label)
+			}
+		}
+	}
+	if checked == 0 {
+		h.t.Fatalf("%s: no output to check; the scenario is vacuous", gateway)
+	}
+}
+
 // sharedHarness warms up two Gateways that both publish the whole cohort of a
 // context (topN equals the cohort capacity) over capacity+extra endpoints.
 func sharedHarness(t *testing.T, name string, extra int) (*probeHarness, int, func(...types.UID)) {
