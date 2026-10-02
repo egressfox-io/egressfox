@@ -40,6 +40,7 @@ Release entries are not edited by hand.
 - 🐛 Keep the current output maintained through uncertain publication.
 - 🐛 Drop evicted rejected endpoints from scheduling demand.
 - 🐛 Retry probe rounds within a short pool refresh interval.
+- 🐛 Keep the managed rollout target when a reconciliation publishes nothing.
 
 ### Security
 
