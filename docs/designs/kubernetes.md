@@ -236,6 +236,10 @@ during a failed rollout it can remain true for the previous active generation wh
 `Activated=False` and `Degraded=True` for desired. The fixed readiness helper reads
 mounted credentials and completes SOCKS5 username/password negotiation on loopback;
 it does not proxy traffic or claim destination health. BYO activation stays Unknown.
+A reconciliation that publishes nothing keeps the generation the owned Deployment
+already targets rather than the Gateway's cached `publishedGeneration`, which can
+lag the previous reconciliation's status write; reverting to it would roll an
+in-progress rollout back and hide its progress deadline.
 
 Opaque generations are retained while active, immediately previous, or referenced
 by a non-terminal Pod; other owned generations are deleted after successful

@@ -50,6 +50,13 @@ selection, activation, source cache and engine capability.
   missing `checkOutputMaintained` test helper is defined over completed probes,
   and an evicted M5-rejected endpoint leaves every Gateway's demand. Static
   review only; nothing compiled or executed.
+- [x] Qualification fixes (2026-10-02): the probe round window is bounded by a
+  shorter pool refresh interval, so the 30-second kind fixtures retry a first
+  round that found no usable evidence; and a managed reconciliation that
+  publishes nothing keeps the Deployment's current target instead of a stale
+  cached generation, which had rolled quota-blocked rollouts back on Kubernetes
+  1.34. Failed kind scenarios now retain rollout conditions, events and runtime
+  logs.
 - [ ] Maintainer requalification of the final scheduler hardening at the final
   branch HEAD, including the full kind suite and remaining native/release
   checks. PASS results from any earlier commit (including `bb0777b`, `e8553d6`,
