@@ -33,6 +33,7 @@ type GatewayPipeline interface {
 
 type GatewayRuntime interface {
 	Reconcile(context.Context, *egressv1alpha1.EgressGateway, string) (operatoradapter.RuntimeOutcome, error)
+	TargetGeneration(context.Context, *egressv1alpha1.EgressGateway) string
 	Cleanup(context.Context, *egressv1alpha1.EgressGateway) error
 }
 
@@ -82,7 +83,14 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 	if managed {
 		generation := outcome.PublishedGeneration
 		if generation == "" {
+			// Nothing was published in this reconciliation (for example an
+			// obsolete snapshot right after the previous publication). Keep
+			// the runtime's current target; the cached status may still name
+			// the generation that rollout replaced.
 			generation = gateway.Status.PublishedGeneration
+			if r.Runtime != nil {
+				generation = r.Runtime.TargetGeneration(ctx, gateway)
+			}
 		}
 		if r.Runtime == nil {
 			runtimeErr = errors.New("managed runtime is unavailable")

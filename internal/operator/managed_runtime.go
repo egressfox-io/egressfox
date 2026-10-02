@@ -364,6 +364,24 @@ func generationReceipt(secret *corev1.Secret) (artifact.Receipt, bool) {
 	return artifact.Receipt{}, false
 }
 
+// TargetGeneration returns the generation the owned runtime Deployment is
+// rolling out or running, which is the newest activation target this
+// operator set. A reconciliation that publishes nothing keeps it rather than
+// the Gateway's cached status: right after a publication the cached status can
+// still name the previous generation, and activating that would roll an
+// in-progress rollout back. Without an owned Deployment the recorded status is
+// the target.
+func (r *ManagedRuntime) TargetGeneration(ctx context.Context, gateway *egressv1alpha1.EgressGateway) string {
+	current := &appsv1.Deployment{}
+	name := types.NamespacedName{Namespace: gateway.Namespace, Name: managedResourceName(gateway, "runtime")}
+	if err := r.client.Get(ctx, name, current); err == nil && ownedByGateway(current, gateway) {
+		if generation := current.Spec.Template.Annotations[GenerationAnnotation]; generation != "" {
+			return generation
+		}
+	}
+	return gateway.Status.PublishedGeneration
+}
+
 func (r *ManagedRuntime) Reconcile(ctx context.Context, gateway *egressv1alpha1.EgressGateway, generation string) (RuntimeOutcome, error) {
 	outcome := RuntimeOutcome{PublishedGeneration: generation, ActiveGeneration: gateway.Status.ActiveGeneration, ServiceName: managedResourceName(gateway, "proxy"), ClientAuthSecretName: managedResourceName(gateway, "client-auth")}
 	if !IsManaged(gateway) {

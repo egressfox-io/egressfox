@@ -54,10 +54,24 @@ type fakePipeline struct {
 type fakeRuntime struct {
 	outcome operatoradapter.RuntimeOutcome
 	err     error
+	// target is the runtime's current activation target, if any.
+	target string
+	// reconciled records the generation passed to Reconcile.
+	reconciled *string
 }
 
-func (r fakeRuntime) Reconcile(context.Context, *egressv1alpha1.EgressGateway, string) (operatoradapter.RuntimeOutcome, error) {
+func (r fakeRuntime) Reconcile(_ context.Context, _ *egressv1alpha1.EgressGateway, generation string) (operatoradapter.RuntimeOutcome, error) {
+	if r.reconciled != nil {
+		*r.reconciled = generation
+	}
 	return r.outcome, r.err
+}
+
+func (r fakeRuntime) TargetGeneration(_ context.Context, gateway *egressv1alpha1.EgressGateway) string {
+	if r.target != "" {
+		return r.target
+	}
+	return gateway.Status.PublishedGeneration
 }
 
 func (fakeRuntime) Cleanup(context.Context, *egressv1alpha1.EgressGateway) error { return nil }
@@ -300,5 +314,24 @@ func TestGatewaySelectionShortfallReasons(t *testing.T) {
 				t.Fatalf("selected=%d want %d", current.Status.SelectedEndpoints, test.outcome.Selected)
 			}
 		})
+	}
+}
+
+// A reconciliation that publishes nothing, such as an obsolete snapshot right
+// after a publication whose status the cache has not yet observed, keeps the
+// runtime's current activation target instead of rolling it back to the
+// generation named by the stale cached status.
+func TestFailedReconciliationKeepsRuntimeTarget(t *testing.T) {
+	scheme := controllerScheme(t)
+	pool := &egressv1alpha1.ProxyPool{ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "egress"}}
+	gateway := &egressv1alpha1.EgressGateway{ObjectMeta: metav1.ObjectMeta{Name: "gateway", Namespace: "egress"}, Spec: egressv1alpha1.EgressGatewaySpec{PoolRef: egressv1alpha1.LocalReference{Name: "pool"}, Runtime: &egressv1alpha1.GatewayRuntimeSpec{Managed: &egressv1alpha1.ManagedRuntimeSpec{}}}, Status: egressv1alpha1.EgressGatewayStatus{PublishedGeneration: "old-generation", ActiveGeneration: "old-generation"}}
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gateway).WithObjects(pool, gateway).Build()
+	reconciled := ""
+	reconciler := &controller.EgressGatewayReconciler{Client: kubeClient, Scheme: scheme, Pipeline: fakePipeline{err: codedError("snapshot_obsolete")}, Runtime: fakeRuntime{target: "new-generation", reconciled: &reconciled, outcome: operatoradapter.RuntimeOutcome{ActiveGeneration: "old-generation", RuntimeReady: true}}}
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "egress", Name: "gateway"}}); err != nil {
+		t.Fatal(err)
+	}
+	if reconciled != "new-generation" {
+		t.Fatalf("runtime reconciled %q; want the current target new-generation", reconciled)
 	}
 }
