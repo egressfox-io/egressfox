@@ -92,9 +92,10 @@ active generation intact while `SelectionReady` reports the failure. Pool status
 shows bounded profile incarnations; each Gateway status shows its resolved profile,
 eligible and selected counts, and the existing publication and runtime Conditions.
 Target-specific evidence is isolated by profile incarnation, target revision,
-connection revision and exact engine. Probing follows an evidence cadence (five
-minutes at the current defaults) rather than `refreshInterval`, so a pool may
-refresh its subscription rarely while Gateways keep their evidence fresh. Each
+connection revision and exact engine. Probing runs at least every evidence cadence
+(five minutes at the current defaults), or every `refreshInterval` when that is
+shorter, so a pool may refresh its subscription rarely while Gateways keep their
+evidence fresh, and a short interval also retries failed first rounds sooner. Each
 profile and engine runs at most one round per cadence: 30 jobs for a named profile,
 64 for the default profile, with four concurrent probes process-wide. `topN` is an
 upper bound; a profile maintains at most 24 (named) or 58 (default) endpoints at

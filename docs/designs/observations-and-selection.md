@@ -177,7 +177,8 @@ without a confirmed receipt and committed checkpoint keeps both selections
 maintained until the Gateway's next round reads the actual current output (the
 BYO Secret, or the managed generation recorded in status). Rounds follow an evidence
 cadence derived from `Freshness`, `MinSamples`, `EvidenceWindow` and the
-controller's maximum requeue jitter rather than the source refresh interval. `topN`
+controller's maximum requeue jitter, or the pool's refresh interval when that is
+shorter; a long refresh interval never delays them. `topN`
 is capped at the cohort a context can maintain; a shortfall is reported, not
 filled. Concurrent probes stay at four, and the ceiling is 608 jobs per pool
 cadence across eight named profiles and both engines. Unsupported endpoints do

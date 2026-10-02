@@ -94,7 +94,11 @@ revision, exact engine profile and receipt-bound selection state already exist.
   interval: at most `Freshness`, and short enough that MinSamples rounds fit the
   evidence window even when every requeue carries the controller's maximum stable
   10% jitter (five minutes at the current defaults). Gateways requeue at the
-  shorter of the cadence and the pool refresh interval. Gateway reconciliation
+  shorter of the cadence and the pool refresh interval, and a context's round
+  window is that same shorter interval: a pool that refreshes every 30 seconds
+  retries a round that produced no usable evidence, or probes endpoints from a
+  changed subscription, within 30 seconds, while one round per window still
+  bounds the work. Gateway reconciliation
   reads only the admitted cache or Secret snapshot, so the refresh interval alone
   governs subscription acquisition and no profile starts a separate refresher. With
   eight named profiles, both engines and the default profile the pool ceiling is
