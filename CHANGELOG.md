@@ -39,6 +39,7 @@ Release entries are not edited by hand.
 - 🐛 Release rejected demand and hold unconfirmed publications.
 - 🐛 Keep the current output maintained through uncertain publication.
 - 🐛 Drop evicted rejected endpoints from scheduling demand.
+- 🐛 Retry probe rounds within a short pool refresh interval.
 
 ### Security
 
