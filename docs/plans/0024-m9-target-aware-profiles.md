@@ -1,6 +1,6 @@
 # M9 target-aware profiles
 
-Status: implemented; the pre-hardening implementation passed the maintainer's existing suite; final scheduler-hardening requalification pending. Date: 2026-09-25. Branch: `codex/m9-target-aware-profiles`.
+Status: implemented and qualified at `608bf58` (2026-10-02); `v0.1.0-dev.2` release dry run passed, publication not authorized. Date: 2026-09-25. Branch: `codex/m9-target-aware-profiles`.
 Baseline: `e1a6469`.
 
 ## Objective and boundaries
@@ -57,12 +57,39 @@ selection, activation, source cache and engine capability.
   cached generation, which had rolled quota-blocked rollouts back on Kubernetes
   1.34. Failed kind scenarios now retain rollout conditions, events and runtime
   logs.
-- [ ] Maintainer requalification of the final scheduler hardening at the final
-  branch HEAD, including the full kind suite and remaining native/release
-  checks. PASS results from any earlier commit (including `bb0777b`, `e8553d6`,
-  `bd7a0ab` and `fc71726`) do not qualify later code.
+- [x] Qualification of the final scheduler hardening at `608bf58` (2026-10-02,
+  run under the maintainer's explicit authorization): `make check` with race
+  tests, `make k8s-compat` (envtest and Helm on 1.32, 1.34 and 1.37 plus the
+  full six-scenario kind suite on each), the focused `profiles` kind run,
+  `make docker-build`, `make vuln` (0 reachable vulnerabilities),
+  `VERSION=v0.1.0-dev.2 make release-prepared-check` and
+  `VERSION=v0.1.0-dev.2 make release-dry-run`. PASS results from earlier commits
+  do not cover later code.
 
 ## Progress and evidence
+
+Final qualification evidence (2026-10-02). Every gate below ran on clean commit
+`608bf58`; the commit that records this evidence changes documentation only.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| `make check` (fmt, vet, race tests, build, docs, Helm, release validation) | PASS | maintainer-local log |
+| `make k8s-compat`: envtest + Helm 1.32/1.34/1.37 | PASS | maintainer-local log |
+| kind 1.32, all six scenarios, parallelism 4 | PASS | `dist/e2e-logs/20261002-035551-34451` |
+| kind 1.34, all six scenarios, parallelism 4 | PASS | `dist/e2e-logs/20261002-040629-36617` |
+| kind 1.37, all six scenarios, parallelism 4 | PASS | `dist/e2e-logs/20261002-041424-38626` |
+| `EGRESSFOX_E2E_SCENARIOS=profiles make e2e-kind` | PASS | `dist/e2e-logs/20261002-042418-40740` |
+| `make docker-build` | PASS | maintainer-local log |
+| `make vuln` | PASS, 0 reachable vulnerabilities | maintainer-local log |
+| `VERSION=v0.1.0-dev.2 make release-prepared-check` | PASS | maintainer-local log |
+| `VERSION=v0.1.0-dev.2 make release-dry-run` | PASS, revision `608bf58c17cb` | `dist/release` |
+
+`make e2e-kind` at its default (1.32, parallelism 4) is the same command as the
+1.32 leg of `make k8s-compat` and was not repeated. Native Hysteria2 qualification
+was not rerun: no engine, renderer, probe executor or engine build input changed
+since its M8.5 evidence. A read-only preflight on 2026-10-02 found the
+`v0.1.0-dev.1` tag on origin and no `v0.1.0-dev.2` tag, GitHub Release or GHCR
+manifest; publication still requires the workflow's own fresh preflight.
 
 Branch created from a clean `e1a6469` checkout. Q15 was committed as `81e305b`.
 Focused Go profile/selection/reconcile/operator/controller tests, a repository-wide
