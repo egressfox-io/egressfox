@@ -96,6 +96,7 @@ run_job() {
     kubectl -n "$namespace" describe pods >"$log_dir/$job.pods.log" 2>&1 || true
     kubectl -n "$namespace" get deployments,replicasets -o jsonpath='{range .items[*]}{.kind}{"/"}{.metadata.name}{" generation="}{.metadata.generation}{" observed="}{.status.observedGeneration}{" replicas="}{.status.replicas}{" ready="}{.status.readyReplicas}{" conditions="}{.status.conditions}{"\n"}{end}' >"$log_dir/$job.rollouts.log" 2>&1 || true
     kubectl -n "$namespace" get events --sort-by=.lastTimestamp >"$log_dir/$job.events.log" 2>&1 || true
+    kubectl -n "$namespace" logs -l app.kubernetes.io/name=egressfox-gateway --all-containers --prefix --tail=200 >"$log_dir/$job.runtime.log" 2>&1 || true
     kubectl -n "$namespace" logs "deployment/${release}-egressfox" --all-containers --tail=500 >"$log_dir/$job.operator.log" 2>&1 || true
   fi
   if [ "$result" -eq 0 ] || [ "${KEEP_KIND_CLUSTER_ON_FAILURE:-0}" != 1 ]; then
