@@ -57,7 +57,7 @@ read the owning design and accepted decisions for the area they plan to change.
   source, policy, engine artifact, local publication, observation, probe, history,
   selection, reconciliation, Kubernetes operator, Secret publication and managed
   runtime/activation and HTTP refresh domains. M9 target-aware profiles are
-  implemented pending maintainer integration qualification. The standalone product
+  implemented and qualified. The standalone product
   CLI/runtime wrapper and broader publisher family remain future architecture.
 - **Future/experimental**: cataloged beyond the current milestone; not current work.
 

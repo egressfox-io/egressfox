@@ -33,6 +33,7 @@ type GatewayPipeline interface {
 
 type GatewayRuntime interface {
 	Reconcile(context.Context, *egressv1alpha1.EgressGateway, string) (operatoradapter.RuntimeOutcome, error)
+	TargetGeneration(context.Context, *egressv1alpha1.EgressGateway) string
 	Cleanup(context.Context, *egressv1alpha1.EgressGateway) error
 }
 
@@ -82,7 +83,14 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 	if managed {
 		generation := outcome.PublishedGeneration
 		if generation == "" {
+			// Nothing was published in this reconciliation (for example an
+			// obsolete snapshot right after the previous publication). Keep
+			// the runtime's current target; the cached status may still name
+			// the generation that rollout replaced.
 			generation = gateway.Status.PublishedGeneration
+			if r.Runtime != nil {
+				generation = r.Runtime.TargetGeneration(ctx, gateway)
+			}
 		}
 		if r.Runtime == nil {
 			runtimeErr = errors.New("managed runtime is unavailable")
@@ -98,20 +106,37 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 		if apierrors.IsNotFound(pipelineErr) {
 			reason, message = "PoolNotFound", "the referenced pool does not exist"
 		}
+		// The counts describe the current desired profile's selection. When it
+		// cannot be evaluated they must not keep numbers from a previous
+		// profile or generation; ActiveGeneration/PublishedGeneration remain.
+		gateway.Status.EligibleEndpoints = 0
+		gateway.Status.SelectedEndpoints = 0
 		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionFalse, reason, "selection for the current desired generation is unavailable", gateway.Generation, now()))
-		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionFalse, reason, message, gateway.Generation, now()))
-		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionPublished, metav1.ConditionFalse, reason, "the previous owned configuration, if any, was retained", gateway.Generation, now()))
+		publishedMessage := "the previous owned configuration, if any, was retained"
+		if reason == "PublicationUnconfirmed" {
+			// The artifact passed native validation and may already be live.
+			publishedMessage = message
+			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionTrue, "NativeValidationPassed", "the exact artifact passed native engine validation", gateway.Generation, now()))
+		} else {
+			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionFalse, reason, message, gateway.Generation, now()))
+		}
+		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionPublished, metav1.ConditionFalse, reason, publishedMessage, gateway.Generation, now()))
 		apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionReady, metav1.ConditionFalse, reason, "the desired configuration is not published", gateway.Generation, now()))
 	} else {
 		gateway.Status.EligibleEndpoints = int32(outcome.Eligible)
 		gateway.Status.SelectedEndpoints = int32(outcome.Selected)
 		if outcome.Selected == 0 {
-			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionFalse, "NoEligibleEndpoints", "no endpoint has sufficient current evidence", gateway.Generation, now()))
+			reason, message := "NoEligibleEndpoints", "no endpoint has sufficient current evidence"
+			if outcome.ProbeOverloaded || outcome.SharedCapacityLimited {
+				reason, message = selectionShortfall(outcome)
+			}
+			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionFalse, reason, message, gateway.Generation, now()))
 			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionUnknown, "SelectionNotReady", "no candidate artifact was rendered or validated", gateway.Generation, now()))
 			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionPublished, metav1.ConditionFalse, "LastKnownGoodRetained", "no replacement was published", gateway.Generation, now()))
 			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionReady, metav1.ConditionFalse, "SelectionNotReady", "the desired selection is empty", gateway.Generation, now()))
 		} else {
-			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionTrue, "SelectionReady", "the bounded selection is ready", gateway.Generation, now()))
+			reason, message := selectionShortfall(outcome)
+			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionSelectionReady, metav1.ConditionTrue, reason, message, gateway.Generation, now()))
 			apimeta.SetStatusCondition(&gateway.Status.Conditions, condition(ConditionConfigurationValid, metav1.ConditionTrue, "NativeValidationPassed", "the exact artifact passed native engine validation", gateway.Generation, now()))
 			publishedReason := "SecretPublished"
 			publishedMessage := "the validated artifact is stored in the owned Secret; runtime activation is unobserved"
@@ -145,9 +170,17 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, request ctrl.Re
 			// inventory follows the ordinary bounded refresh schedule.
 			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 		}
-		return ctrl.Result{RequeueAfter: requeueAfter(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
+		return ctrl.Result{RequeueAfter: gatewayRequeue(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
 	}
-	return ctrl.Result{RequeueAfter: requeueAfter(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
+	return ctrl.Result{RequeueAfter: gatewayRequeue(durationValue(pool.Spec.RefreshInterval), gateway.UID)}, nil
+}
+
+// gatewayRequeue keeps probe evidence maintenance independent of source
+// acquisition: a Gateway reconciles at the M5 evidence cadence even when its
+// pool refreshes rarely. Gateway reconciliation reads only the pool's admitted
+// cache or Secret snapshot; it never fetches a subscription.
+func gatewayRequeue(refresh time.Duration, uid types.UID) time.Duration {
+	return requeueAfter(min(refreshInterval(refresh), operatoradapter.EvidenceCadence()), uid)
 }
 
 func (r *EgressGatewayReconciler) applyManagedStatus(gateway *egressv1alpha1.EgressGateway, outcome operatoradapter.RuntimeOutcome, pipelineErr, runtimeErr error, now time.Time) {
@@ -227,6 +260,25 @@ func (r *EgressGatewayReconciler) applyBYOStatus(gateway *egressv1alpha1.EgressG
 	}
 }
 
+// selectionShortfall explains how the selection relates to the requested topN.
+// Probe overload is reported first because it can starve otherwise healthy
+// evidence; then a selection constrained by the shared cohort; then a topN
+// above the maintainable cohort; then too few eligible endpoints.
+func selectionShortfall(outcome operatoradapter.GatewayOutcome) (string, string) {
+	switch {
+	case outcome.ProbeOverloaded:
+		return "ProbeRoundOverloaded", "the latest maintenance probes outlasted the freshness period; some evidence was stale at evaluation"
+	case outcome.SharedCapacityLimited:
+		return "ProbeCapacityShared", "the preferred selection could not be maintained together with the current output and other Gateways' selections; the best maintained endpoints were selected"
+	case outcome.Selected >= outcome.RequestedTopN:
+		return "SelectionReady", "the bounded selection is ready"
+	case outcome.EffectiveTopN < outcome.RequestedTopN && outcome.Selected >= outcome.EffectiveTopN:
+		return "ProbeCapacityLimited", "topN exceeds the endpoints this profile can keep observed; the selection is limited to the maintainable cohort"
+	default:
+		return "InsufficientEligibleEndpoints", "fewer endpoints than topN have sufficient current evidence"
+	}
+}
+
 func pipelineCondition(err error) (string, string) {
 	var coded interface{ Code() string }
 	if !errors.As(err, &coded) {
@@ -243,6 +295,8 @@ func pipelineCondition(err error) (string, string) {
 		return "ProfileInvalid", "the pool profile definitions or reference are invalid"
 	case "probe_executor", "probe_scheduler", "probe_schedule":
 		return "ProbeFailed", "bounded probe execution could not complete"
+	case "probe_capacity":
+		return "ProbeCapacityExceeded", "no maintainable selection fits the shared probe cohort; the previous configuration was retained"
 	case "selection", "selection_context":
 		return "SelectionFailed", "the current inventory and evidence could not be selected"
 	case "native_validation", "checker":
@@ -251,6 +305,8 @@ func pipelineCondition(err error) (string, string) {
 		return "RenderFailed", "the selected configuration could not be rendered"
 	case "publication", "publisher", "publication_too_large":
 		return "PublicationFailed", "the validated artifact could not replace the owned output Secret"
+	case "publication_unconfirmed":
+		return "PublicationUnconfirmed", "the output may already carry the new artifact, but its receipt or checkpoint was not confirmed; it is resolved from the actual receipt on the next reconciliation"
 	case "publication_conflict":
 		return "PublicationConflict", "the requested output Secret is not owned by this gateway"
 	case "snapshot_obsolete":

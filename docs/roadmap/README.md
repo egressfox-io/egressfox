@@ -19,12 +19,12 @@ time-bounded cache, and its compatibility completion adds request profiles and
 bounded URI/JSON subscription decoding. There is still no product CLI,
 cross-namespace API or HA topology.
 
-**Current implementation state: M9 code and tests prepared; maintainer qualification pending.**
+**Current implementation state: M9 implemented and qualified; M10 is next.**
 The authoritative [P1 product roadmap](p1.md)
 defines the seven-milestone path from managed runtime through explainability.
 M7–M8 and M8.5 C1–C4 are complete for their documented bounded profiles;
-M9 adds bounded named target-aware profiles over shared inventory, pending
-full integration qualification. M10 and later P1 behavior are not implemented.
+M9 adds bounded named target-aware profiles over shared inventory and passed
+its integration qualification on Kubernetes 1.32, 1.34 and 1.37. M10 and later P1 behavior are not implemented.
 Darwin/arm64 native controlled Hysteria2
 traffic and direct UDP destination-port evidence passed both engines; this does
 not qualify other host architectures or the Linux release matrix. The [exact-profile matrix](../designs/engine-protocol-compatibility.md)

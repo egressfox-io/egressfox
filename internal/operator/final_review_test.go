@@ -20,6 +20,7 @@ import (
 	"github.com/egressfox-io/egressfox/internal/artifact"
 	"github.com/egressfox-io/egressfox/internal/endpoint"
 	"github.com/egressfox-io/egressfox/internal/observation"
+	"github.com/egressfox-io/egressfox/internal/probe"
 	"github.com/egressfox-io/egressfox/internal/state"
 )
 
@@ -179,23 +180,25 @@ func TestNextJobsSkipsIncompatibleWithoutUsingBatch(t *testing.T) {
 	records = append(records, makeRecord(compatible, "tcp"))
 	targetID, _ := observation.NewTargetID("target")
 	target, _ := observation.NewHTTPTarget(targetID, "https://example.com/", 204, time.Second, observation.HTTPOptions{})
-	pipeline := &Pipeline{cursors: map[types.UID]int{}}
-	jobs := pipeline.nextJobs("sing", records, target, artifact.SingBox1141)
-	if len(jobs) != 1 || jobs[0].Record.Configuration().Transport().Kind() != endpoint.TransportTCP || pipeline.cursors["sing"] != 0 {
-		t.Fatalf("sing-box jobs=%d cursor=%d", len(jobs), pipeline.cursors["sing"])
+	batch := func(records []endpoint.Record, profile artifact.Profile, cursor int) ([]probe.Job, int) {
+		return nextProbeBatch(records, target, profile, cursor, maxProbeBatch, nil)
 	}
-	jobs = pipeline.nextJobs("mihomo", records, target, artifact.Mihomo11931)
-	if len(jobs) != 64 || pipeline.cursors["mihomo"] != 64 {
-		t.Fatalf("mihomo jobs=%d cursor=%d", len(jobs), pipeline.cursors["mihomo"])
+	jobs, cursor := batch(records, artifact.SingBox1141, 0)
+	if len(jobs) != 1 || jobs[0].Record.Configuration().Transport().Kind() != endpoint.TransportTCP || cursor != 0 {
+		t.Fatalf("sing-box jobs=%d cursor=%d", len(jobs), cursor)
 	}
-	jobs = pipeline.nextJobs("mihomo", records, target, artifact.Mihomo11931)
-	if len(jobs) != 64 || pipeline.cursors["mihomo"] != 27 {
-		t.Fatalf("mihomo next jobs=%d cursor=%d", len(jobs), pipeline.cursors["mihomo"])
+	jobs, cursor = batch(records, artifact.Mihomo11931, 0)
+	if len(jobs) != 64 || cursor != 64 {
+		t.Fatalf("mihomo jobs=%d cursor=%d", len(jobs), cursor)
 	}
-	if jobs := pipeline.nextJobs("incompatible", records[:100], target, artifact.SingBox1141); len(jobs) != 0 || pipeline.cursors["incompatible"] != 0 {
-		t.Fatalf("incompatible-only jobs=%d cursor=%d", len(jobs), pipeline.cursors["incompatible"])
+	jobs, cursor = batch(records, artifact.Mihomo11931, cursor)
+	if len(jobs) != 64 || cursor != 27 {
+		t.Fatalf("mihomo next jobs=%d cursor=%d", len(jobs), cursor)
 	}
-	if jobs := pipeline.nextJobs("compatible", records[100:], target, artifact.SingBox1141); len(jobs) != 1 {
+	if jobs, cursor := batch(records[:100], artifact.SingBox1141, 0); len(jobs) != 0 || cursor != 0 {
+		t.Fatalf("incompatible-only jobs=%d cursor=%d", len(jobs), cursor)
+	}
+	if jobs, _ := batch(records[100:], artifact.SingBox1141, 0); len(jobs) != 1 {
 		t.Fatalf("compatible-only jobs=%d", len(jobs))
 	}
 	hy2Auth, _ := endpoint.NewHysteria2Credential("synthetic-auth")
@@ -205,12 +208,12 @@ func TestNextJobsSkipsIncompatibleWithoutUsingBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	hy2Record := makeRecord(hy2, "hy2")
-	if jobs := pipeline.nextJobs("quic", []endpoint.Record{hy2Record}, target, artifact.SingBox1141); len(jobs) != 1 {
+	if jobs, _ := batch([]endpoint.Record{hy2Record}, artifact.SingBox1141, 0); len(jobs) != 1 {
 		t.Fatalf("QUIC profile jobs=%d", len(jobs))
 	}
 	withoutQUIC := artifact.SingBox1141
 	withoutQUIC.RendererSchema = "egressfox.sing-box/v2"
-	if jobs := pipeline.nextJobs("no-quic", []endpoint.Record{hy2Record}, target, withoutQUIC); len(jobs) != 0 {
+	if jobs, _ := batch([]endpoint.Record{hy2Record}, withoutQUIC, 0); len(jobs) != 0 {
 		t.Fatalf("profile without QUIC jobs=%d", len(jobs))
 	}
 }

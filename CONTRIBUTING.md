@@ -53,8 +53,9 @@ The detailed Git contract is in the [development workflow](docs/development/work
 Coding agents and contributors do not maintain `Unreleased` entries by hand. Write
 accurate emoji-prefixed Conventional Commit subjects for user-facing changes:
 `feat`, `fix`, `perf` and `revert` become public notes; security fixes are grouped
-separately. Documentation, tests, routine CI/build/dependency changes and internal
-refactors are excluded. A rare eligible commit may opt out with `Changelog: skip`
+separately. Documentation, tests (including `fix`/`perf` commits scoped to `test`,
+`tests` or `e2e`), routine CI/build/dependency changes and internal refactors are
+excluded. A rare eligible commit may opt out with `Changelog: skip`
 in its body or `[skip changelog]` in its subject; explain the reason in that commit.
 Do not use the marker to hide a user-visible fix or compatibility change.
 

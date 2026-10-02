@@ -45,8 +45,10 @@ engine profiles clearly. Secret rotation must trigger reconciliation.
 M8's `sources[]` entry has exactly one `secretRef` or `http`. HTTP requires a URL
 Secret key and optionally an Authorization Secret key; `allowHTTP`,
 `allowPrivateNetworks`, `allowLoopback` and `allowInsecureTLS` are separate opt-ins. The existing
-pool `refreshInterval` owns scheduling, and HTTP `maxStale` bounds fallback
-independently. Source status
+pool `refreshInterval` owns source refresh scheduling, and HTTP `maxStale` bounds
+fallback independently. Gateways requeue at the shorter of `refreshInterval` and
+the M5 evidence cadence ([ADR 0024](../decisions/0024-target-aware-profiles.md));
+a Gateway reconciliation reads the admitted cache and never fetches. Source status
 is keyed by safe ID and reports `Fresh`, `Cached`, `Expired` or `Unavailable` with a
 safe reason and last-success time. `SourcesReady=False` may coexist with
 `Ready=True` when an admitted inventory remains usable from cache or another
@@ -234,6 +236,10 @@ during a failed rollout it can remain true for the previous active generation wh
 `Activated=False` and `Degraded=True` for desired. The fixed readiness helper reads
 mounted credentials and completes SOCKS5 username/password negotiation on loopback;
 it does not proxy traffic or claim destination health. BYO activation stays Unknown.
+A reconciliation that publishes nothing keeps the generation the owned Deployment
+already targets rather than the Gateway's cached `publishedGeneration`, which can
+lag the previous reconciliation's status write; reverting to it would roll an
+in-progress rollout back and hide its progress deadline.
 
 Opaque generations are retained while active, immediately previous, or referenced
 by a non-terminal Pod; other owned generations are deleted after successful

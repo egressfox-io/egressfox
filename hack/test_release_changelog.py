@@ -29,7 +29,7 @@ class ChangeEntryTests(unittest.TestCase):
         self.assertEqual(generator.entry("⚡ perf(state): reduce allocations", ""), ("Changed", "- ⚡ Reduce allocations."))
 
     def test_excludes_noise_and_rejects_malformed_user_change(self):
-        for subject in ("📝 docs(plan): write plan", "✅ test(api): cover path", "🔧 ci(release): pin action", "⬆️ chore(deps): bump module", "♻️ refactor(core): move helper", "⚡ perf(state): benchmark append"):
+        for subject in ("📝 docs(plan): write plan", "✅ test(api): cover path", "🔧 ci(release): pin action", "⬆️ chore(deps): bump module", "♻️ refactor(core): move helper", "⚡ perf(state): benchmark append", "🐛 fix(e2e): bind target to IPv4", "🐛 fix(test): parse headers", "⚡ perf(e2e): run scenarios concurrently"):
             self.assertIsNone(generator.entry(subject, ""))
         self.assertIsNone(generator.entry("🐛 fix(core): repair bug", "Changelog: skip\n"))
         with self.assertRaisesRegex(ValueError, "leading emoji"):

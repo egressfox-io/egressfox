@@ -285,8 +285,10 @@ func requeueAfter(value time.Duration, uid types.UID) time.Duration {
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(uid))
 	// A stable 0–10% spread avoids synchronized refreshes without making the
-	// same object nondeterministic across controller restarts.
-	return base + time.Duration(uint64(base)*uint64(hash.Sum32()%1001)/10_000)
+	// same object nondeterministic across controller restarts. The evidence
+	// cadence relies on this bound.
+	spread := uint64(operatoradapter.RequeueJitterPermille) * 10
+	return base + time.Duration(uint64(base)*uint64(hash.Sum32()%uint32(spread+1))/10_000)
 }
 
 func unique(values []string) []string {

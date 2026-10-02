@@ -14,6 +14,8 @@ COMMIT = re.compile(r"^(?P<emoji>\S+) (?P<type>[a-z]+)(?:\((?P<scope>[^()]+)\))?
 HEADINGS = re.compile(r"(?m)^## \[([^\]]+)\](?: - .*?)?$", re.MULTILINE)
 CATEGORIES = ("Added", "Changed", "Fixed", "Security")
 INCLUDED = {"feat": "Added", "perf": "Changed", "fix": "Fixed", "revert": "Fixed"}
+# Test-harness fixes and speedups are tests, which the changelog policy excludes.
+TEST_SCOPES = {"test", "tests", "e2e"}
 INTRO = "# Changelog\n\nGenerated from emoji-prefixed Conventional Commits during explicit release preparation.\nRelease entries are not edited by hand.\n\n"
 
 
@@ -62,7 +64,7 @@ def entry(subject, body):
             raise ValueError("user-facing Conventional Commit lacks a leading emoji or valid subject")
         return None
     kind = match["type"]
-    if kind not in INCLUDED:
+    if kind not in INCLUDED or match["scope"] in TEST_SCOPES:
         return None
     emoji = match["emoji"]
     description = re.sub(r"\s+", " ", match["description"].strip())

@@ -244,3 +244,33 @@ func validatedFixture(t *testing.T, profile artifact.Profile, content []byte) ar
 	}
 	return validated
 }
+
+// The runtime's activation target is the generation its owned Deployment
+// rolls out, not a possibly stale status; without a Deployment it is the
+// recorded status.
+func TestManagedRuntimeTargetGenerationFollowsDeployment(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	gateway, runtimeAdapter, _ := managedFixture(t)
+	gateway.Status.PublishedGeneration = "recorded-generation"
+	if got := runtimeAdapter.TargetGeneration(ctx, gateway); got != "recorded-generation" {
+		t.Fatalf("target without Deployment = %q", got)
+	}
+	if _, _, _, err := runtimeAdapter.Prepare(ctx, gateway); err != nil {
+		t.Fatal(err)
+	}
+	publisher, err := runtimeAdapter.Publisher(gateway, allowPublication{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := publisher.Publish(ctx, validatedFixture(t, artifact.SingBox1141, []byte(`{"target":true}`))); err != nil {
+		t.Fatal(err)
+	}
+	rolling := publisher.GenerationName()
+	if _, err := runtimeAdapter.Reconcile(ctx, gateway, rolling); err != nil {
+		t.Fatal(err)
+	}
+	if got := runtimeAdapter.TargetGeneration(ctx, gateway); got != rolling {
+		t.Fatalf("target = %q; want the generation the Deployment rolls out", got)
+	}
+}

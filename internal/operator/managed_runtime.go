@@ -56,6 +56,10 @@ func (e *ManagedRuntimeError) Unwrap() error  { return ErrManagedRuntime }
 func (e *ManagedRuntimeError) Code() string   { return e.code }
 func managedRuntimeFailure(code string) error { return &ManagedRuntimeError{code: code} }
 
+// PublicationUncertain reports a failed generation create request, which the
+// API server may still have applied.
+func (e *ManagedRuntimeError) PublicationUncertain() bool { return e.code == "generation_create" }
+
 type ManagedRuntimeConfig struct {
 	Client client.Client
 	Scheme *runtime.Scheme
@@ -324,6 +328,32 @@ func (p *GenerationPublisher) generations(ctx context.Context) ([]corev1.Secret,
 	return result, nil
 }
 
+// CurrentGenerationReceipt returns the receipt of the generation the Gateway's
+// status records as published: the generation its runtime activates. A newer
+// generation Secret, such as one written by a publication whose read-back or
+// checkpoint commit failed, is not current until the status records it.
+func (r *ManagedRuntime) CurrentGenerationReceipt(ctx context.Context, gateway *egressv1alpha1.EgressGateway) (artifact.Receipt, bool, error) {
+	name := gateway.Status.PublishedGeneration
+	if name == "" {
+		return artifact.Receipt{}, false, nil
+	}
+	reader := &GenerationPublisher{client: r.client, scheme: r.scheme, owner: gateway.DeepCopy()}
+	secrets, err := reader.generations(ctx)
+	if err != nil {
+		return artifact.Receipt{}, false, err
+	}
+	for index := range secrets {
+		if secrets[index].Name == name {
+			receipt, ok := generationReceipt(&secrets[index])
+			if !ok {
+				return artifact.Receipt{}, false, managedRuntimeFailure("generation_receipt")
+			}
+			return receipt, true, nil
+		}
+	}
+	return artifact.Receipt{}, false, nil
+}
+
 func generationReceipt(secret *corev1.Secret) (artifact.Receipt, bool) {
 	for _, key := range []string{"config.yaml", "config.json"} {
 		if _, ok := artifact.MatchesProtectedReceipt(secret.Data[key], secret.Data[ReceiptDataKey]); ok {
@@ -332,6 +362,24 @@ func generationReceipt(secret *corev1.Secret) (artifact.Receipt, bool) {
 		}
 	}
 	return artifact.Receipt{}, false
+}
+
+// TargetGeneration returns the generation the owned runtime Deployment is
+// rolling out or running, which is the newest activation target this
+// operator set. A reconciliation that publishes nothing keeps it rather than
+// the Gateway's cached status: right after a publication the cached status can
+// still name the previous generation, and activating that would roll an
+// in-progress rollout back. Without an owned Deployment the recorded status is
+// the target.
+func (r *ManagedRuntime) TargetGeneration(ctx context.Context, gateway *egressv1alpha1.EgressGateway) string {
+	current := &appsv1.Deployment{}
+	name := types.NamespacedName{Namespace: gateway.Namespace, Name: managedResourceName(gateway, "runtime")}
+	if err := r.client.Get(ctx, name, current); err == nil && ownedByGateway(current, gateway) {
+		if generation := current.Spec.Template.Annotations[GenerationAnnotation]; generation != "" {
+			return generation
+		}
+	}
+	return gateway.Status.PublishedGeneration
 }
 
 func (r *ManagedRuntime) Reconcile(ctx context.Context, gateway *egressv1alpha1.EgressGateway, generation string) (RuntimeOutcome, error) {

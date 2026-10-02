@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "release": {
-    "developmentVersion": "v0.1.0-dev.1",
+    "developmentVersion": "v0.1.0-dev.2",
     "platforms": ["linux/amd64", "linux/arm64"],
     "kubernetes": {
       "minimumSupported": "1.32",

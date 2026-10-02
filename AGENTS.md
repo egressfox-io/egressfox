@@ -11,8 +11,7 @@ exact-generation activation while preserving BYO. M8 adds managed conditional HT
 source refresh and a protected bounded cache. There is no product CLI, rich routing
 or HA topology. The P1 product sequence is designed in
 `docs/roadmap/p1.md`; M8.5 protocol and transport compatibility is complete for
-the documented bounded profiles. M9 implementation is prepared pending maintainer
-qualification; M10 is the next implementation milestone after that gate. The M8.5
+the documented bounded profiles. M9 is implemented and qualified; M10 is the next implementation milestone. The M8.5
 [execution plan](docs/plans/0020-m85-protocol-transport-compatibility.md) records
 the C1–C4 gates. After M12, continue
 through the accepted post-P1 architecture in

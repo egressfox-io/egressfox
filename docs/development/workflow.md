@@ -21,8 +21,8 @@ make help
 make fmt
 make check
 make vuln
-VERSION=v0.1.0-dev.1 make release-prepare  # explicit release preparation only
-VERSION=v0.1.0-dev.1 make release-dry-run
+VERSION=v0.1.0-dev.2 make release-prepare  # explicit release preparation only
+VERSION=v0.1.0-dev.2 make release-dry-run
 ```
 
 | Command | Behavior today |

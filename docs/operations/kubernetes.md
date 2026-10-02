@@ -13,10 +13,11 @@ notices, SBOM, scan and provenance share the release contract in
 [ADR 0012](../decisions/0012-release-distribution-and-provenance.md). After a release
 exists, download its `egressfox-<version>.tgz` asset, verify it with the release's
 `SHA256SUMS`, and install with the verified image digest. The command below uses
-placeholders; no public artifact exists yet:
+the planned next version and placeholder digest; replace both with a published
+release's values:
 
 ```sh
-helm upgrade --install egressfox ./egressfox-0.1.0-dev.1.tgz \
+helm upgrade --install egressfox ./egressfox-0.1.0-dev.2.tgz \
   --namespace egressfox --create-namespace \
   --set image.repository=ghcr.io/egressfox-io/egressfox \
   --set image.digest=sha256:REPLACE_WITH_VERIFIED_DIGEST
@@ -91,10 +92,37 @@ active generation intact while `SelectionReady` reports the failure. Pool status
 shows bounded profile incarnations; each Gateway status shows its resolved profile,
 eligible and selected counts, and the existing publication and runtime Conditions.
 Target-specific evidence is isolated by profile incarnation, target revision,
-connection revision and exact engine. The operator admits at most eight jobs per
-named profile and engine per refresh window, 64 for the default profile and engine,
-and four concurrent probes process-wide. Changes to an unrelated profile do not
-change an equal validated artifact or restart a healthy Gateway.
+connection revision and exact engine. Probing runs at least every evidence cadence
+(five minutes at the current defaults), or every `refreshInterval` when that is
+shorter, so a pool may refresh its subscription rarely while Gateways keep their
+evidence fresh, and a short interval also retries failed first rounds sooner. Each
+profile and engine runs at most one round per cadence: 30 jobs for a named profile,
+64 for the default profile, with four concurrent probes process-wide. `topN` is an
+upper bound; a profile maintains at most 24 (named) or 58 (default) endpoints at
+the current defaults, shared by every Gateway that uses the same profile, engine
+and target. A shortfall shows as `selectedEndpoints` below `topN`, and the
+`SelectionReady` reason says why: `ProbeCapacityLimited` (topN above the profile's
+cohort), `ProbeCapacityShared` (the preferred endpoints did not fit next to other
+Gateways' selections, so maintained endpoints were chosen),
+`InsufficientEligibleEndpoints` (too few endpoints with current evidence) or
+`ProbeRoundOverloaded` (maintenance probes outlasted the five-minute freshness
+period). `ProbeCapacityExceeded` keeps the previous configuration when no
+maintainable selection could be reserved. Endpoints of a published selection
+that M5 has rejected keep serving until a replacement is published but no longer
+hold probe capacity. `ProbeCapacityShared` also covers a change that cannot
+be maintained together with the Gateway's current output: the switch is refused
+before anything is written, so a Gateway whose `topN` fills the profile's cohort
+keeps its healthy selection rather than moving to an endpoint outside it.
+`PublicationUnconfirmed` means the output may already carry the new artifact
+while its receipt or decision checkpoint was not confirmed; both selections stay
+probed until the next reconciliation reads the current output. For a managed
+Gateway that is the generation recorded in `status.publishedGeneration`; a newer
+generation Secret alone is not active. Changes to an unrelated profile do not
+change an equal validated artifact or restart a healthy Gateway. Probe
+scheduling state lives in the operator's memory: after an operator restart a
+selection is protected again at its Gateway's next successful publication, so
+an outage longer than five minutes can cause one replacement of an incumbent
+that the first probe round did not reach.
 
 ## Managed HTTP sources
 
@@ -175,6 +203,8 @@ render the same validated artifact do not cause a rollout.
 
 The Pool controller schedules its next reconcile no later than the earliest
 currently admitted HTTP cache expiry, even when that precedes `refreshInterval`.
+Gateways reconcile at least every evidence cadence to keep probe evidence fresh;
+those reconciliations read the admitted cache and never contact the provider.
 At expiry it recomputes per-source status and effective inventory without a new
 provider response; an already expired cache does not cause immediate requeues.
 

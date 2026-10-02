@@ -161,10 +161,29 @@ private-target permission change changes the confidential target revision. Legac
 default target IDs and endpoint identities remain stable. Each Gateway retains a
 separate receipt-bound M5 decision context; switching profiles resets its anti-churn
 state. Demand-driven Gateway evaluations reuse the shared source cache and
-inventory, while the operator limits each named profile/engine to eight probes per
-refresh window, the legacy default/engine to 64, and concurrent probes to four.
-The resulting ceiling is 256 admitted jobs per pool refresh window across eight
-named profiles and both engines. Unsupported endpoints do not consume the batch.
+inventory. Default and named profiles share one scheduler whose round window,
+cursor and maintained cohort belong to the probe context (pool, engine, target ID,
+target revision), not to a Gateway. Each round explores a few compatible newcomers
+MinSamples times within a bounded time and then re-probes the cohort once, within
+64 jobs for the default context and 30 for a named one. A failed observation does
+not remove a cohort member; only members M5 last rejected for failure streak or
+unreliability yield their slot. Each Gateway's published selection is demand
+reserved before rendering, and it protects capacity only while M5 has not
+rejected the endpoint, so a failed last-known-good cannot block replacements; a
+reservation must fit the current output and the new selection together, because
+an uncertain write leaves both plausible; a decision that does not fit is
+re-planned among maintained endpoints before anything is written. A write
+without a confirmed receipt and committed checkpoint keeps both selections
+maintained until the Gateway's next round reads the actual current output (the
+BYO Secret, or the managed generation recorded in status). Rounds follow an evidence
+cadence derived from `Freshness`, `MinSamples`, `EvidenceWindow` and the
+controller's maximum requeue jitter, or the pool's refresh interval when that is
+shorter; a long refresh interval never delays them. `topN`
+is capped at the cohort a context can maintain; a shortfall is reported, not
+filled. Concurrent probes stay at four, and the ceiling is 608 jobs per pool
+cadence across eight named profiles and both engines. Unsupported endpoints do
+not consume the batch. M5 evidence requirements are unchanged; the full contract
+is in [ADR 0024](../decisions/0024-target-aware-profiles.md).
 
 Future static source/country/ASN/tag policy restrictions also belong before ranking.
 Hard policy restrictions cannot be traded for a higher score. Untrusted metadata

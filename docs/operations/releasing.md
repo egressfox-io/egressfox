@@ -85,9 +85,9 @@ First generate and commit the changelog on a dedicated clean branch, then run re
 qualification from that prepared commit:
 
 ```sh
-VERSION=v0.1.0-dev.1 make release-prepare
-VERSION=v0.1.0-dev.1 make release-prepared-check
-VERSION=v0.1.0-dev.1 make release-dry-run
+VERSION=v0.1.0-dev.2 make release-prepare
+VERSION=v0.1.0-dev.2 make release-prepared-check
+VERSION=v0.1.0-dev.2 make release-dry-run
 ```
 
 `release-prepare` is an explicit local command. It groups eligible emoji
@@ -110,8 +110,8 @@ as a source change, so repeated dry runs stay repeatable. There is deliberately 
 dirty override: commit or stash first.
 
 Because qualification can run on an untagged commit, it reports the commit-derived
-identity `0.1.0-dev.1+g<commit>`; the release workflow, which runs from the exact tag,
-builds artifacts labeled exactly `0.1.0-dev.1`. Publication itself is strictly
+identity `0.1.0-dev.2+g<commit>`; the release workflow, which runs from the exact tag,
+builds artifacts labeled exactly `0.1.0-dev.2`. Publication itself is strictly
 tag-bound: it requires an existing exact Git tag on the selected commit, a clean
 source tree rechecked in the privileged job, approval of the protected `release`
 environment, and a version that has never been published.
@@ -202,7 +202,7 @@ Fetch artifacts from one release, then verify checksums and GitHub provenance:
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify ./egressfox-operator-0.1.0-dev.1-linux-amd64 \
+gh attestation verify ./egressfox-operator-0.1.0-dev.2-linux-amd64 \
   --repo egressfox-io/egressfox
 gh attestation verify oci://ghcr.io/egressfox-io/egressfox@sha256:REPLACE \
   --repo egressfox-io/egressfox
@@ -213,11 +213,11 @@ workflow and tag identity:
 
 ```sh
 cosign verify \
-  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-dev.1' \
+  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-dev.2' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   ghcr.io/egressfox-io/egressfox@sha256:REPLACE
 cosign verify-attestation --type spdxjson \
-  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-dev.1' \
+  --certificate-identity 'https://github.com/egressfox-io/egressfox/.github/workflows/release.yml@refs/tags/v0.1.0-dev.2' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   ghcr.io/egressfox-io/egressfox@sha256:REPLACE
 ```
