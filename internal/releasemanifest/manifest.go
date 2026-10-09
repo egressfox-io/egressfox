@@ -149,7 +149,7 @@ func (manifest Manifest) Validate() error {
 		if engine.Version != profile.Version || engine.Profile != profile.RendererSchema || engine.License == "" {
 			return fmt.Errorf("engine %s does not match the compiled compatibility profile", engine.Name)
 		}
-		if engine.Build.Revision != expectedBuildRevision[engine.Name] || engine.Build.GoVersion != "1.27.1" || engine.Build.Package == "" ||
+		if engine.Build.Revision != expectedBuildRevision[engine.Name] || engine.Build.GoVersion != "1.27.2" || engine.Build.Package == "" ||
 			!safeArchivePath(engine.Build.BinaryName) || strings.Contains(engine.Build.BinaryName, "/") ||
 			(engine.Build.OverlayDirectory != "" && !safeArchivePath(engine.Build.OverlayDirectory)) ||
 			!slices.IsSorted(engine.Build.DependencyOverrides) {

@@ -51,7 +51,7 @@
       "license": "GPL-3.0-only",
       "build": {
         "revision": 1,
-        "goVersion": "1.27.1",
+        "goVersion": "1.27.2",
         "package": ".",
         "binaryName": "mihomo",
         "overlayDirectory": "",
@@ -60,7 +60,7 @@
           "github.com/insomniacslk/dhcp@v0.0.0-20260719225207-c76316d4aa82",
           "github.com/klauspost/compress@v1.18.7",
           "golang.org/x/crypto@v0.56.0",
-          "golang.org/x/net@v0.56.0",
+          "golang.org/x/net@v0.60.0",
           "golang.org/x/text@v0.39.0"
         ]
       },
@@ -103,7 +103,7 @@
       "license": "GPL-3.0-or-later",
       "build": {
         "revision": 3,
-        "goVersion": "1.27.1",
+        "goVersion": "1.27.2",
         "package": "./cmd/sing-box",
         "binaryName": "egressfox-engine-s",
         "overlayDirectory": "release/overlays/sing-box",
@@ -114,6 +114,7 @@
           "github.com/insomniacslk/dhcp@v0.0.0-20260719225207-c76316d4aa82",
           "golang.org/x/crypto@v0.56.0",
           "golang.org/x/mod@v0.40.0",
+          "golang.org/x/net@v0.60.0",
           "google.golang.org/grpc@v1.83.2"
         ]
       },

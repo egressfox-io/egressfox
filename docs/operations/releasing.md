@@ -70,8 +70,12 @@ no byte-for-byte image or SLSA-level claim is made.
 Engine builds start from checksum-pinned source commits, apply the manifest's build
 revision, feature tags, dependency requirements and branding overlay, then emit a
 conspicuous change notice. Their resolved module files are included in the complete
-modified source archives. The official upstream binary hashes remain manifest
-evidence for compatibility research; those binaries are not release contents.
+modified source archives. Prepared source modules also require the manifest
+Go version and prefer that toolchain, so host builds cannot fall back to an older
+Go installation after entering an engine source directory. An upstream minimum
+newer than the build contract is rejected rather than downgraded. The official
+upstream binary hashes remain manifest evidence for compatibility research; those
+binaries are not release contents.
 
 The Alpine CA bundle is checksum/package-version pinned in a builder stage and copied
 into the final image, avoiding target-architecture package-manager execution. The
