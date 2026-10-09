@@ -180,6 +180,14 @@ or VEX statement naming artifact/digest, vulnerability, applicability evidence,
 owner, expiry, remediation and compensating controls. Expired or unscoped exceptions
 are invalid.
 
+The [GO-2026-5932 applicability review](../security/go-2026-5932.md) records
+the exact pre-publication artifacts and evidence for the OpenPGP module-level
+finding. It does not suppress scanner output or apply to arbitrary rebuilds.
+Release dry runs disable Syft/Grype application-update notices because their
+versions are deliberately checksum-pinned; Grype database updates remain enabled.
+Successful Python fixture output is buffered to avoid mistaking mock preflight
+messages for a real remote publication check; failure output remains visible.
+
 ## Signing, provenance and publication
 
 The protected publication job first validates the exact tag, commit, planned version,

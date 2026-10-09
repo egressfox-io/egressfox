@@ -14,6 +14,11 @@ source_date_epoch=${SOURCE_DATE_EPOCH:-$(git show -s --format=%ct "$revision")}
 go_command=${GO:-go}
 container_cli=${DOCKER:-docker}
 
+# Tool versions are checksum-pinned in the manifest; update them deliberately.
+# Disable repeated application-update notices, not vulnerability database updates.
+export SYFT_CHECK_FOR_APP_UPDATE=false
+export GRYPE_CHECK_FOR_APP_UPDATE=false
+
 release_root=$(pwd -P)
 artifact_dir=$release_root/dist/release
 report_dir=$release_root/dist/reports

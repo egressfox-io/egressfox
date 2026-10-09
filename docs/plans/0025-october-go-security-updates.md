@@ -66,3 +66,27 @@ Kubernetes/native release matrix, rebuild engine binaries, or perform Docker/ima
 scans. Native receipts with older toolchain/override inputs are rejected and need
 rebuilding for subsequent native qualification. Nothing is pushed, merged, tagged
 or published.
+
+## Dry-run follow-up
+
+The maintainer's full `v0.1.0-dev.2` dry run at `6041a50` completed without skip
+markers, including deterministic amd64/arm64 builds, image construction, source
+vulnerability scans, SBOM scans and checksums. Grype's remaining module-level
+GO-2026-5932 findings are scoped in the
+[applicability review](../security/go-2026-5932.md), including artifact hashes and
+fresh dependency-graph checks for both exact Linux architectures.
+
+Update Syft to 1.54.1 and Grype to 0.120.1 using official release checksum lists for
+all four tool platforms. Disable only their repeated application-update notices;
+keep database refresh and all security findings visible. Buffer successful Python
+fixture output in release validation so synthetic remote preflight messages do
+not resemble actual publication checks. Full dry run for the updated scanner pins
+is pending; preserve the previous artifacts as evidence.
+
+Follow-up validation: `make release-validate docs` passed (26 Python tests,
+manifest/publication guard and offline links), `sh -n hack/release-dry-run.sh`
+and whitespace checks passed. Both updated host tools installed through the
+repository's checksum-verifying installer; `config --load` confirmed application
+update checks are disabled for each. No full dry run, engine rebuild or Kubernetes
+suite was executed for this follow-up. Routine tooling/dependency maintenance is
+excluded from the generated changelog by policy.
