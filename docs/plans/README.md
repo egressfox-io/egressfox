@@ -30,6 +30,7 @@ Plans are durable continuation notes; product/design documents remain authoritat
 | [0022](0022-docker-build-cache.md) | Complete | Docker build caching, stage isolation and architecture correctness |
 | [0023](0023-parallel-kubernetes-e2e.md) | Implementation complete; cluster validation pending | Parallel kind E2E scenario isolation and scheduling |
 | [0024](0024-m9-target-aware-profiles.md) | Implemented and qualified at `608bf58` | M9 target-aware profiles over shared inventory |
+| [0025](0025-october-go-security-updates.md) | Complete | Patch Go and HTTP/2 dependencies after October vulnerability advisories |
 
 Create the next numbered Markdown file using [the template](template.md). Keep it
 here as its status changes; no empty active/completed directory hierarchy is needed.

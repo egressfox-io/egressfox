@@ -5,11 +5,14 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	goversion "go/version"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/modfile"
 
 	"github.com/egressfox-io/egressfox/internal/buildinfo"
 	"github.com/egressfox-io/egressfox/internal/releasemanifest"
@@ -321,6 +324,38 @@ func fetchEngine(arguments []string) error {
 	return releasemanifest.Fetch(context.Background(), nil, download, *output, true)
 }
 
+// pinEngineGoVersion makes the patched toolchain requirement travel with the
+// prepared source. Otherwise a host's older Go launcher can select its own
+// vulnerable toolchain when a build changes into the upstream module directory.
+func pinEngineGoVersion(sourceDir, minimum string) error {
+	path := filepath.Join(sourceDir, "go.mod")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read engine module: %w", err)
+	}
+	module, err := modfile.Parse(path, content, nil)
+	if err != nil {
+		return fmt.Errorf("parse engine module: %w", err)
+	}
+	if module.Go != nil && goversion.Compare("go"+module.Go.Version, "go"+minimum) > 0 {
+		return fmt.Errorf("engine minimum Go %s exceeds build contract %s", module.Go.Version, minimum)
+	}
+	if err := module.AddGoStmt(minimum); err != nil {
+		return fmt.Errorf("set engine minimum Go version: %w", err)
+	}
+	if err := module.AddToolchainStmt("go" + minimum); err != nil {
+		return fmt.Errorf("set engine toolchain: %w", err)
+	}
+	updated, err := module.Format()
+	if err != nil {
+		return fmt.Errorf("format engine module: %w", err)
+	}
+	if err := os.WriteFile(path, updated, 0o644); err != nil {
+		return fmt.Errorf("write engine module: %w", err)
+	}
+	return nil
+}
+
 func prepareEngineSource(arguments []string) error {
 	flags := flag.NewFlagSet("prepare-engine-source", flag.ContinueOnError)
 	manifestName := flags.String("manifest", defaultManifest, "release manifest")
@@ -360,7 +395,10 @@ func prepareEngineSource(arguments []string) error {
 			return err
 		}
 	}
-	changes := fmt.Sprintf("# EgressFox engine build changes\n\nUpstream: %s %s (%s)\nEgressFox build revision: %d\n\n- Minimum dependency requirements are raised by the exact entries in release/manifest.json; Go minimal version selection may choose a higher requirement from the source graph.\n- The resolved go.mod and go.sum in this archive record the actual graph.\n- The release build is static, stripped, and limited to the feature tags in that manifest.\n", engine.Source.Repository, engine.Source.Tag, engine.Source.Commit, engine.Build.Revision)
+	if err := pinEngineGoVersion(*output, engine.Build.GoVersion); err != nil {
+		return err
+	}
+	changes := fmt.Sprintf("# EgressFox engine build changes\n\nUpstream: %s %s (%s)\nEgressFox build revision: %d\n\n- Minimum dependency requirements are raised by the exact entries in release/manifest.json; Go minimal version selection may choose a higher requirement from the source graph.\n- The source minimum Go version and preferred toolchain are pinned to the release build contract.\n- The resolved go.mod and go.sum in this archive record the actual graph.\n- The release build is static, stripped, and limited to the feature tags in that manifest.\n", engine.Source.Repository, engine.Source.Tag, engine.Source.Commit, engine.Build.Revision)
 	if engine.Name == "sing-box" {
 		changes += "- The command is branded `egressfox-engine-s`; it is not endorsed by or associated with the upstream application.\n"
 	}

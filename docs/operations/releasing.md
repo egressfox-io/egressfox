@@ -70,8 +70,12 @@ no byte-for-byte image or SLSA-level claim is made.
 Engine builds start from checksum-pinned source commits, apply the manifest's build
 revision, feature tags, dependency requirements and branding overlay, then emit a
 conspicuous change notice. Their resolved module files are included in the complete
-modified source archives. The official upstream binary hashes remain manifest
-evidence for compatibility research; those binaries are not release contents.
+modified source archives. Prepared source modules also require the manifest
+Go version and prefer that toolchain, so host builds cannot fall back to an older
+Go installation after entering an engine source directory. An upstream minimum
+newer than the build contract is rejected rather than downgraded. The official
+upstream binary hashes remain manifest evidence for compatibility research; those
+binaries are not release contents.
 
 The Alpine CA bundle is checksum/package-version pinned in a builder stage and copied
 into the final image, avoiding target-architecture package-manager execution. The
@@ -175,6 +179,14 @@ No finding is silently ignored. An exception requires a reviewed repository reco
 or VEX statement naming artifact/digest, vulnerability, applicability evidence,
 owner, expiry, remediation and compensating controls. Expired or unscoped exceptions
 are invalid.
+
+The [GO-2026-5932 applicability review](../security/go-2026-5932.md) records
+the exact pre-publication artifacts and evidence for the OpenPGP module-level
+finding. It does not suppress scanner output or apply to arbitrary rebuilds.
+Release dry runs disable Syft/Grype application-update notices because their
+versions are deliberately checksum-pinned; Grype database updates remain enabled.
+Successful Python fixture output is buffered to avoid mistaking mock preflight
+messages for a real remote publication check; failure output remains visible.
 
 ## Signing, provenance and publication
 

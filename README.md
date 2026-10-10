@@ -125,7 +125,7 @@ current compatibility promise.
 ## Evaluate locally
 
 There is no public image or chart download yet. To inspect the code and run the
-normal repository gate, install Git, Make, Python 3.9 or newer, Go 1.27.1, Helm,
+normal repository gate, install Git, Make, Python 3.9 or newer, Go 1.27.2, Helm,
 and a C compiler:
 
 ```sh
