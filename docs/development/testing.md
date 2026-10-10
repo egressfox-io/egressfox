@@ -36,7 +36,11 @@ EGRESSFOX_E2E_PARALLELISM=1 make e2e-kind
 The second command runs the complete suite sequentially. CI uses 4 unless the
 repository variable `EGRESSFOX_E2E_PARALLELISM` overrides it. Each run writes
 per-scenario logs and elapsed seconds under `dist/e2e-logs/`; CI uploads these
-logs even on failure. `KEEP_KIND_CLUSTER_ON_FAILURE=1` retains a failed cluster
+logs even on failure. Failed-scenario diagnostics include per-source status and
+controlled provider/transport-server logs. Advanced transport subscription writes
+verify checksum and length before atomically installing each fixture, retrying a
+lost stdin transfer at most three times; persistent failure stops before source
+creation. `KEEP_KIND_CLUSTER_ON_FAILURE=1` retains a failed cluster
 and namespace for inspection. CRDs and the image are installed once by the parent;
 each scenario owns its Helm release, operator, fixtures and cleanup. The lifecycle
 scenario keeps its rollout, mode-transition, Helm upgrade/uninstall and CRD-retention

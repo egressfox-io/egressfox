@@ -90,3 +90,26 @@ repository's checksum-verifying installer; `config --load` confirmed application
 update checks are disabled for each. No full dry run, engine rebuild or Kubernetes
 suite was executed for this follow-up. Routine tooling/dependency maintenance is
 excluded from the generated changelog by policy.
+
+
+## Parallel E2E fixture investigation
+
+The complete suite at `dist/e2e-logs/20261010-025333-71176` failed while admitting
+`c3-h2`; the saved cluster reported `Unavailable/CacheMissing`. Inspection of the
+controlled provider found `/data/c3-h2-body` was zero bytes despite successful
+`kubectl exec -i ... cat` in the scenario. An earlier run failed at packet-up,
+while an isolated advanced-transports run passed. This establishes a lost fixture
+transfer, not an unsupported transport. The underlying kubectl/stream failure is
+not identified; checksum verification detects it regardless of the cause.
+
+Advanced transport fixture writes now use a temporary file, checksum/length
+verification, at most three transfer attempts and atomic installation. Failure
+stops before creating the source. Diagnostics retain per-source statuses and
+controlled provider/transport-server logs. Offline regression coverage simulates
+successful exec with lost stdin and permanent loss without replacing an existing
+fixture. Full kind qualification of this change remains pending.
+
+Validation: both offline provider-write regression tests passed, shell syntax
+checks passed for all four affected scripts, documentation links passed, and
+whitespace checks passed. The retained failing cluster was inspected read-only;
+its fixture was not repaired or replaced during diagnosis.

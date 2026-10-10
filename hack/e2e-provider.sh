@@ -1,3 +1,5 @@
+. ./hack/e2e-provider-write.sh
+
 # Shared namespace-local controlled HTTP subscription provider.
 # A controlled subscription server exercises managed HTTP refresh and both engine
 # profiles without depending on an external provider. Its state is local to kind.

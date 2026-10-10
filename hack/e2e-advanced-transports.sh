@@ -137,7 +137,7 @@ for variant in reality upgrade h2 grpc ws utls xhttp-stream-one xhttp-stream-up 
     xhttp-stream-up) nodes="vless://${uuid}@${c3_xhttp_ip}:8459?encryption=none&type=xhttp&path=%2Fxhttp&host=c3-xhttp-server&mode=stream-up&security=tls&sni=proxy-server&allowInsecure=1"; allow_insecure=true; engines=mihomo ;;
     xhttp-packet-up) nodes="vless://${uuid}@${c3_xhttp_ip}:8460?encryption=none&type=xhttp&path=%2Fxhttp&host=c3-xhttp-server&mode=packet-up&security=tls&sni=proxy-server&allowInsecure=1"; allow_insecure=true; engines=mihomo ;;
   esac
-  kubectl -n "$namespace" exec -i "$provider_pod" -- sh -c "cat >/data/c3-${variant}-body" <<EOF
+  provider_write "/data/c3-${variant}-body" <<EOF
 $nodes
 EOF
   kubectl -n "$namespace" create secret generic "c3-${variant}-source-url" --from-literal=url="http://source-provider.${namespace}.svc.cluster.local:8080/c3-${variant}"

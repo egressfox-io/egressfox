@@ -92,12 +92,15 @@ run_job() {
   if [ "$result" -ne 0 ]; then
     echo "scenario $job failed; collecting namespace diagnostics" >&2
     kubectl -n "$namespace" get pods,deployments,services,proxypools,egressgateways -o wide >"$log_dir/$job.resources.log" 2>&1 || true
-    kubectl -n "$namespace" get proxypools,egressgateways -o jsonpath='{range .items[*]}{.kind}{"/"}{.metadata.name}{" profile="}{.status.profile}{" selected="}{.status.selectedEndpoints}{" conditions="}{.status.conditions}{"\n"}{end}' >"$log_dir/$job.status.log" 2>&1 || true
+    kubectl -n "$namespace" get proxypools,egressgateways -o jsonpath='{range .items[*]}{.kind}{"/"}{.metadata.name}{" profile="}{.status.profile}{" sources="}{.status.sources}{" selected="}{.status.selectedEndpoints}{" conditions="}{.status.conditions}{"\n"}{end}' >"$log_dir/$job.status.log" 2>&1 || true
     kubectl -n "$namespace" describe pods >"$log_dir/$job.pods.log" 2>&1 || true
     kubectl -n "$namespace" get deployments,replicasets -o jsonpath='{range .items[*]}{.kind}{"/"}{.metadata.name}{" generation="}{.metadata.generation}{" observed="}{.status.observedGeneration}{" replicas="}{.status.replicas}{" ready="}{.status.readyReplicas}{" conditions="}{.status.conditions}{"\n"}{end}' >"$log_dir/$job.rollouts.log" 2>&1 || true
     kubectl -n "$namespace" get events --sort-by=.lastTimestamp >"$log_dir/$job.events.log" 2>&1 || true
     kubectl -n "$namespace" logs -l app.kubernetes.io/name=egressfox-gateway --all-containers --prefix --tail=200 >"$log_dir/$job.runtime.log" 2>&1 || true
     kubectl -n "$namespace" logs "deployment/${release}-egressfox" --all-containers --tail=500 >"$log_dir/$job.operator.log" 2>&1 || true
+    for fixture in source-provider c3-proxy-server c3-transport-server c3-xhttp-server; do
+      kubectl -n "$namespace" logs "deployment/$fixture" --all-containers --tail=200 >"$log_dir/$job.$fixture.log" 2>&1 || true
+    done
   fi
   if [ "$result" -eq 0 ] || [ "${KEEP_KIND_CLUSTER_ON_FAILURE:-0}" != 1 ]; then
     # The lifecycle scenario already uninstalls its release as an assertion.
