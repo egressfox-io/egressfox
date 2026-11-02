@@ -4,7 +4,7 @@ go 1.27.2
 
 require (
 	github.com/ncruces/go-sqlite3 v0.35.6
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/mod v0.41.0
 	golang.org/x/net v0.60.0
 	k8s.io/api v0.37.1
